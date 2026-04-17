@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import type { Socket } from "socket.io-client";
 
 import { chatApi } from "@/store/api/chatApi";
+import { conversationApi } from "@/store/api/endpoints/conversationApi";
 import {
   messageReceived,
   messageRecalled,
@@ -25,11 +26,7 @@ interface UseChatRealtimeEventsParams {
  * Hook xử lý tất cả socket events cho chat.
  * Copy-adapt pattern từ web's useChatRealtimeEvents.
  */
-export function useChatRealtimeEvents({
-  dispatch,
-  socket,
-  activeConversationId,
-}: UseChatRealtimeEventsParams): void {
+export function useChatRealtimeEvents({ dispatch, socket, activeConversationId }: UseChatRealtimeEventsParams): void {
   const activeConvRef = useRef<string | null>(activeConversationId);
 
   useEffect(() => {
@@ -45,92 +42,62 @@ export function useChatRealtimeEvents({
 
       // Cập nhật conversation list cache
       dispatch(
-        chatApi.util.updateQueryData(
-          "getConversations",
-          undefined,
-          (draft) => {
-            const conv = draft?.find(
-              (item: IConversation) =>
-                item.conversationId === msg.conversationId,
-            );
-            if (!conv) return;
-            conv.lastMessage = {
-              messageId: msg.messageId,
-              content:
-                msg.content?.trim() !== ""
-                  ? msg.content
-                  : msg.type === "image"
-                    ? "[Ảnh]"
-                    : msg.type === "video"
-                      ? "[Video]"
-                      : msg.type === "file"
-                        ? "[File]"
-                        : msg.content,
-              senderId: msg.senderId,
-              type: msg.type,
-              createdAt: msg.createdAt,
-              senderDisplayName: msg.senderDisplayName,
-            };
-            // Tăng unread nếu không phải conversation đang mở
-            if (msg.conversationId !== activeConvRef.current) {
-              conv.unreadCount = (conv.unreadCount ?? 0) + 1;
-            }
-          },
-        ),
+        conversationApi.util.updateQueryData("getConversations", undefined, (draft) => {
+          const conv = draft?.find((item: IConversation) => item.conversationId === msg.conversationId);
+          if (!conv) return;
+          conv.lastMessage = {
+            messageId: msg.messageId,
+            content:
+              msg.content?.trim() !== ""
+                ? msg.content
+                : msg.type === "image"
+                  ? "[Ảnh]"
+                  : msg.type === "video"
+                    ? "[Video]"
+                    : msg.type === "file"
+                      ? "[File]"
+                      : msg.content,
+            senderId: msg.senderId,
+            type: msg.type,
+            createdAt: msg.createdAt,
+            senderDisplayName: msg.senderDisplayName,
+          };
+          // Tăng unread nếu không phải conversation đang mở
+          if (msg.conversationId !== activeConvRef.current) {
+            conv.unreadCount = (conv.unreadCount ?? 0) + 1;
+          }
+        }),
       );
     };
 
     // ── message:edited ───────────────────────────────────────────────
-    const handleEdited = (payload: {
-      messageId: string;
-      conversationId: string;
-      content: string;
-    }) => {
+    const handleEdited = (payload: { messageId: string; conversationId: string; content: string }) => {
       dispatch(messageEdited(payload));
     };
 
     // ── message:recalled ─────────────────────────────────────────────
-    const handleRecalled = (payload: {
-      messageId: string;
-      conversationId: string;
-    }) => {
+    const handleRecalled = (payload: { messageId: string; conversationId: string }) => {
       dispatch(messageRecalled(payload));
     };
 
     // ── message:hidden_for_me ────────────────────────────────────────
-    const handleHiddenForMe = (payload: {
-      messageId: string;
-      conversationId: string;
-    }) => {
+    const handleHiddenForMe = (payload: { messageId: string; conversationId: string }) => {
       dispatch(messageHiddenForMe(payload));
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
     };
 
     // ── message:pin_updated ──────────────────────────────────────────
-    const handlePinUpdated = (payload: {
-      messageId: string;
-      conversationId: string;
-      isPinned: boolean;
-    }) => {
+    const handlePinUpdated = (payload: { messageId: string; conversationId: string; isPinned: boolean }) => {
       dispatch(messagePinUpdated(payload));
     };
 
     // ── message:reacted ──────────────────────────────────────────────
-    const handleReaction = (payload: {
-      messageId: string;
-      conversationId: string;
-      reactions: Record<string, string[]>;
-    }) => {
+    const handleReaction = (payload: { messageId: string; conversationId: string; reactions: Record<string, string[]> }) => {
       dispatch(messageReacted(payload));
     };
 
     // ── message:typing ───────────────────────────────────────────────
-    const handleTyping = (payload: {
-      conversationId: string;
-      userId: string;
-      isTyping: boolean;
-      displayName?: string;
-    }) => {
+    const handleTyping = (payload: { conversationId: string; userId: string; isTyping: boolean; displayName?: string }) => {
       if (payload.isTyping) {
         dispatch(
           typingStarted({
@@ -150,27 +117,16 @@ export function useChatRealtimeEvents({
     };
 
     // ── group:updated ────────────────────────────────────────────────
-    const handleGroupUpdated = (payload: {
-      conversationId?: string;
-      name?: string;
-      avatar?: string;
-    }) => {
+    const handleGroupUpdated = (payload: { conversationId?: string; name?: string; avatar?: string }) => {
       if (!payload.conversationId) return;
 
       dispatch(
-        chatApi.util.updateQueryData(
-          "getConversations",
-          undefined,
-          (draft) => {
-            const conv = draft?.find(
-              (item: IConversation) =>
-                item.conversationId === payload.conversationId,
-            );
-            if (!conv) return;
-            if (payload.name) conv.name = payload.name;
-            if (payload.avatar) conv.avatar = payload.avatar;
-          },
-        ),
+        conversationApi.util.updateQueryData("getConversations", undefined, (draft) => {
+          const conv = draft?.find((item: IConversation) => item.conversationId === payload.conversationId);
+          if (!conv) return;
+          if (payload.name) conv.name = payload.name;
+          if (payload.avatar) conv.avatar = payload.avatar;
+        }),
       );
     };
 
