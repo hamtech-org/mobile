@@ -1,21 +1,18 @@
 import { Tabs } from "expo-router";
 import { useColorScheme } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-
-type IconName = React.ComponentProps<typeof Ionicons>["name"];
+import { MessageSquare, Newspaper, User, Users } from "lucide-react-native";
 
 interface TabConfig {
   name: string;
   title: string;
-  icon: IconName;
-  activeIcon: IconName;
+  Icon: any;
 }
 
 const TABS: TabConfig[] = [
-  { name: "(chat)", title: "Tin nhắn", icon: "chatbubble-outline", activeIcon: "chatbubble" },
-  { name: "(contacts)", title: "Danh bạ", icon: "people-outline", activeIcon: "people" },
-  { name: "(newsfeed)", title: "Bảng tin", icon: "newspaper-outline", activeIcon: "newspaper" },
-  { name: "(profile)", title: "Tôi", icon: "person-circle-outline", activeIcon: "person-circle" },
+  { name: "(chat)", title: "Tin nhắn", Icon: MessageSquare },
+  { name: "(contacts)", title: "Danh bạ", Icon: Users },
+  { name: "(newsfeed)", title: "Bảng tin", Icon: Newspaper },
+  { name: "(profile)", title: "Tôi", Icon: User },
 ];
 
 export default function MainLayout() {
@@ -49,7 +46,13 @@ export default function MainLayout() {
           name={tab.name}
           options={{
             title: tab.title,
-            tabBarIcon: ({ focused, color, size }) => <Ionicons name={focused ? tab.activeIcon : tab.icon} size={size} color={color} />,
+            tabBarIcon: ({ focused, color, size }) => (
+              <tab.Icon 
+                size={size - 2} 
+                color={color} 
+                strokeWidth={focused ? 2.2 : 1.5} 
+              />
+            ),
           }}
         />
       ))}

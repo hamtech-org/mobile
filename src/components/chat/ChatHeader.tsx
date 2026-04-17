@@ -1,6 +1,6 @@
 import { Pressable, Text, View } from "react-native";
 import { router } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { ChevronLeft, Info, Phone, Video } from "lucide-react-native";
 
 import { Avatar } from "@/components/common/Avatar";
 import { useIconColors } from "@/hooks/useIconColors";
@@ -34,7 +34,7 @@ export const ChatHeader = ({ conversation, isOnline = false, memberCount, onBack
     <View className="flex-row items-center bg-background border-b border-border/30 px-2 py-2">
       {/* Back */}
       <Pressable onPress={handleBack} className="p-2 active:opacity-60" hitSlop={8}>
-        <Ionicons name="arrow-back" size={26} color={foreground} />
+        <ChevronLeft size={28} color={foreground} strokeWidth={1.5} />
       </Pressable>
 
       {/* Avatar + info */}
@@ -53,13 +53,13 @@ export const ChatHeader = ({ conversation, isOnline = false, memberCount, onBack
       {/* Actions */}
       <View className="flex-row items-center">
         <Pressable className="p-2 active:opacity-60" hitSlop={6}>
-          <Ionicons name="call-outline" size={25} color={primary} />
+          <Phone size={24} color={primary} strokeWidth={1.5} />
         </Pressable>
         <Pressable className="p-2 active:opacity-60" hitSlop={6}>
-          <Ionicons name="videocam-outline" size={26} color={primary} />
+          <Video size={25} color={primary} strokeWidth={1.5} />
         </Pressable>
         <Pressable className="p-2 active:opacity-60" hitSlop={6}>
-          <Ionicons name="information-circle-outline" size={26} color={foreground} />
+          <Info size={25} color={foreground} strokeWidth={1.5} />
         </Pressable>
       </View>
     </View>

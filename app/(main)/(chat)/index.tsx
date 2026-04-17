@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { router } from "expo-router";
 import { FlatList, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
+import { CloudOff, MessageSquare, Search, SquarePen } from "lucide-react-native";
 
 import { Loading } from "@/components/common/Loading";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -36,10 +36,10 @@ export default function ChatListScreen() {
         <Text className="text-foreground text-2xl font-bold tracking-tight">Tin nhắn</Text>
         <View className="flex-row gap-1">
           <Pressable className="size-9 items-center justify-center rounded-full active:opacity-70" hitSlop={6}>
-            <Ionicons name="search-outline" size={22} color={primary} />
+            <Search size={22} color={primary} strokeWidth={1.5} />
           </Pressable>
           <Pressable className="size-9 items-center justify-center rounded-full active:opacity-70" hitSlop={6}>
-            <Ionicons name="create-outline" size={22} color={primary} />
+            <SquarePen size={22} color={primary} strokeWidth={1.5} />
           </Pressable>
         </View>
       </View>
@@ -54,7 +54,7 @@ export default function ChatListScreen() {
 
       {isError ? (
         <EmptyState
-          icon="cloud-offline-outline"
+          icon={CloudOff}
           title="Không tải được tin nhắn"
           description="Kiểm tra kết nối mạng và thử lại."
           action={{ label: "Thử lại", onPress: () => void refetch() }}
@@ -75,7 +75,7 @@ export default function ChatListScreen() {
           )}
           ListEmptyComponent={
             <EmptyState
-              icon={searchText ? "search-outline" : "chatbubbles-outline"}
+              icon={searchText ? Search : MessageSquare}
               title={searchText ? "Không tìm thấy" : "Chưa có tin nhắn"}
               description={
                 searchText

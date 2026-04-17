@@ -1,10 +1,8 @@
 import { Text, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { LucideIcon } from "lucide-react-native";
 
 import { useIconColors } from "@/hooks/useIconColors";
 import { Button } from "@/components/common/Button";
-
-type IoniconName = React.ComponentProps<typeof Ionicons>["name"];
 
 interface EmptyStateAction {
   label: string;
@@ -12,8 +10,8 @@ interface EmptyStateAction {
 }
 
 interface EmptyStateProps {
-  /** Ionicons icon name */
-  icon: IoniconName;
+  /** Lucide icon component */
+  icon: LucideIcon;
   title: string;
   description?: string;
   /** Nút hành động tùy chọn */
@@ -24,13 +22,13 @@ interface EmptyStateProps {
  * EmptyState — hiển thị trạng thái rỗng cho list, search, feed...
  * Dùng trong ListEmptyComponent của FlatList.
  */
-export const EmptyState = ({ icon, title, description, action }: EmptyStateProps) => {
+export const EmptyState = ({ icon: Icon, title, description, action }: EmptyStateProps) => {
   const { muted } = useIconColors();
   return (
     <View className="flex-1 items-center justify-center px-8 gap-4 py-12">
       {/* Icon container */}
       <View className="size-20 rounded-full bg-muted items-center justify-center">
-        <Ionicons name={icon} size={36} color={muted} />
+        <Icon size={36} color={muted} strokeWidth={1.2} />
       </View>
 
       {/* Text content */}

@@ -1,5 +1,5 @@
 import { Pressable, TextInput, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Search, XCircle } from "lucide-react-native";
 
 import { useIconColors } from "@/hooks/useIconColors";
 
@@ -29,7 +29,7 @@ export const SearchBar = ({ value, onChangeText, placeholder = "Tìm kiếm...",
   return (
     <View className="flex-row items-center bg-muted rounded-full px-3 py-2 gap-2">
       {/* Search icon */}
-      <Ionicons name="search-outline" size={18} color={muted} />
+      <Search size={18} color={muted} strokeWidth={1.5} />
 
       {/* Text input */}
       <TextInput
@@ -46,7 +46,7 @@ export const SearchBar = ({ value, onChangeText, placeholder = "Tìm kiếm...",
       {/* Clear button — chỉ hiện khi có text */}
       {value.length > 0 ? (
         <Pressable onPress={handleClear} className="active:opacity-70" hitSlop={8}>
-          <Ionicons name="close-circle" size={18} color={muted} />
+          <XCircle size={18} color={muted} strokeWidth={1.5} />
         </Pressable>
       ) : null}
     </View>

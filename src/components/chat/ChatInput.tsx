@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Pressable, TextInput, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { PlusCircle, SendHorizontal, Smile, ThumbsUp } from "lucide-react-native";
 
 import { useIconColors } from "@/hooks/useIconColors";
 
@@ -35,7 +35,7 @@ export const ChatInput = ({ onSend, sending = false }: ChatInputProps) => {
       {/* Nút Add */}
       <View className="h-11 w-11 items-center justify-center">
         <Pressable className="active:opacity-70" hitSlop={10}>
-          <Ionicons name="add-circle" size={28} color={primary} />
+          <PlusCircle size={28} color={primary} strokeWidth={1.5} />
         </Pressable>
       </View>
 
@@ -58,7 +58,7 @@ export const ChatInput = ({ onSend, sending = false }: ChatInputProps) => {
         />
         {!hasText && (
           <Pressable hitSlop={10}>
-            <Ionicons name="happy-outline" size={24} color={muted} />
+            <Smile size={24} color={muted} strokeWidth={1.5} />
           </Pressable>
         )}
       </View>
@@ -71,11 +71,11 @@ export const ChatInput = ({ onSend, sending = false }: ChatInputProps) => {
             disabled={sending}
             className={`size-9 rounded-full bg-primary items-center justify-center ${sending ? "opacity-50" : "active:opacity-80"}`}
           >
-            <Ionicons name="send" size={16} color="white" style={{ marginLeft: 2 }} />
+            <SendHorizontal size={18} color="white" strokeWidth={2.0} />
           </Pressable>
         ) : (
           <Pressable onPress={() => onSend("👍")} className="active:opacity-70" hitSlop={10}>
-            <Ionicons name="thumbs-up" size={28} color={primary} />
+            <ThumbsUp size={26} color={primary} strokeWidth={1.5} />
           </Pressable>
         )}
       </View>
