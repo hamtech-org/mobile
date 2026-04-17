@@ -31,7 +31,7 @@ export const ChatInput = ({ onSend, sending = false }: ChatInputProps) => {
   };
 
   return (
-    <View className="flex-row items-end px-2 pb-2 min-h-[56px] border-t border-border/20 bg-background gap-1">
+    <View className="flex-row items-end px-2 pt-4 min-h-[56px] border-t border-border/20 bg-background gap-1">
       {/* Nút Add */}
       <View className="h-11 w-11 items-center justify-center">
         <Pressable className="active:opacity-70" hitSlop={10}>
