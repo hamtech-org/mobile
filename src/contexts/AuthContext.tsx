@@ -2,21 +2,45 @@ import { createContext, useContext, useEffect, type PropsWithChildren } from "re
 
 import { useAppDispatch } from "@/hooks/useAppStore";
 import { secureStorage } from "@/services/storage";
-import { setBootstrappingDone } from "@/store/slices/authSlice";
+import { useRefreshTokenMutation } from "@/store/api/authApi";
+import { setAuthState, setBootstrappingDone } from "@/store/slices/authSlice";
 
 const AuthContext = createContext({ isReady: false });
 
 export const AuthProvider = ({ children }: PropsWithChildren) => {
   const dispatch = useAppDispatch();
+  const [refreshTokenMutation] = useRefreshTokenMutation();
 
   useEffect(() => {
     const bootstrap = async () => {
-      await secureStorage.getRefreshToken();
-      dispatch(setBootstrappingDone());
+      try {
+        const refreshToken = await secureStorage.getRefreshToken();
+        if (!refreshToken) {
+          dispatch(setBootstrappingDone());
+          return;
+        }
+
+        const response = await refreshTokenMutation({ refreshToken }).unwrap();
+        await secureStorage.setTokens(response.accessToken, response.refreshToken);
+        dispatch(
+          setAuthState({
+            user: {
+              userId: "unknown",
+              email: "",
+              displayName: "",
+            },
+            accessToken: response.accessToken,
+            refreshToken: response.refreshToken,
+          }),
+        );
+      } catch {
+        await secureStorage.clearTokens();
+        dispatch(setBootstrappingDone());
+      }
     };
 
     void bootstrap();
-  }, [dispatch]);
+  }, [dispatch, refreshTokenMutation]);
 
   return <AuthContext.Provider value={{ isReady: true }}>{children}</AuthContext.Provider>;
 };

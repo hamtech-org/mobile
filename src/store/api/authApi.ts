@@ -7,14 +7,39 @@ interface LoginRequest {
   password: string;
 }
 
-interface LoginResponse {
+interface RegisterRequest {
+  email: string;
+  password: string;
+  displayName: string;
+}
+
+interface AuthStepOneResponse {
+  message: string;
+}
+
+export interface AuthTokenResponse {
   accessToken: string;
   refreshToken: string;
-  user: {
-    userId: string;
-    email: string;
-    displayName: string;
-  };
+  expiresIn: number;
+  userId: string;
+}
+
+interface ForgotPasswordRequest {
+  email: string;
+}
+
+interface ForgotPasswordResponse {
+  message: string;
+}
+
+interface RefreshTokenRequest {
+  refreshToken: string;
+}
+
+interface ApiEnvelope<T> {
+  success: boolean;
+  data: T;
+  message: string;
 }
 
 export const authApi = createApi({
@@ -23,14 +48,53 @@ export const authApi = createApi({
     baseUrl: env.apiBaseUrl,
   }),
   endpoints: (builder) => ({
-    login: builder.mutation<LoginResponse, LoginRequest>({
+    login: builder.mutation<AuthStepOneResponse, LoginRequest>({
       query: (body) => ({
         url: "/auth/login",
         method: "POST",
         body,
       }),
+      transformResponse: (response: ApiEnvelope<AuthStepOneResponse>) => response.data,
+    }),
+    register: builder.mutation<AuthStepOneResponse, RegisterRequest>({
+      query: (body) => ({
+        url: "/auth/register",
+        method: "POST",
+        body,
+      }),
+      transformResponse: (response: ApiEnvelope<AuthStepOneResponse>) => response.data,
+    }),
+    verifyLoginOtp: builder.mutation<AuthTokenResponse, { email: string; otp: string }>({
+      query: (body) => ({
+        url: "/auth/verify-login-otp",
+        method: "POST",
+        body,
+      }),
+      transformResponse: (response: ApiEnvelope<AuthTokenResponse>) => response.data,
+    }),
+    forgotPassword: builder.mutation<ForgotPasswordResponse, ForgotPasswordRequest>({
+      query: (body) => ({
+        url: "/auth/forgot-password",
+        method: "POST",
+        body,
+      }),
+      transformResponse: (response: ApiEnvelope<null>) => ({ message: response.message }),
+    }),
+    refreshToken: builder.mutation<Omit<AuthTokenResponse, "userId">, RefreshTokenRequest>({
+      query: (body) => ({
+        url: "/auth/refresh-token",
+        method: "POST",
+        body,
+      }),
+      transformResponse: (response: ApiEnvelope<Omit<AuthTokenResponse, "userId">>) => response.data,
     }),
   }),
 });
 
-export const { useLoginMutation } = authApi;
+export const {
+  useLoginMutation,
+  useRegisterMutation,
+  useVerifyLoginOtpMutation,
+  useForgotPasswordMutation,
+  useRefreshTokenMutation,
+} = authApi;
