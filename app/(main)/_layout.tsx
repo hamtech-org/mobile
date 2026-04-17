@@ -1,6 +1,6 @@
 import { Tabs } from "expo-router";
 import { useColorScheme } from "react-native";
-import { MessageSquare, Newspaper, User, Users } from "lucide-react-native";
+import { MessageCircleMore, Newspaper, User, Users } from "lucide-react-native";
 
 interface TabConfig {
   name: string;
@@ -9,7 +9,7 @@ interface TabConfig {
 }
 
 const TABS: TabConfig[] = [
-  { name: "(chat)", title: "Tin nhắn", Icon: MessageSquare },
+  { name: "(chat)", title: "Tin nhắn", Icon: MessageCircleMore },
   { name: "(contacts)", title: "Danh bạ", Icon: Users },
   { name: "(newsfeed)", title: "Bảng tin", Icon: Newspaper },
   { name: "(profile)", title: "Tôi", Icon: User },
@@ -46,13 +46,7 @@ export default function MainLayout() {
           name={tab.name}
           options={{
             title: tab.title,
-            tabBarIcon: ({ focused, color, size }) => (
-              <tab.Icon 
-                size={size - 2} 
-                color={color} 
-                strokeWidth={focused ? 2.2 : 1.5} 
-              />
-            ),
+            tabBarIcon: ({ focused, color, size }) => <tab.Icon size={size - 2} color={color} strokeWidth={focused ? 2.2 : 1.5} />,
           }}
         />
       ))}
