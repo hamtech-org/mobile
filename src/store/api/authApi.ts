@@ -36,6 +36,17 @@ interface RefreshTokenRequest {
   refreshToken: string;
 }
 
+interface VerifyEmailRequest {
+  email: string;
+  otp: string;
+}
+
+interface ResetPasswordRequest {
+  email: string;
+  token: string;
+  newPassword: string;
+}
+
 interface ApiEnvelope<T> {
   success: boolean;
   data: T;
@@ -46,6 +57,14 @@ export const authApi = createApi({
   reducerPath: "authApi",
   baseQuery: fetchBaseQuery({
     baseUrl: env.apiBaseUrl,
+    prepareHeaders: (headers, { getState }) => {
+      const state = getState() as { auth?: { accessToken?: string | null } };
+      const token = state.auth?.accessToken;
+      if (token) {
+        headers.set("Authorization", `Bearer ${token}`);
+      }
+      return headers;
+    },
   }),
   endpoints: (builder) => ({
     login: builder.mutation<AuthStepOneResponse, LoginRequest>({
@@ -88,6 +107,30 @@ export const authApi = createApi({
       }),
       transformResponse: (response: ApiEnvelope<Omit<AuthTokenResponse, "userId">>) => response.data,
     }),
+    verifyEmail: builder.mutation<AuthTokenResponse, VerifyEmailRequest>({
+      query: (body) => ({
+        url: "/auth/verify-email",
+        method: "POST",
+        body,
+      }),
+      transformResponse: (response: ApiEnvelope<AuthTokenResponse>) => response.data,
+    }),
+    resetPassword: builder.mutation<{ message: string }, ResetPasswordRequest>({
+      query: (body) => ({
+        url: "/auth/reset-password",
+        method: "POST",
+        body,
+      }),
+      transformResponse: (response: ApiEnvelope<null>) => ({ message: response.message }),
+    }),
+    logout: builder.mutation<{ message: string }, { accessToken?: string | null }>({
+      query: ({ accessToken }) => ({
+        url: "/auth/logout",
+        method: "POST",
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+      }),
+      transformResponse: (response: ApiEnvelope<null>) => ({ message: response.message }),
+    }),
   }),
 });
 
@@ -97,4 +140,7 @@ export const {
   useVerifyLoginOtpMutation,
   useForgotPasswordMutation,
   useRefreshTokenMutation,
+  useVerifyEmailMutation,
+  useResetPasswordMutation,
+  useLogoutMutation,
 } = authApi;

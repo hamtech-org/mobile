@@ -29,7 +29,7 @@ export const ForgotPasswordForm = () => {
     const success = await forgotPassword(parsed.data.email);
     if (success) {
       setSuccessMessage("Đã gửi OTP reset password vào email.");
-      router.push({ pathname: "/(auth)/otp-verification", params: { email: parsed.data.email } });
+      router.push({ pathname: "/(auth)/otp-verification", params: { email: parsed.data.email, mode: "reset" } });
     }
   };
 

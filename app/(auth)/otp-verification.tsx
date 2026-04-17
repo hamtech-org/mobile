@@ -10,12 +10,20 @@ import { useAuth } from "@/hooks/useAuth";
 const otpSchema = z.object({
   otp: z.string().length(6, "OTP phải có 6 chữ số").regex(/^\d+$/, "OTP chỉ chứa chữ số"),
 });
+const resetSchema = z.object({
+  newPassword: z
+    .string()
+    .min(8, "Mật khẩu tối thiểu 8 ký tự")
+    .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])/, "Mật khẩu phải có chữ hoa, chữ thường, số và ký tự đặc biệt"),
+});
 
 export default function OtpVerificationScreen() {
   const { email, mode } = useLocalSearchParams<{ email?: string; mode?: string }>();
-  const { verifyLoginOtp, isLoading, errorMessage } = useAuth();
+  const { verifyLoginOtp, verifyRegisterOtp, resetPassword, isLoading, errorMessage } = useAuth();
   const [otp, setOtp] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [otpError, setOtpError] = useState<string | undefined>();
+  const [passwordError, setPasswordError] = useState<string | undefined>();
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
   const handleVerify = async () => {
@@ -26,6 +34,7 @@ export default function OtpVerificationScreen() {
     }
 
     setOtpError(undefined);
+    setPasswordError(undefined);
 
     if (!email) {
       setInfoMessage("Thiếu email để xác thực OTP.");
@@ -38,7 +47,18 @@ export default function OtpVerificationScreen() {
     }
 
     if (mode === "register") {
-      setInfoMessage("Flow verify-email cho đăng ký sẽ triển khai tiếp theo (đang dùng OTP screen chung).");
+      await verifyRegisterOtp(email, parsed.data.otp);
+      return;
+    }
+
+    if (mode === "reset") {
+      const parsedReset = resetSchema.safeParse({ newPassword });
+      if (!parsedReset.success) {
+        setPasswordError(parsedReset.error.flatten().fieldErrors.newPassword?.[0]);
+        return;
+      }
+
+      await resetPassword(email, parsed.data.otp, parsedReset.data.newPassword);
       return;
     }
 
@@ -61,6 +81,15 @@ export default function OtpVerificationScreen() {
             maxLength={6}
             error={otpError}
           />
+          {mode === "reset" ? (
+            <Input
+              label="Mật khẩu mới"
+              value={newPassword}
+              onChangeText={setNewPassword}
+              secureTextEntry
+              error={passwordError}
+            />
+          ) : null}
           {errorMessage ? <Text className="text-destructive text-sm">{errorMessage}</Text> : null}
           {infoMessage ? <Text className="text-muted-foreground text-sm">{infoMessage}</Text> : null}
           <Button label="Xác thực OTP" onPress={handleVerify} loading={isLoading} />

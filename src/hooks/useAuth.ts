@@ -4,13 +4,17 @@ import { useRouter } from "expo-router";
 import {
   useForgotPasswordMutation,
   useLoginMutation,
+  useLogoutMutation,
+  useResetPasswordMutation,
   useRegisterMutation,
+  useVerifyEmailMutation,
   useVerifyLoginOtpMutation,
   type AuthTokenResponse,
 } from "@/store/api/authApi";
 import { clearAuthState, setAuthState } from "@/store/slices/authSlice";
 import { secureStorage } from "@/services/storage";
-import { useAppDispatch } from "./useAppStore";
+import { fetchCurrentUserProfile } from "@/services/userProfile";
+import { useAppDispatch, useAppSelector } from "./useAppStore";
 
 interface RegisterPayload {
   email: string;
@@ -21,17 +25,22 @@ interface RegisterPayload {
 export const useAuth = () => {
   const router = useRouter();
   const dispatch = useAppDispatch();
+  const accessToken = useAppSelector((state) => state.auth.accessToken);
   const [loginMutation, loginState] = useLoginMutation();
   const [registerMutation, registerState] = useRegisterMutation();
   const [verifyLoginOtpMutation, verifyLoginOtpState] = useVerifyLoginOtpMutation();
+  const [verifyEmailMutation, verifyEmailState] = useVerifyEmailMutation();
   const [forgotPasswordMutation, forgotPasswordState] = useForgotPasswordMutation();
+  const [resetPasswordMutation, resetPasswordState] = useResetPasswordMutation();
+  const [logoutMutation, logoutState] = useLogoutMutation();
 
   const applyAuthSession = useCallback(
     async (response: AuthTokenResponse, fallback?: { email?: string; displayName?: string }) => {
       await secureStorage.setTokens(response.accessToken, response.refreshToken);
+      const hydratedProfile = await fetchCurrentUserProfile();
       dispatch(
         setAuthState({
-          user: {
+          user: hydratedProfile ?? {
             userId: response.userId,
             email: fallback?.email ?? "",
             displayName: fallback?.displayName ?? "",
@@ -84,6 +93,19 @@ export const useAuth = () => {
     [applyAuthSession, verifyLoginOtpMutation],
   );
 
+  const verifyRegisterOtp = useCallback(
+    async (email: string, otp: string): Promise<boolean> => {
+      try {
+        const response = await verifyEmailMutation({ email, otp }).unwrap();
+        await applyAuthSession(response, { email });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [applyAuthSession, verifyEmailMutation],
+  );
+
   const forgotPassword = useCallback(
     async (email: string): Promise<boolean> => {
       try {
@@ -96,27 +118,56 @@ export const useAuth = () => {
     [forgotPasswordMutation],
   );
 
+  const resetPassword = useCallback(
+    async (email: string, token: string, newPassword: string): Promise<boolean> => {
+      try {
+        await resetPasswordMutation({ email, token, newPassword }).unwrap();
+        router.replace("/(auth)/login");
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [resetPasswordMutation, router],
+  );
+
   const logout = useCallback(async () => {
+    try {
+      await logoutMutation({ accessToken }).unwrap();
+    } catch {
+      // Luôn cho phép logout local để tránh user bị kẹt phiên đăng nhập.
+    }
     await secureStorage.clearTokens();
     dispatch(clearAuthState());
-    router.replace("/");
-  }, [dispatch, router]);
+    router.replace("/(auth)/login");
+  }, [accessToken, dispatch, logoutMutation, router]);
 
   const isLoading =
-    loginState.isLoading || registerState.isLoading || verifyLoginOtpState.isLoading || forgotPasswordState.isLoading;
+    loginState.isLoading ||
+    registerState.isLoading ||
+    verifyLoginOtpState.isLoading ||
+    verifyEmailState.isLoading ||
+    forgotPasswordState.isLoading ||
+    resetPasswordState.isLoading ||
+    logoutState.isLoading;
 
   const errorMessage =
     (loginState.error as { data?: { message?: string } } | undefined)?.data?.message ??
     (registerState.error as { data?: { message?: string } } | undefined)?.data?.message ??
     (verifyLoginOtpState.error as { data?: { message?: string } } | undefined)?.data?.message ??
+    (verifyEmailState.error as { data?: { message?: string } } | undefined)?.data?.message ??
     (forgotPasswordState.error as { data?: { message?: string } } | undefined)?.data?.message ??
+    (resetPasswordState.error as { data?: { message?: string } } | undefined)?.data?.message ??
+    (logoutState.error as { data?: { message?: string } } | undefined)?.data?.message ??
     null;
 
   return {
     login,
     register,
     verifyLoginOtp,
+    verifyRegisterOtp,
     forgotPassword,
+    resetPassword,
     logout,
     isLoading,
     errorMessage,
