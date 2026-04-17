@@ -1,0 +1,10 @@
+// Common components — barrel export
+// Thứ tự: primitive → composite
+export { Avatar } from "@/components/common/Avatar";
+export { Badge } from "@/components/common/Badge";
+export { Button } from "@/components/common/Button";
+export { EmptyState } from "@/components/common/EmptyState";
+export { Input } from "@/components/common/Input";
+export { Loading } from "@/components/common/Loading";
+export { PlaceholderScreen } from "@/components/common/PlaceholderScreen";
+export { SearchBar } from "@/components/common/SearchBar";
