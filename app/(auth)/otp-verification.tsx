@@ -87,6 +87,7 @@ export default function OtpVerificationScreen() {
               value={newPassword}
               onChangeText={setNewPassword}
               secureTextEntry
+              enablePasswordToggle
               error={passwordError}
             />
           ) : null}
