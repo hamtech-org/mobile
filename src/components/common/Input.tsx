@@ -38,16 +38,18 @@ export const Input = ({
     onChangeText?.(value);
   };
 
-  const wrapperSizeClassName = size === "sm" ? "px-2 py-1 rounded-md" : "px-2.5 py-1.5 rounded-lg";
-  const inputSizeClassName = size === "sm" ? "text-xs" : "text-xs";
+  const wrapperSizeClassName = size === "sm" ? "px-2 py-1 rounded-xl" : "px-2.5 py-1.5 rounded-2xl";
+  const inputSizeClassName = size === "sm" ? "text-sm" : "text-base";
 
   return (
     <View className={`gap-2 ${containerClassName ?? ""}`}>
-      <Text className="text-foreground text-xs font-medium">
+      <Text className="text-foreground text-sm font-medium">
         {label}
         {required ? <Text className="text-destructive"> *</Text> : null}
       </Text>
-      <View className={`border flex-row items-center gap-2 ${wrapperSizeClassName} ${error ? "border-destructive" : "border-border"} ${disabled ? "opacity-60" : ""}`}>
+      <View
+        className={`border flex-row items-center gap-2 ${wrapperSizeClassName} ${error ? "border-destructive" : "border-border"} ${disabled ? "opacity-60" : ""}`}
+      >
         <TextInput
           className={`flex-1 text-foreground ${inputSizeClassName} ${inputClassName ?? ""}`}
           placeholderTextColor="hsl(var(--muted-foreground) / 1)"
@@ -57,11 +59,7 @@ export const Input = ({
           {...props}
         />
         {shouldTogglePassword ? (
-          <Pressable
-            onPress={() => setIsPasswordVisible((prev) => !prev)}
-            className="p-1 active:opacity-70"
-            hitSlop={8}
-          >
+          <Pressable onPress={() => setIsPasswordVisible((prev) => !prev)} className="p-1 active:opacity-70" hitSlop={8}>
             <Ionicons name={isPasswordVisible ? "eye-off-outline" : "eye-outline"} size={20} color="hsl(215 16% 47%)" />
           </Pressable>
         ) : null}
