@@ -31,18 +31,16 @@ export const ChatInput = ({ onSend, sending = false }: ChatInputProps) => {
   };
 
   return (
-    <View className="flex-row items-center px-2 py-2 border-t border-border/20 bg-background">
-      {/* Nút Add - h-11 (44px) chuẩn */}
+    <View className="flex-row items-end px-2 pb-2 min-h-[56px] border-t border-border/20 bg-background gap-1">
+      {/* Nút Add */}
       <View className="h-11 w-11 items-center justify-center">
         <Pressable className="active:opacity-70" hitSlop={10}>
           <Ionicons name="add-circle" size={28} color={primary} />
         </Pressable>
       </View>
 
-      {/* Pill Input - h-11 (44px) đồng bộ */}
-      <View 
-        className="flex-1 bg-muted rounded-full px-4 flex-row items-center h-11"
-      >
+      {/* Pill Input*/}
+      <View className="flex-1 bg-muted rounded-[22px] px-4 flex-row items-center" style={{ minHeight: 44, paddingVertical: 4 }}>
         <TextInput
           className="flex-1 text-[16px] text-foreground p-0 m-0"
           placeholder="Aa"
@@ -50,10 +48,12 @@ export const ChatInput = ({ onSend, sending = false }: ChatInputProps) => {
           value={content}
           onChangeText={setContent}
           multiline
-          includeFontPadding={false}
-          style={{ 
-            height: 44,
-            textAlignVertical: 'center',
+          style={{
+            minHeight: 36,
+            maxHeight: 120,
+            textAlignVertical: "center",
+            paddingTop: 4,
+            paddingBottom: 4,
           }}
         />
         {!hasText && (
@@ -63,7 +63,7 @@ export const ChatInput = ({ onSend, sending = false }: ChatInputProps) => {
         )}
       </View>
 
-      {/* Nút Send hoặc Like - h-11 (44px) */}
+      {/* Nút Send hoặc Like */}
       <View className="h-11 w-11 items-center justify-center">
         {hasText ? (
           <Pressable
@@ -74,11 +74,7 @@ export const ChatInput = ({ onSend, sending = false }: ChatInputProps) => {
             <Ionicons name="send" size={16} color="white" style={{ marginLeft: 2 }} />
           </Pressable>
         ) : (
-          <Pressable
-            onPress={() => onSend("👍")}
-            className="active:opacity-70"
-            hitSlop={10}
-          >
+          <Pressable onPress={() => onSend("👍")} className="active:opacity-70" hitSlop={10}>
             <Ionicons name="thumbs-up" size={28} color={primary} />
           </Pressable>
         )}
