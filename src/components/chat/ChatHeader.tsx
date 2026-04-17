@@ -24,24 +24,24 @@ interface ChatHeaderProps {
  */
 export const ChatHeader = ({ conversation, isOnline = false, memberCount, onBack }: ChatHeaderProps) => {
   const isGroup = conversation.type === "group";
-  const { foreground } = useIconColors();
+  const { foreground, primary } = useIconColors();
   const handleBack = onBack ?? (() => router.back());
 
   // Subtitle: group → số thành viên, 1-1 → trạng thái online
   const subtitle = isGroup ? (memberCount !== undefined ? `${memberCount} thành viên` : "Nhóm") : isOnline ? "Đang hoạt động" : "Offline";
 
   return (
-    <View className="flex-row items-center gap-2 px-2 py-2 border-b border-border/40 bg-background">
-      {/* Back button */}
-      <Pressable onPress={handleBack} className="p-2 rounded-full active:bg-muted" hitSlop={6} accessibilityLabel="Quay lại">
-        <Ionicons name="arrow-back" size={22} color={foreground} />
+    <View className="flex-row items-center bg-background border-b border-border/30 px-1 py-2">
+      {/* Back */}
+      <Pressable onPress={handleBack} className="p-2 active:opacity-60" hitSlop={8}>
+        <Ionicons name="arrow-back" size={24} color={foreground} />
       </Pressable>
 
-      {/* Avatar + Info — ấn vào mở thông tin conversation */}
-      <Pressable className="flex-1 flex-row items-center gap-2.5 active:opacity-80">
+      {/* Avatar + info */}
+      <Pressable className="flex-1 flex-row items-center gap-2.5 px-1 active:opacity-80">
         <Avatar uri={conversation.avatar} name={conversation.name} size="sm" showOnlineDot={!isGroup && isOnline} isGroup={isGroup} />
         <View className="flex-1">
-          <Text className="text-foreground font-semibold text-base" numberOfLines={1}>
+          <Text className="text-foreground font-bold text-[16px]" numberOfLines={1}>
             {conversation.name ?? "Hội thoại"}
           </Text>
           <Text className={`text-xs ${isOnline && !isGroup ? "text-green-500" : "text-muted-foreground"}`} numberOfLines={1}>
@@ -50,21 +50,16 @@ export const ChatHeader = ({ conversation, isOnline = false, memberCount, onBack
         </View>
       </Pressable>
 
-      {/* Action buttons */}
-      <View className="flex-row items-center gap-0.5">
-        {/* Gọi video */}
-        <Pressable className="p-2 rounded-full active:bg-muted" hitSlop={6} accessibilityLabel="Gọi video">
-          <Ionicons name="videocam-outline" size={22} color={foreground} />
+      {/* Actions */}
+      <View className="flex-row items-center">
+        <Pressable className="p-2 active:opacity-60" hitSlop={6}>
+          <Ionicons name="call-outline" size={22} color={primary} />
         </Pressable>
-
-        {/* Gọi thoại */}
-        <Pressable className="p-2 rounded-full active:bg-muted" hitSlop={6} accessibilityLabel="Gọi thoại">
-          <Ionicons name="call-outline" size={22} color={foreground} />
+        <Pressable className="p-2 active:opacity-60" hitSlop={6}>
+          <Ionicons name="videocam-outline" size={23} color={primary} />
         </Pressable>
-
-        {/* Thông tin */}
-        <Pressable className="p-2 rounded-full active:bg-muted" hitSlop={6} accessibilityLabel="Thông tin cuộc trò chuyện">
-          <Ionicons name="information-circle-outline" size={22} color={foreground} />
+        <Pressable className="p-2 active:opacity-60" hitSlop={6}>
+          <Ionicons name="information-circle-outline" size={23} color={foreground} />
         </Pressable>
       </View>
     </View>

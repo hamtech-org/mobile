@@ -10,15 +10,15 @@ interface ChatInputProps {
 }
 
 /**
- * ChatInput — thanh nhập tin nhắn:
- * - Nút attachment icon bên trái
- * - TextInput multiline, tự grow đến 5 dòng
- * - Nút send chỉ hiện khi có nội dung (icon paper-plane)
- * - Nút emoji bên phải khi chưa có text
+ * ChatInput — Messenger/Zalo style:
+ * - Pill input (rounded-full) với bg muted
+ * - add-circle icon xanh primary bên trái
+ * - thumbs-up khi chưa gõ (giống Messenger)
+ * - Send button tròn primary khi có text
  */
 export const ChatInput = ({ onSend, sending = false }: ChatInputProps) => {
   const [content, setContent] = useState("");
-  const { muted } = useIconColors();
+  const { muted, primary } = useIconColors();
   const hasText = content.trim().length > 0;
 
   const handleSend = async () => {
@@ -29,39 +29,45 @@ export const ChatInput = ({ onSend, sending = false }: ChatInputProps) => {
   };
 
   return (
-    <View className="px-3 py-2 border-t border-border/40 bg-background flex-row items-end gap-2">
-      {/* Nút attachment */}
-      <Pressable className="p-2 rounded-full active:bg-muted mb-0.5" hitSlop={6} accessibilityLabel="Đính kèm file">
-        <Ionicons name="attach-outline" size={22} color={muted} />
+    <View className="flex-row items-end gap-2 px-3 py-2 border-t border-border/30 bg-background">
+      {/* Add / attachment icon — primary color */}
+      <Pressable className="size-9 items-center justify-center mb-0.5" hitSlop={8} accessibilityLabel="Đính kèm">
+        <Ionicons name="add-circle-outline" size={26} color={primary} />
       </Pressable>
 
-      {/* Text input */}
-      <View className="flex-1 border border-border rounded-2xl px-3 py-2 bg-muted/30 flex-row items-end">
+      {/* Pill input */}
+      <View className="flex-1 flex-row items-end bg-muted rounded-full px-4 py-2 gap-1 min-h-[40px]">
         <TextInput
-          className="flex-1 text-sm text-foreground max-h-28"
-          placeholder="Nhập tin nhắn..."
-          placeholderTextColor="hsl(215 16% 47%)"
+          className="flex-1 text-[15px] text-foreground max-h-28"
+          placeholder="Aa"
+          placeholderTextColor={muted}
           value={content}
           onChangeText={setContent}
           multiline
           returnKeyType="default"
           blurOnSubmit={false}
+          style={{ lineHeight: 20 }}
         />
+        {!hasText ? (
+          <Pressable hitSlop={8} className="mb-0.5">
+            <Ionicons name="happy-outline" size={22} color={muted} />
+          </Pressable>
+        ) : null}
       </View>
 
-      {/* Nút emoji (ẩn khi có text) hoặc Send */}
+      {/* Send tròn xanh khi có text, thumbs-up khi rỗng */}
       {hasText ? (
         <Pressable
           onPress={handleSend}
           disabled={sending}
-          className={`size-10 rounded-full bg-primary items-center justify-center mb-0.5 ${sending ? "opacity-60" : "active:opacity-80"}`}
+          className={`size-9 rounded-full bg-primary items-center justify-center mb-0.5 ${sending ? "opacity-50" : "active:opacity-80"}`}
           accessibilityLabel="Gửi tin nhắn"
         >
-          <Ionicons name="send" size={18} color="white" />
+          <Ionicons name="send" size={16} color="white" style={{ marginLeft: 2 }} />
         </Pressable>
       ) : (
-        <Pressable className="p-2 rounded-full active:bg-muted mb-0.5" hitSlop={6} accessibilityLabel="Chọn emoji">
-          <Ionicons name="happy-outline" size={22} color={muted} />
+        <Pressable className="size-9 items-center justify-center mb-0.5" hitSlop={8}>
+          <Ionicons name="thumbs-up" size={24} color={primary} />
         </Pressable>
       )}
     </View>

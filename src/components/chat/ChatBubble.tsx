@@ -35,19 +35,20 @@ export const ChatBubble = ({ message, isOwn, isGroup = false, status = "sent" }:
   const { muted, primary } = useIconColors();
 
   return (
-    <View className={`mb-1 ${isOwn ? "items-end" : "items-start"}`}>
+    <View className={`mb-0.5 ${isOwn ? "items-end" : "items-start"}`}>
       {/* Sender name — chỉ hiện cho group chat + other người */}
       {!isOwn && isGroup && message.senderDisplayName ? (
-        <Text className="text-primary text-[11px] font-semibold mb-0.5 ml-1">{message.senderDisplayName}</Text>
+        <Text className="text-primary text-[11px] font-semibold mb-1 ml-2">{message.senderDisplayName}</Text>
       ) : null}
 
       {/* Bubble */}
       <View
         className={[
-          "max-w-[80%] px-3 py-2",
-          // Tail bubble: góc gần cạnh chat = nhỏ hơn
-          isOwn ? "bg-primary rounded-2xl rounded-br-sm" : "bg-card border border-border/60 rounded-2xl rounded-bl-sm",
-          isRecalled ? "opacity-60" : "",
+          "max-w-[78%] px-4 py-2.5",
+          isOwn
+            ? "bg-primary rounded-[20px] rounded-br-[5px]"
+            : "bg-card rounded-[20px] rounded-bl-[5px]",
+          isRecalled ? "opacity-50" : "",
         ]
           .filter(Boolean)
           .join(" ")}
@@ -55,20 +56,20 @@ export const ChatBubble = ({ message, isOwn, isGroup = false, status = "sent" }:
         {isRecalled ? (
           /* Tin nhắn đã thu hồi */
           <View className="flex-row items-center gap-1.5">
-            <Ionicons name="ban-outline" size={13} color={isOwn ? "rgba(255,255,255,0.7)" : muted} />
-            <Text className={`text-sm italic ${isOwn ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+            <Ionicons name="ban-outline" size={13} color={isOwn ? "rgba(255,255,255,0.6)" : muted} />
+            <Text className={`text-sm italic ${isOwn ? "text-white/60" : "text-muted-foreground"}`}>
               Tin nhắn đã được thu hồi
             </Text>
           </View>
         ) : (
           /* Nội dung tin nhắn */
-          <Text className={`text-sm leading-5 ${isOwn ? "text-primary-foreground" : "text-foreground"}`}>{message.content}</Text>
+          <Text className={`text-[15px] leading-[22px] ${isOwn ? "text-white" : "text-foreground"}`}>{message.content}</Text>
         )}
       </View>
 
       {/* Timestamp + Status row */}
-      <View className={`flex-row items-center gap-1 mt-0.5 ${isOwn ? "flex-row-reverse" : "flex-row"}`}>
-        <Text className="text-muted-foreground text-[10px]">{formatTimestamp(message.createdAt)}</Text>
+      <View className={`flex-row items-center gap-1 mt-0.5 px-1 ${isOwn ? "flex-row-reverse" : "flex-row"}`}>
+        <Text className="text-muted-foreground text-[11px]">{formatTimestamp(message.createdAt)}</Text>
 
         {/* Status icon — chỉ cho own message */}
         {isOwn && !isRecalled ? (

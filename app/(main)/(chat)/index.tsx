@@ -1,45 +1,93 @@
+import { useMemo, useState } from "react";
 import { router } from "expo-router";
-import { FlatList, Text, View } from "react-native";
+import { FlatList, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
 
-import { Button } from "@/components/common/Button";
 import { Loading } from "@/components/common/Loading";
+import { EmptyState } from "@/components/common/EmptyState";
+import { SearchBar } from "@/components/common/SearchBar";
 import { ConversationItem } from "@/components/chat/ConversationItem";
 import { useGetConversationsQuery } from "@/store/api/chatApi";
+import { useIconColors } from "@/hooks/useIconColors";
 
 export default function ChatListScreen() {
   const { data, isLoading, isError, refetch } = useGetConversationsQuery();
+  const [searchText, setSearchText] = useState("");
+  const { primary } = useIconColors();
+
+  const filtered = useMemo(() => {
+    const list = data ?? [];
+    if (!searchText.trim()) return list;
+    const q = searchText.toLowerCase();
+    return list.filter(
+      (c) => c.name?.toLowerCase().includes(q) || c.lastMessage?.content?.toLowerCase().includes(q),
+    );
+  }, [data, searchText]);
 
   if (isLoading) {
-    return <Loading fullScreen message="Đang tải danh sách hội thoại..." />;
+    return <Loading fullScreen message="Đang tải tin nhắn..." />;
   }
 
   return (
     <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
-      <View className="flex-1 px-4 py-4 gap-4">
-        <Text className="text-foreground text-xl font-bold">Chat</Text>
-
-        {isError ? (
-          <View className="bg-card border border-border rounded-2xl p-5 gap-3">
-            <Text className="text-destructive text-sm">Không tải được danh sách hội thoại.</Text>
-            <Button label="Thử lại" size="sm" onPress={() => void refetch()} />
-          </View>
-        ) : (
-          <FlatList
-            data={data ?? []}
-            keyExtractor={(item) => item.conversationId}
-            contentContainerStyle={{ gap: 10, paddingBottom: 16, flexGrow: (data?.length ?? 0) === 0 ? 1 : undefined }}
-            renderItem={({ item }) => (
-              <ConversationItem conversation={item} onPress={() => router.push(`/(main)/(chat)/${item.conversationId}`)} />
-            )}
-            ListEmptyComponent={
-              <View className="flex-1 items-center justify-center">
-                <Text className="text-muted-foreground">Chưa có hội thoại nào.</Text>
-              </View>
-            }
-          />
-        )}
+      {/* Header — "Tin nhắn" bold + action icons */}
+      <View className="flex-row items-center justify-between px-4 pt-3 pb-2">
+        <Text className="text-foreground text-2xl font-bold tracking-tight">Tin nhắn</Text>
+        <View className="flex-row gap-1">
+          <Pressable className="size-9 items-center justify-center rounded-full active:opacity-70" hitSlop={6}>
+            <Ionicons name="search-outline" size={22} color={primary} />
+          </Pressable>
+          <Pressable className="size-9 items-center justify-center rounded-full active:opacity-70" hitSlop={6}>
+            <Ionicons name="create-outline" size={22} color={primary} />
+          </Pressable>
+        </View>
       </View>
+
+      {/* Search bar */}
+      <View className="px-4 pb-2">
+        <SearchBar value={searchText} onChangeText={setSearchText} placeholder="Tìm trong tin nhắn..." />
+      </View>
+
+      {/* Thin divider */}
+      <View className="h-px bg-border/50" />
+
+      {isError ? (
+        <EmptyState
+          icon="cloud-offline-outline"
+          title="Không tải được tin nhắn"
+          description="Kiểm tra kết nối mạng và thử lại."
+          action={{ label: "Thử lại", onPress: () => void refetch() }}
+        />
+      ) : (
+        <FlatList
+          data={filtered}
+          keyExtractor={(item) => item.conversationId}
+          contentContainerStyle={{
+            paddingVertical: 4,
+            flexGrow: filtered.length === 0 ? 1 : undefined,
+          }}
+          renderItem={({ item }) => (
+            <ConversationItem
+              conversation={item}
+              onPress={() => router.push(`/(main)/(chat)/${item.conversationId}`)}
+            />
+          )}
+          ListEmptyComponent={
+            <EmptyState
+              icon={searchText ? "search-outline" : "chatbubbles-outline"}
+              title={searchText ? "Không tìm thấy" : "Chưa có tin nhắn"}
+              description={
+                searchText
+                  ? `Không có hội thoại nào khớp với "${searchText}"`
+                  : "Bắt đầu nhắn tin với bạn bè!"
+              }
+            />
+          }
+          showsVerticalScrollIndicator={false}
+          ItemSeparatorComponent={() => <View className="h-px bg-border/30 ml-[76px]" />}
+        />
+      )}
     </SafeAreaView>
   );
 }
