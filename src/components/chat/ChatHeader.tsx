@@ -31,20 +31,20 @@ export const ChatHeader = ({ conversation, isOnline = false, memberCount, onBack
   const subtitle = isGroup ? (memberCount !== undefined ? `${memberCount} thành viên` : "Nhóm") : isOnline ? "Đang hoạt động" : "Offline";
 
   return (
-    <View className="flex-row items-center bg-background border-b border-border/30 px-1 py-2">
+    <View className="flex-row items-center bg-background border-b border-border/30 px-2 py-2">
       {/* Back */}
       <Pressable onPress={handleBack} className="p-2 active:opacity-60" hitSlop={8}>
-        <Ionicons name="arrow-back" size={24} color={foreground} />
+        <Ionicons name="arrow-back" size={26} color={foreground} />
       </Pressable>
 
       {/* Avatar + info */}
-      <Pressable className="flex-1 flex-row items-center gap-2.5 px-1 active:opacity-80">
-        <Avatar uri={conversation.avatar} name={conversation.name} size="sm" showOnlineDot={!isGroup && isOnline} isGroup={isGroup} />
+      <Pressable className="flex-1 flex-row items-center gap-3 px-1 active:opacity-80">
+        <Avatar uri={conversation.avatar} name={conversation.name} size="md" showOnlineDot={!isGroup && isOnline} isGroup={isGroup} />
         <View className="flex-1">
-          <Text className="text-foreground font-bold text-[16px]" numberOfLines={1}>
+          <Text className="text-foreground font-bold text-[18px]" numberOfLines={1}>
             {conversation.name ?? "Hội thoại"}
           </Text>
-          <Text className={`text-xs ${isOnline && !isGroup ? "text-green-500" : "text-muted-foreground"}`} numberOfLines={1}>
+          <Text className={`text-[13px] ${isOnline && !isGroup ? "text-green-500" : "text-muted-foreground"}`} numberOfLines={1}>
             {subtitle}
           </Text>
         </View>
@@ -53,13 +53,13 @@ export const ChatHeader = ({ conversation, isOnline = false, memberCount, onBack
       {/* Actions */}
       <View className="flex-row items-center">
         <Pressable className="p-2 active:opacity-60" hitSlop={6}>
-          <Ionicons name="call-outline" size={22} color={primary} />
+          <Ionicons name="call-outline" size={25} color={primary} />
         </Pressable>
         <Pressable className="p-2 active:opacity-60" hitSlop={6}>
-          <Ionicons name="videocam-outline" size={23} color={primary} />
+          <Ionicons name="videocam-outline" size={26} color={primary} />
         </Pressable>
         <Pressable className="p-2 active:opacity-60" hitSlop={6}>
-          <Ionicons name="information-circle-outline" size={23} color={foreground} />
+          <Ionicons name="information-circle-outline" size={26} color={foreground} />
         </Pressable>
       </View>
     </View>
