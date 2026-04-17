@@ -38,12 +38,12 @@ export const Input = ({
     onChangeText?.(value);
   };
 
-  const wrapperSizeClassName = size === "sm" ? "px-2.5 py-1.5 rounded-lg" : "px-3 py-2 rounded-xl";
-  const inputSizeClassName = size === "sm" ? "text-xs" : "text-sm";
+  const wrapperSizeClassName = size === "sm" ? "px-2 py-1 rounded-md" : "px-2.5 py-1.5 rounded-lg";
+  const inputSizeClassName = size === "sm" ? "text-xs" : "text-xs";
 
   return (
     <View className={`gap-2 ${containerClassName ?? ""}`}>
-      <Text className="text-foreground text-sm font-medium">
+      <Text className="text-foreground text-xs font-medium">
         {label}
         {required ? <Text className="text-destructive"> *</Text> : null}
       </Text>
