@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "zalogram",
-    "slug": "zalogram",
+    "name": "hamtech",
+    "slug": "hamtech",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "scheme": "zalogram",
+    "scheme": "hamtech",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
@@ -17,7 +17,7 @@
       "supportsTablet": true
     },
     "android": {
-      "package": "com.zalogram.mobile",
+      "package": "com.hamtech.mobile",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"

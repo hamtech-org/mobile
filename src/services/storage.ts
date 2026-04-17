@@ -1,8 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
 
-const ACCESS_TOKEN_KEY = "zalogram_access_token";
-const REFRESH_TOKEN_KEY = "zalogram_refresh_token";
+const ACCESS_TOKEN_KEY = "hamtech_access_token";
+const REFRESH_TOKEN_KEY = "hamtech_refresh_token";
 
 export const secureStorage = {
   getAccessToken: () => SecureStore.getItemAsync(ACCESS_TOKEN_KEY),

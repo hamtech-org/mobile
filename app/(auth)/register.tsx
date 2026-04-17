@@ -9,7 +9,7 @@ export default function RegisterScreen() {
         <View className="bg-card border border-border rounded-2xl p-5 gap-5">
           <View className="gap-1">
             <Text className="text-foreground text-2xl font-bold">Tạo tài khoản</Text>
-            <Text className="text-muted-foreground text-sm">Tham gia Zalogram để bắt đầu kết nối.</Text>
+            <Text className="text-muted-foreground text-sm">Tham gia Hamtech để bắt đầu kết nối.</Text>
           </View>
           <RegisterForm />
         </View>

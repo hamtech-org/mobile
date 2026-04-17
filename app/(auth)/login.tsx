@@ -10,7 +10,7 @@ export default function LoginScreen() {
         <View className="bg-card border border-border rounded-2xl p-5 gap-5">
           <View className="gap-1">
             <Text className="text-foreground text-2xl font-bold">Đăng nhập</Text>
-            <Text className="text-muted-foreground text-sm">Chào mừng bạn quay lại Zalogram.</Text>
+            <Text className="text-muted-foreground text-sm">Chào mừng bạn quay lại Hamtech.</Text>
           </View>
           <LoginForm />
           <Link href="/(auth)/register" asChild>
