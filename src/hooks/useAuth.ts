@@ -14,6 +14,7 @@ import {
 import { clearAuthState, setAuthState } from "@/store/slices/authSlice";
 import { secureStorage } from "@/services/storage";
 import { fetchCurrentUserProfile } from "@/services/userProfile";
+import { extractMutationErrorMessage } from "@/utils/apiError";
 import { useAppDispatch, useAppSelector } from "./useAppStore";
 
 interface RegisterPayload {
@@ -58,7 +59,10 @@ export const useAuth = () => {
     async (email: string, password: string): Promise<boolean> => {
       try {
         await loginMutation({ email, password }).unwrap();
-        router.push({ pathname: "/(auth)/otp-verification", params: { email, mode: "login" } });
+        router.push({
+          pathname: "/(auth)/otp-verification",
+          params: { email, mode: "login", notice: "Đã gửi OTP đăng nhập. Vui lòng kiểm tra email." },
+        });
         return true;
       } catch {
         return false;
@@ -71,7 +75,10 @@ export const useAuth = () => {
     async (payload: RegisterPayload): Promise<boolean> => {
       try {
         await registerMutation(payload).unwrap();
-        router.push({ pathname: "/(auth)/otp-verification", params: { email: payload.email, mode: "register" } });
+        router.push({
+          pathname: "/(auth)/otp-verification",
+          params: { email: payload.email, mode: "register", notice: "Đã gửi OTP xác thực email đăng ký." },
+        });
         return true;
       } catch {
         return false;
@@ -152,13 +159,13 @@ export const useAuth = () => {
     logoutState.isLoading;
 
   const errorMessage =
-    (loginState.error as { data?: { message?: string } } | undefined)?.data?.message ??
-    (registerState.error as { data?: { message?: string } } | undefined)?.data?.message ??
-    (verifyLoginOtpState.error as { data?: { message?: string } } | undefined)?.data?.message ??
-    (verifyEmailState.error as { data?: { message?: string } } | undefined)?.data?.message ??
-    (forgotPasswordState.error as { data?: { message?: string } } | undefined)?.data?.message ??
-    (resetPasswordState.error as { data?: { message?: string } } | undefined)?.data?.message ??
-    (logoutState.error as { data?: { message?: string } } | undefined)?.data?.message ??
+    extractMutationErrorMessage(loginState.error) ??
+    extractMutationErrorMessage(registerState.error) ??
+    extractMutationErrorMessage(verifyLoginOtpState.error) ??
+    extractMutationErrorMessage(verifyEmailState.error) ??
+    extractMutationErrorMessage(forgotPasswordState.error) ??
+    extractMutationErrorMessage(resetPasswordState.error) ??
+    extractMutationErrorMessage(logoutState.error) ??
     null;
 
   return {

@@ -18,13 +18,13 @@ const resetSchema = z.object({
 });
 
 export default function OtpVerificationScreen() {
-  const { email, mode } = useLocalSearchParams<{ email?: string; mode?: string }>();
+  const { email, mode, notice } = useLocalSearchParams<{ email?: string; mode?: string; notice?: string }>();
   const { verifyLoginOtp, verifyRegisterOtp, resetPassword, isLoading, errorMessage } = useAuth();
   const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [otpError, setOtpError] = useState<string | undefined>();
   const [passwordError, setPasswordError] = useState<string | undefined>();
-  const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  const [infoMessage, setInfoMessage] = useState<string | null>(notice ?? null);
 
   const handleVerify = async () => {
     const parsed = otpSchema.safeParse({ otp });
