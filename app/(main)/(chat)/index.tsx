@@ -20,9 +20,7 @@ export default function ChatListScreen() {
     const list = data ?? [];
     if (!searchText.trim()) return list;
     const q = searchText.toLowerCase();
-    return list.filter(
-      (c) => c.name?.toLowerCase().includes(q) || c.lastMessage?.content?.toLowerCase().includes(q),
-    );
+    return list.filter((c) => c.name?.toLowerCase().includes(q) || c.lastMessage?.content?.toLowerCase().includes(q));
   }, [data, searchText]);
 
   if (isLoading) {
@@ -46,7 +44,7 @@ export default function ChatListScreen() {
 
       {/* Search bar */}
       <View className="px-4 pb-2">
-        <SearchBar value={searchText} onChangeText={setSearchText} placeholder="Tìm trong tin nhắn..." />
+        <SearchBar value={searchText} onChangeText={setSearchText} placeholder="Tìm kiếm..." />
       </View>
 
       {/* Thin divider */}
@@ -68,20 +66,13 @@ export default function ChatListScreen() {
             flexGrow: filtered.length === 0 ? 1 : undefined,
           }}
           renderItem={({ item }) => (
-            <ConversationItem
-              conversation={item}
-              onPress={() => router.push(`/(main)/(chat)/${item.conversationId}`)}
-            />
+            <ConversationItem conversation={item} onPress={() => router.push(`/(main)/(chat)/${item.conversationId}`)} />
           )}
           ListEmptyComponent={
             <EmptyState
               icon={searchText ? Search : MessageSquare}
               title={searchText ? "Không tìm thấy" : "Chưa có tin nhắn"}
-              description={
-                searchText
-                  ? `Không có hội thoại nào khớp với "${searchText}"`
-                  : "Bắt đầu nhắn tin với bạn bè!"
-              }
+              description={searchText ? `Không có hội thoại nào khớp với "${searchText}"` : "Bắt đầu nhắn tin với bạn bè!"}
             />
           }
           showsVerticalScrollIndicator={false}
