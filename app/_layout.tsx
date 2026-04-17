@@ -1,6 +1,7 @@
 import "../src/theme/global.css";
 import { Stack } from "expo-router";
 import { Provider } from "react-redux";
+import { KeyboardProvider } from "react-native-keyboard-controller";
 
 import { AuthProvider } from "@/contexts/AuthContext";
 import { CallProvider } from "@/contexts/CallContext";
@@ -13,7 +14,9 @@ export default function RootLayout() {
       <AuthProvider>
         <SocketProvider>
           <CallProvider>
-            <Stack screenOptions={{ headerShown: false }} />
+            <KeyboardProvider>
+              <Stack screenOptions={{ headerShown: false }} />
+            </KeyboardProvider>
           </CallProvider>
         </SocketProvider>
       </AuthProvider>
