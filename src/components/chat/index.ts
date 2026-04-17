@@ -1,5 +1,7 @@
-// Chat components — barrel export
-export { ChatBubble } from "@/components/chat/ChatBubble";
-export { ChatHeader } from "@/components/chat/ChatHeader";
-export { ChatInput } from "@/components/chat/ChatInput";
-export { ConversationItem } from "@/components/chat/ConversationItem";
+export { ChatBubble } from "./ChatBubble";
+export { ChatHeader } from "./ChatHeader";
+export { ChatInput } from "./ChatInput";
+export type { PendingAttachment } from "./ChatInput";
+export { ConversationItem } from "./ConversationItem";
+export { MessageActionSheet } from "./MessageActionSheet";
+export { TypingIndicator } from "./TypingIndicator";

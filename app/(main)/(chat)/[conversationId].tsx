@@ -1,150 +1,232 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useFocusEffect, useLocalSearchParams } from "expo-router";
-import { FlatList, Text, View } from "react-native";
+import { useCallback, useRef, useState, useMemo } from "react";
+import { useLocalSearchParams } from "expo-router";
+import { FlatList, View, Alert } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 
-import { ChatBubble } from "@/components/chat/ChatBubble";
-import { ChatHeader } from "@/components/chat/ChatHeader";
-import { ChatInput } from "@/components/chat/ChatInput";
+import { ChatBubble, ChatHeader, ChatInput, MessageActionSheet, TypingIndicator, type PendingAttachment } from "@/components/chat";
+import { MessageSquare } from "lucide-react-native";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Loading } from "@/components/common/Loading";
-import { useAppSelector } from "@/hooks/useAppStore";
+import { useUploadMediaMutation } from "@/store/api/mediaApi";
+import { useAppDispatch, useAppSelector } from "@/hooks/useAppStore";
 import { useChat } from "@/hooks/useChat";
 import { useSocket } from "@/hooks/useSocket";
-import { useGetConversationsQuery, useGetMessagesQuery, type ChatMessage } from "@/store/api/chatApi";
+import { useChatMessageData } from "@/hooks/useChatMessageData";
+import { useChatRealtimeEvents } from "@/hooks/useChatRealtimeEvents";
+import { useConversationLifecycle } from "@/hooks/useConversationLifecycle";
+import { useGetConversationsQuery } from "@/store/api/chatApi";
+import { setReplyingTo, clearReplyingTo } from "@/store/slices/chatSlice";
+import type { IMessage } from "@/types/chat.types";
 
+const EMPTY_TYPING_USERS: any[] = [];
+
+/**
+ * ChatDetailScreen — Màn hình chi tiết cuộc trò chuyện.
+ * Tích hợp full realtime, media, reply, actions và typing indicators.
+ */
 export default function ChatDetailScreen() {
   const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
-  const userId = useAppSelector((state) => state.auth.user?.userId);
+  const dispatch = useAppDispatch();
   const socket = useSocket();
-  const { sendMessage, isSending } = useChat();
-  const listRef = useRef<FlatList<ChatMessage>>(null);
-
-  const { data, isLoading, isError, refetch } = useGetMessagesQuery({ conversationId, limit: 40 }, { skip: !conversationId });
-
-  // Lấy thông tin conversation từ cache RTK Query (không gọi API thêm)
-  const { conversation } = useGetConversationsQuery(undefined, {
-    selectFromResult: ({ data: convList }) => ({
-      conversation: convList?.find((c) => c.conversationId === conversationId),
-    }),
-  });
-
-  const [realtimeMessages, setRealtimeMessages] = useState<ChatMessage[]>([]);
   const insets = useSafeAreaInsets();
-  const isGroup = conversation?.type === "group";
 
-  // Reset realtime messages khi chuyển conversation
-  useFocusEffect(
-    useCallback(() => {
-      setRealtimeMessages([]);
-    }, [conversationId]),
+  const currentUserId = useAppSelector((state) => state.auth.user?.userId);
+  const replyingTo = useAppSelector((state) => state.chat.replyingTo);
+  const typingUsers = useAppSelector((state) => 
+    conversationId ? (state.chat.typingUsers[conversationId] ?? EMPTY_TYPING_USERS) : EMPTY_TYPING_USERS
   );
 
-  // Socket.io: join room + lắng nghe tin nhắn mới
-  useEffect(() => {
-    if (!socket || !conversationId) return;
+  const listRef = useRef<FlatList<IMessage>>(null);
+  const [selectedMessage, setSelectedMessage] = useState<IMessage | null>(null);
 
-    socket.emit("conversation:join", conversationId);
+  // 1. Data logic: Merge API + Socket messages
+  const { allMessages, isLoading, isError, refetch, latestMessageId } = useChatMessageData(conversationId);
 
-    const onMessageNew = (message: ChatMessage) => {
-      if (message.conversationId !== conversationId) return;
-      setRealtimeMessages((prev) => {
-        if (prev.some((item) => item.messageId === message.messageId)) return prev;
-        return [message, ...prev];
-      });
-    };
+  // 2. Realtime logic: Listen to 8 socket events
+  useChatRealtimeEvents({
+    dispatch,
+    socket,
+    activeConversationId: conversationId,
+  });
 
-    socket.on("message:new", onMessageNew);
+  // 3. Lifecycle logic: Room join/leave + Auto markAsRead
+  useConversationLifecycle({
+    socket,
+    conversationId,
+    latestMessageId,
+  });
 
-    return () => {
-      socket.off("message:new", onMessageNew);
-      socket.emit("conversation:leave", conversationId);
-    };
-  }, [conversationId, socket]);
+  // 4. Messaging actions
+  const {
+    sendMessage,
+    sendMediaMessage,
+    sendReplyMessage,
+    editMessage,
+    recallMessage,
+    deleteMessage,
+    togglePinMessage,
+    reactMessage,
+    emitTyping,
+    isSending,
+  } = useChat();
 
-  // Merge API messages + realtime messages (dedup by messageId)
-  const messages = useMemo(() => {
-    const base = data ?? [];
-    const map = new Map<string, ChatMessage>();
-    [...realtimeMessages, ...base].forEach((item) => map.set(item.messageId, item));
-    return Array.from(map.values()).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-  }, [data, realtimeMessages]);
+  const [uploadMedia, { isLoading: isUploading }] = useUploadMediaMutation();
 
-  const handleSend = async (content: string) => {
-    if (!conversationId) return;
-    await sendMessage(conversationId, content);
-  };
+  // 5. Lấy thông tin conversation từ cache (Memoized for stability)
+  const { data: convList } = useGetConversationsQuery();
+  const conversation = useMemo(
+    () => convList?.find((c) => c.conversationId === conversationId),
+    [convList, conversationId],
+  );
 
-  // --- Guards ---
-  if (!conversationId) {
-    return (
-      <View className="flex-1 bg-background items-center justify-center">
-        <Text className="text-destructive">Thiếu conversationId.</Text>
-      </View>
-    );
-  }
+  const isGroup = conversation?.type === "group";
+
+  // --- Handlers ---
+
+  const handleSendMessage = useCallback(
+    async (content: string) => {
+      if (!conversationId) return;
+
+      if (replyingTo) {
+        await sendReplyMessage(conversationId, content, replyingTo.messageId);
+        dispatch(clearReplyingTo());
+      } else {
+        await sendMessage(conversationId, content);
+      }
+
+      // Auto scroll to bottom (đầu danh sách vì inverted)
+      listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    },
+    [conversationId, replyingTo, sendReplyMessage, sendMessage, dispatch],
+  );
+
+  const handleSendMedia = useCallback(
+    async (attachment: PendingAttachment, caption: string) => {
+      if (!conversationId) return;
+
+      try {
+        // 1. Xác định mediaType
+        const mediaType = attachment.mimeType.startsWith("image/") ? "image" : attachment.mimeType.startsWith("video/") ? "video" : "file";
+
+        // 2. Upload file thực tế
+        const uploadRes = await uploadMedia({
+          file: {
+            uri: attachment.uri,
+            name: attachment.name,
+            type: attachment.mimeType,
+          },
+          mediaType,
+        }).unwrap();
+
+        // 3. Gửi tin nhắn với mediaId nhận được từ backend
+        await sendMediaMessage(conversationId, mediaType, caption, uploadRes.mediaId, replyingTo?.messageId);
+
+        if (replyingTo) dispatch(clearReplyingTo());
+        listRef.current?.scrollToOffset({ offset: 0, animated: true });
+      } catch (err) {
+        console.error("Upload/Send failed:", err);
+        Alert.alert("Lỗi", "Không thể gửi file. Vui lòng thử lại.");
+      }
+    },
+    [conversationId, uploadMedia, sendMediaMessage, replyingTo, dispatch],
+  );
+
+  const handleLongPressMessage = useCallback((msg: IMessage) => {
+    setSelectedMessage(msg);
+  }, []);
+
+  const handleReply = useCallback(
+    (msg: IMessage) => {
+      dispatch(setReplyingTo(msg));
+    },
+    [dispatch],
+  );
+
+  const handleJumpToMessage = useCallback(
+    (messageId: string) => {
+      // Logic scroll đến tin nhắn cụ thể
+      const index = allMessages.findIndex((m) => m.messageId === messageId);
+      if (index !== -1) {
+        listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
+      }
+    },
+    [allMessages],
+  );
+
+  const handleTyping = useCallback(() => {
+    if (conversationId) emitTyping(conversationId);
+  }, [conversationId, emitTyping]);
 
   if (isLoading) {
     return <Loading fullScreen message="Đang tải tin nhắn..." />;
   }
 
-  if (isError) {
-    return (
-      <View className="flex-1 bg-background">
-        {conversation ? <ChatHeader conversation={conversation} /> : null}
-        <EmptyState
-          icon="cloud-offline-outline"
-          title="Không tải được tin nhắn"
-          description="Kiểm tra kết nối mạng và thử lại."
-          action={{ label: "Thử lại", onPress: () => void refetch() }}
-        />
-      </View>
-    );
-  }
-
   return (
     <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
       {/* Header */}
-      {conversation ? (
-        <ChatHeader conversation={conversation} />
-      ) : (
-        <View className="px-4 py-3 border-b border-border/40">
-          <Text className="text-foreground text-lg font-bold">Hội thoại</Text>
-        </View>
+      {conversation && (
+        <ChatHeader
+          conversation={conversation}
+          currentUserId={currentUserId}
+          typingUsers={typingUsers}
+          memberCount={conversation.memberCount}
+        />
       )}
 
-      {/*
-        KeyboardAvoidingView từ react-native-keyboard-controller:
-        Xử lý đúng với Edge-to-Edge Android 15+ và iOS
-        behavior="padding" hoạt động tốt trên cả hai nền tảng
-      */}
+      {/* Message List */}
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
-        {/* Message list */}
         <FlatList
           ref={listRef}
-          data={messages}
+          data={allMessages}
           keyExtractor={(item) => item.messageId}
-          contentContainerStyle={{
-            paddingHorizontal: 12,
-            paddingTop: 8,
-            paddingBottom: 8,
-            flexGrow: messages.length === 0 ? 1 : undefined,
-          }}
           inverted
           keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-          renderItem={({ item }) => <ChatBubble message={item} isOwn={Boolean(userId && item.senderId === userId)} isGroup={isGroup} />}
-          ListEmptyComponent={
-            <EmptyState icon="chatbubble-ellipses-outline" title="Chưa có tin nhắn" description="Hãy bắt đầu cuộc trò chuyện!" />
-          }
+          contentContainerStyle={{
+            paddingHorizontal: 8,
+            paddingBottom: 16,
+            flexGrow: allMessages.length === 0 ? 1 : undefined,
+          }}
+          renderItem={({ item, index }) => (
+            <ChatBubble
+              message={item}
+              isOwn={item.senderId === currentUserId}
+              isGroup={isGroup}
+              prevMessage={allMessages[index + 1]} // index + 1 vì inverted
+              nextMessage={allMessages[index - 1]}
+              onLongPress={handleLongPressMessage}
+              onPressReplyTo={handleJumpToMessage}
+            />
+          )}
+          ListEmptyComponent={<EmptyState icon={MessageSquare} title="Chưa có tin nhắn" description="Hãy bắt đầu cuộc trò chuyện!" />}
         />
 
-        {/* Input bar — padding bottom = safe area để tránh home bar */}
+        {/* Typing & Input */}
         <View style={{ paddingBottom: insets.bottom }}>
-          <ChatInput onSend={handleSend} sending={isSending} />
+          <TypingIndicator typingUsers={typingUsers} currentUserId={currentUserId ?? ""} />
+          <ChatInput
+            onSend={handleSendMessage}
+            onSendMedia={handleSendMedia}
+            sending={isSending || isUploading}
+            replyingTo={replyingTo}
+            onClearReply={() => dispatch(clearReplyingTo())}
+            onTyping={handleTyping}
+          />
         </View>
       </KeyboardAvoidingView>
+
+      {/* Action Menu */}
+      <MessageActionSheet
+        message={selectedMessage}
+        isOwn={selectedMessage?.senderId === currentUserId}
+        onClose={() => setSelectedMessage(null)}
+        onReply={handleReply}
+        onEdit={(msg) => Alert.alert("Sửa tin nhắn", "Tính năng đang hoàn thiện")}
+        onRecall={recallMessage}
+        onDelete={deleteMessage}
+        onTogglePin={togglePinMessage}
+        onReact={reactMessage}
+      />
     </SafeAreaView>
   );
 }

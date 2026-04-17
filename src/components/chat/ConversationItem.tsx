@@ -2,12 +2,11 @@ import { Pressable, Text, View } from "react-native";
 
 import { Avatar } from "@/components/common/Avatar";
 import { Badge } from "@/components/common/Badge";
-import type { Conversation } from "@/store/api/chatApi";
+import type { IConversation } from "@/types/chat.types";
 
 interface ConversationItemProps {
-  conversation: Conversation;
+  conversation: IConversation;
   onPress: () => void;
-  unreadCount?: number;
   isOnline?: boolean;
 }
 
@@ -23,31 +22,52 @@ function formatTime(isoString: string): string {
   return date.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" });
 }
 
+function getMediaLabel(type: string): string {
+  switch (type) {
+    case "image": return "[Ảnh]";
+    case "video": return "[Video]";
+    case "file": return "[File]";
+    case "poll": return "[Bình chọn]";
+    case "task": return "[Giao việc]";
+    case "call": return "[Cuộc gọi]";
+    default: return "";
+  }
+}
+
 /**
  * ConversationItem — Messenger/Zalo flat style:
- * - Không có card border — flat trên background
- * - Avatar lớn bên trái với online dot
- * - Tên bold khi có unread
- * - Preview tin nhắn cuối
- * - Thời gian + unread badge phải
+ * - Hiển thị unread badge và media preview [Ảnh], [Video],...
+ * - Tên bold khi có tin mới chưa đọc
  */
-export const ConversationItem = ({ conversation, onPress, unreadCount = 0, isOnline = false }: ConversationItemProps) => {
+export const ConversationItem = ({ 
+  conversation, 
+  onPress, 
+  isOnline = false 
+}: ConversationItemProps) => {
   const isGroup = conversation.type === "group";
   const lastMsg = conversation.lastMessage;
+  const unreadCount = conversation.unreadCount ?? 0;
   const hasUnread = unreadCount > 0;
 
-  const preview = lastMsg
-    ? isGroup && lastMsg.senderDisplayName
-      ? `${lastMsg.senderDisplayName}: ${lastMsg.content}`
-      : lastMsg.content
-    : "Chưa có tin nhắn";
+  // Render preview text
+  let preview = "Chưa có tin nhắn";
+  if (lastMsg) {
+    const mediaLabel = getMediaLabel(lastMsg.type);
+    const content = lastMsg.content?.trim() || mediaLabel || "Tin nhắn mới";
+    
+    if (isGroup && lastMsg.senderDisplayName) {
+      preview = `${lastMsg.senderDisplayName}: ${content}`;
+    } else {
+      preview = content;
+    }
+  }
 
   return (
     <Pressable onPress={onPress} className="flex-row items-center gap-3 px-4 py-3 active:bg-muted/60">
       {/* Avatar */}
       <Avatar
-        uri={conversation.avatar}
-        name={conversation.name}
+        uri={conversation.avatar || undefined}
+        name={conversation.name || undefined}
         size="lg"
         showOnlineDot={!isGroup && isOnline}
         isGroup={isGroup}
@@ -58,13 +78,13 @@ export const ConversationItem = ({ conversation, onPress, unreadCount = 0, isOnl
         {/* Row 1: Tên + thời gian */}
         <View className="flex-row items-center justify-between gap-2">
           <Text
-            className={`flex-1 text-[15px] ${hasUnread ? "text-foreground font-bold" : "text-foreground font-semibold"}`}
+            className={`flex-1 text-[16px] ${hasUnread ? "text-foreground font-bold" : "text-foreground font-semibold"}`}
             numberOfLines={1}
           >
             {conversation.name ?? "Hội thoại"}
           </Text>
           {lastMsg?.createdAt ? (
-            <Text className={`text-xs shrink-0 ${hasUnread ? "text-primary font-medium" : "text-muted-foreground"}`}>
+            <Text className={`text-[12px] shrink-0 ${hasUnread ? "text-primary font-bold" : "text-muted-foreground"}`}>
               {formatTime(lastMsg.createdAt)}
             </Text>
           ) : null}
@@ -73,12 +93,14 @@ export const ConversationItem = ({ conversation, onPress, unreadCount = 0, isOnl
         {/* Row 2: Preview + badge */}
         <View className="flex-row items-center justify-between gap-2">
           <Text
-            className={`flex-1 text-sm ${hasUnread ? "text-foreground font-medium" : "text-muted-foreground"}`}
+            className={`flex-1 text-[14px] ${hasUnread ? "text-foreground font-semibold" : "text-muted-foreground"}`}
             numberOfLines={1}
           >
             {preview}
           </Text>
-          {hasUnread ? <Badge count={unreadCount} variant="primary" /> : null}
+          {hasUnread ? (
+            <Badge count={unreadCount} variant="primary" />
+          ) : null}
         </View>
       </View>
     </Pressable>
