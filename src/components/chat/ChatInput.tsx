@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { Alert, Image, Pressable, Text, TextInput, View } from "react-native";
-import { Video, ResizeMode } from "expo-av";
+import { useVideoPlayer, VideoView } from "expo-video";
 import {
   Camera,
   FileText,
@@ -181,13 +181,9 @@ export const ChatInput = ({
                 accessibilityLabel="Xem trước ảnh"
               />
             ) : attachment.mimeType.startsWith("video/") ? (
-              <Video
-                source={{ uri: attachment.uri }}
-                style={{ width: "100%", height: 200 }}
-                resizeMode={ResizeMode.COVER}
-                useNativeControls
-                isLooping={false}
-                accessibilityLabel="Xem trước video"
+              <AttachmentVideoPreview
+                key={attachment.uri}
+                uri={attachment.uri}
               />
             ) : (
               <View className="flex-row items-center gap-3 px-4 py-6">
@@ -311,6 +307,23 @@ export const ChatInput = ({
     </View>
   );
 };
+
+/** Preview video trước khi gửi — dùng expo-video thay cho expo-av (deprecated). */
+function AttachmentVideoPreview({ uri }: { uri: string }) {
+  const player = useVideoPlayer(uri, (p) => {
+    p.loop = false;
+  });
+
+  return (
+    <VideoView
+      player={player}
+      style={{ width: "100%", height: 200 }}
+      contentFit="cover"
+      nativeControls
+      accessibilityLabel="Xem trước video"
+    />
+  );
+}
 
 // ── Media Menu Item ──────────────────────────────────────────────────────
 
