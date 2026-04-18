@@ -33,8 +33,8 @@ export default function ChatDetailScreen() {
 
   const currentUserId = useAppSelector((state) => state.auth.user?.userId);
   const replyingTo = useAppSelector((state) => state.chat.replyingTo);
-  const typingUsers = useAppSelector((state) => 
-    conversationId ? (state.chat.typingUsers[conversationId] ?? EMPTY_TYPING_USERS) : EMPTY_TYPING_USERS
+  const typingUsers = useAppSelector((state) =>
+    conversationId ? (state.chat.typingUsers[conversationId] ?? EMPTY_TYPING_USERS) : EMPTY_TYPING_USERS,
   );
 
   const listRef = useRef<FlatList<IMessage>>(null);
@@ -75,10 +75,7 @@ export default function ChatDetailScreen() {
 
   // 5. Lấy thông tin conversation từ cache (Memoized for stability)
   const { data: convList } = useGetConversationsQuery();
-  const conversation = useMemo(
-    () => convList?.find((c) => c.conversationId === conversationId),
-    [convList, conversationId],
-  );
+  const conversation = useMemo(() => convList?.find((c) => c.conversationId === conversationId), [convList, conversationId]);
 
   const isGroup = conversation?.type === "group";
 
