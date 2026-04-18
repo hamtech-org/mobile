@@ -26,8 +26,11 @@ interface UseChatRealtimeEventsParams {
  * Hook xử lý tất cả socket events cho chat.
  * Copy-adapt pattern từ web's useChatRealtimeEvents.
  */
+const TYPING_INDICATOR_IDLE_MS = 2500;
+
 export function useChatRealtimeEvents({ dispatch, socket, activeConversationId }: UseChatRealtimeEventsParams): void {
   const activeConvRef = useRef<string | null>(activeConversationId);
+  const typingIndicatorTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   useEffect(() => {
     activeConvRef.current = activeConversationId;
@@ -35,6 +38,13 @@ export function useChatRealtimeEvents({ dispatch, socket, activeConversationId }
 
   useEffect(() => {
     if (!socket) return;
+    const timers = typingIndicatorTimersRef.current;
+
+    const clearTypingIndicatorTimer = (key: string) => {
+      const t = timers[key];
+      if (t) clearTimeout(t);
+      delete timers[key];
+    };
 
     // ── message:new ──────────────────────────────────────────────────
     const handleNewMessage = (msg: IMessage) => {
@@ -130,23 +140,53 @@ export function useChatRealtimeEvents({ dispatch, socket, activeConversationId }
       );
     };
 
+    /** Backend emit `message:typing_indicator` (không có isTyping: false). */
+    const handleTypingIndicator = (payload: {
+      userId: string;
+      conversationId: string;
+      displayName?: string | null;
+    }) => {
+      const key = `${payload.conversationId}:${payload.userId}`;
+      const name = payload.displayName?.trim();
+      dispatch(
+        typingStarted({
+          conversationId: payload.conversationId,
+          userId: payload.userId,
+          displayName: name ? name : undefined,
+        }),
+      );
+      clearTypingIndicatorTimer(key);
+      timers[key] = setTimeout(() => {
+        dispatch(typingStopped({ conversationId: payload.conversationId, userId: payload.userId }));
+        delete timers[key];
+      }, TYPING_INDICATOR_IDLE_MS);
+    };
+
     socket.on("message:new", handleNewMessage);
     socket.on("message:edited", handleEdited);
     socket.on("message:recalled", handleRecalled);
+    socket.on("message:recall", handleRecalled);
     socket.on("message:hidden_for_me", handleHiddenForMe);
     socket.on("message:pin_updated", handlePinUpdated);
     socket.on("message:reacted", handleReaction);
     socket.on("message:typing", handleTyping);
+    socket.on("message:typing_indicator", handleTypingIndicator);
     socket.on("group:updated", handleGroupUpdated);
 
     return () => {
+      for (const key of Object.keys(timers)) {
+        clearTimeout(timers[key]!);
+        delete timers[key];
+      }
       socket.off("message:new", handleNewMessage);
       socket.off("message:edited", handleEdited);
       socket.off("message:recalled", handleRecalled);
+      socket.off("message:recall", handleRecalled);
       socket.off("message:hidden_for_me", handleHiddenForMe);
       socket.off("message:pin_updated", handlePinUpdated);
       socket.off("message:reacted", handleReaction);
       socket.off("message:typing", handleTyping);
+      socket.off("message:typing_indicator", handleTypingIndicator);
       socket.off("group:updated", handleGroupUpdated);
     };
   }, [dispatch, socket]);

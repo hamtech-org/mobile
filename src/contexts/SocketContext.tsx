@@ -2,22 +2,41 @@ import { createContext, useContext, useEffect, type PropsWithChildren } from "re
 import type { Socket } from "socket.io-client";
 
 import { useAppSelector } from "@/hooks/useAppStore";
-import { disconnectSocketClient, getSocketClient } from "@/services/socket";
+import {
+  disconnectSocketClient,
+  getSocketClient,
+  normalizeSocketAuthToken,
+} from "@/services/socket";
 
 const SocketContext = createContext<Socket | null>(null);
 
 export const SocketProvider = ({ children }: PropsWithChildren) => {
   const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated);
+  const accessToken = useAppSelector((state) => state.auth.accessToken);
   const socket = getSocketClient();
 
   useEffect(() => {
-    if (isAuthenticated && !socket.connected) {
-      socket.connect();
-    }
-    if (!isAuthenticated) {
+    if (!isAuthenticated || !accessToken) {
       disconnectSocketClient();
+      return;
     }
-  }, [isAuthenticated, socket]);
+
+    const token = normalizeSocketAuthToken(accessToken);
+    if (!token) {
+      disconnectSocketClient();
+      return;
+    }
+
+    socket.auth = { token };
+    if (socket.connected) {
+      socket.disconnect();
+    }
+    socket.connect();
+
+    return () => {
+      disconnectSocketClient();
+    };
+  }, [isAuthenticated, accessToken, socket]);
 
   return <SocketContext.Provider value={socket}>{children}</SocketContext.Provider>;
 };
