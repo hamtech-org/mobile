@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState, useMemo } from "react";
 import { useLocalSearchParams } from "expo-router";
-import { FlatList, View, Alert } from "react-native";
+import { FlatList, View, Alert, Keyboard } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 
@@ -159,7 +159,9 @@ export default function ChatDetailScreen() {
   );
 
   const handleLongPressMessage = useCallback((msg: IMessage) => {
-    setSelectedMessage(msg);
+    // Đóng bàn phím trước khi mở action sheet để tránh keyboard đè menu.
+    Keyboard.dismiss();
+    setTimeout(() => setSelectedMessage(msg), 120);
   }, []);
 
   const handleReply = useCallback(
