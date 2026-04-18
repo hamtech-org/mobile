@@ -11,9 +11,7 @@ import { Loading } from "@/components/common/Loading";
 import { useUploadMediaMutation } from "@/store/api/mediaApi";
 import { useAppDispatch, useAppSelector } from "@/hooks/useAppStore";
 import { useChat } from "@/hooks/useChat";
-import { useSocket } from "@/hooks/useSocket";
 import { useChatMessageData } from "@/hooks/useChatMessageData";
-import { useChatRealtimeEvents } from "@/hooks/useChatRealtimeEvents";
 import { useConversationLifecycle } from "@/hooks/useConversationLifecycle";
 import { useGetConversationsQuery } from "@/store/api/chatApi";
 import { setReplyingTo, clearReplyingTo } from "@/store/slices/chatSlice";
@@ -29,7 +27,6 @@ const EMPTY_TYPING_USERS: any[] = [];
 export default function ChatDetailScreen() {
   const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
   const dispatch = useAppDispatch();
-  const socket = useSocket();
   const insets = useSafeAreaInsets();
 
   const currentUserId = useAppSelector((state) => state.auth.user?.userId);
@@ -44,21 +41,13 @@ export default function ChatDetailScreen() {
   // 1. Data logic: Merge API + Socket messages
   const { allMessages, isLoading, isError, refetch, latestMessageId } = useChatMessageData(conversationId);
 
-  // 2. Realtime logic: Listen to 8 socket events
-  useChatRealtimeEvents({
-    dispatch,
-    socket,
-    activeConversationId: conversationId,
-  });
-
-  // 3. Lifecycle logic: Room join/leave + Auto markAsRead
+  // 2. Lifecycle logic: Auto markAsRead
   useConversationLifecycle({
-    socket,
     conversationId,
     latestMessageId,
   });
 
-  // 4. Messaging actions
+  // 3. Messaging actions
   const {
     sendMessage,
     sendMediaMessage,
@@ -73,7 +62,7 @@ export default function ChatDetailScreen() {
 
   const [uploadMedia] = useUploadMediaMutation();
 
-  // 5. Lấy thông tin conversation từ cache (Memoized for stability)
+  // 4. Lấy thông tin conversation từ cache (Memoized for stability)
   const { data: convList } = useGetConversationsQuery();
   const conversation = useMemo(() => convList?.find((c) => c.conversationId === conversationId), [convList, conversationId]);
 
