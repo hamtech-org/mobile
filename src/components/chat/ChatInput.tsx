@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
-import { Alert, Pressable, Text, TextInput, View } from "react-native";
+import { Alert, Image, Pressable, Text, TextInput, View } from "react-native";
+import { Video, ResizeMode } from "expo-av";
 import {
   Camera,
   FileText,
@@ -15,6 +16,7 @@ import * as DocumentPicker from "expo-document-picker";
 
 import { useIconColors } from "@/hooks/useIconColors";
 import type { IMessage } from "@/types/chat.types";
+import { formatFileSize } from "@/utils/file";
 
 export interface PendingAttachment {
   localId: string;
@@ -25,9 +27,8 @@ export interface PendingAttachment {
 }
 
 interface ChatInputProps {
-  onSend: (content: string) => Promise<void>;
-  onSendMedia?: (attachment: PendingAttachment, caption: string) => Promise<void>;
-  sending?: boolean;
+  onSend: (content: string) => void | Promise<void>;
+  onSendMedia?: (attachment: PendingAttachment, caption: string) => void | Promise<void>;
   /** Tin nhắn đang reply (null = không reply) */
   replyingTo?: IMessage | null;
   onClearReply?: () => void;
@@ -46,7 +47,6 @@ interface ChatInputProps {
 export const ChatInput = ({
   onSend,
   onSendMedia,
-  sending = false,
   replyingTo,
   onClearReply,
   onTyping,
@@ -58,22 +58,23 @@ export const ChatInput = ({
   const hasText = content.trim().length > 0;
   const hasSendable = hasText || attachment !== null;
 
-  // ── Send handler ─────────────────────────────────────────
-  const handleSend = useCallback(async () => {
-    if (sending) return;
-
+  // ── Send handler — clear ngay, gửi nền (không chờ API, không loading ô nhập) ──
+  const handleSend = useCallback(() => {
     if (attachment && onSendMedia) {
-      await onSendMedia(attachment, content.trim());
+      const att = attachment;
+      const cap = content.trim();
       setAttachment(null);
       setContent("");
+      setShowMediaMenu(false);
+      void Promise.resolve(onSendMedia(att, cap)).catch(() => {});
       return;
     }
 
     const text = content.trim();
     if (!text) return;
-    await onSend(text);
     setContent("");
-  }, [content, sending, attachment, onSend, onSendMedia]);
+    void Promise.resolve(onSend(text)).catch(() => {});
+  }, [content, attachment, onSend, onSendMedia]);
 
   // ── Media picker — Gallery ───────────────────────────────
   const pickImage = useCallback(async () => {
@@ -168,23 +169,54 @@ export const ChatInput = ({
         </View>
       )}
 
-      {/* Attachment preview */}
+      {/* Attachment preview — ảnh/video/file trước khi gửi */}
       {attachment && (
-        <View className="flex-row items-center px-4 py-2 bg-muted/20 gap-3">
-          {attachment.mimeType.startsWith("image/") ? (
-            <ImageIcon size={20} color={primary} strokeWidth={1.5} />
-          ) : (
-            <FileText size={20} color={primary} strokeWidth={1.5} />
-          )}
-          <Text className="flex-1 text-foreground text-[13px]" numberOfLines={1}>
-            {attachment.name}
-          </Text>
-          <Pressable
-            onPress={() => setAttachment(null)}
-            className="p-1 rounded-full active:bg-muted"
-          >
-            <X size={16} color={muted} strokeWidth={2} />
-          </Pressable>
+        <View className="px-3 pt-2 pb-1 bg-muted/25 border-b border-border/15">
+          <View className="rounded-2xl overflow-hidden bg-muted/40 border border-border/20 max-h-[240px]">
+            {attachment.mimeType.startsWith("image/") ? (
+              <Image
+                source={{ uri: attachment.uri }}
+                className="w-full min-h-[180px] max-h-[220px]"
+                resizeMode="cover"
+                accessibilityLabel="Xem trước ảnh"
+              />
+            ) : attachment.mimeType.startsWith("video/") ? (
+              <Video
+                source={{ uri: attachment.uri }}
+                style={{ width: "100%", height: 200 }}
+                resizeMode={ResizeMode.COVER}
+                useNativeControls
+                isLooping={false}
+                accessibilityLabel="Xem trước video"
+              />
+            ) : (
+              <View className="flex-row items-center gap-3 px-4 py-6">
+                <FileText size={40} color={primary} strokeWidth={1.5} />
+                <View className="flex-1 min-w-0">
+                  <Text className="text-foreground text-sm font-semibold" numberOfLines={2}>
+                    {attachment.name}
+                  </Text>
+                  {attachment.size != null && attachment.size > 0 ? (
+                    <Text className="text-muted-foreground text-xs mt-1">{formatFileSize(attachment.size)}</Text>
+                  ) : null}
+                </View>
+              </View>
+            )}
+          </View>
+          <View className="flex-row items-center justify-end gap-2 py-2">
+            <Pressable
+              onPress={() => {
+                setAttachment(null);
+                setShowMediaMenu(true);
+              }}
+              className="px-3 py-1.5 rounded-full bg-muted/70 active:opacity-80"
+            >
+              <Text className="text-foreground text-xs font-medium">Chọn lại</Text>
+            </Pressable>
+            <Pressable onPress={() => setAttachment(null)} className="px-3 py-1.5 rounded-full active:bg-destructive/15">
+              <Text className="text-destructive text-xs font-medium">Xóa</Text>
+            </Pressable>
+          </View>
         </View>
       )}
 
@@ -238,16 +270,15 @@ export const ChatInput = ({
           {hasSendable ? (
             <Pressable
               onPress={handleSend}
-              disabled={sending}
-              className={`size-9 rounded-full bg-primary items-center justify-center ${
-                sending ? "opacity-50" : "active:opacity-80"
-              }`}
+              className="size-9 rounded-full bg-primary items-center justify-center active:opacity-80"
             >
               <SendHorizontal size={18} color="white" strokeWidth={2.0} />
             </Pressable>
           ) : (
             <Pressable
-              onPress={() => onSend("👍")}
+              onPress={() => {
+                void Promise.resolve(onSend("👍")).catch(() => {});
+              }}
               className="active:opacity-70"
               hitSlop={10}
             >

@@ -14,7 +14,7 @@ export type MessageType =
   | 'schedule'
   | 'call';
 
-export type MessageStatus = 'sent' | 'delivered' | 'read';
+export type MessageStatus = "sent" | "delivered" | "read" | "sending" | "failed";
 export type ConversationType = 'direct' | 'group';
 export type MemberRole = 'owner' | 'admin' | 'member';
 

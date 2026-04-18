@@ -10,7 +10,7 @@ import {
   useReactMessageMutation,
 } from "@/store/api/chatApi";
 import { useSocket } from "@/hooks/useSocket";
-import type { IMessage, MessageType } from "@/types/chat.types";
+import type { IMessage, IReplyToDetails, MessageType } from "@/types/chat.types";
 
 /**
  * Hook cung cấp tất cả actions liên quan đến chat messaging.
@@ -47,6 +47,11 @@ export const useChat = () => {
       content: string,
       mediaId: string,
       replyTo?: string,
+      options?: {
+        optimisticLocalUri?: string;
+        optimisticMediaName?: string;
+        clientReplyToDetails?: IReplyToDetails | null;
+      },
     ): Promise<void> => {
       await sendMessageMutation({
         conversationId,
@@ -54,6 +59,9 @@ export const useChat = () => {
         content: content || " ",
         mediaId,
         replyTo,
+        optimisticLocalUri: options?.optimisticLocalUri,
+        optimisticMediaName: options?.optimisticMediaName,
+        clientReplyToDetails: options?.clientReplyToDetails,
       }).unwrap();
     },
     [sendMessageMutation],
@@ -61,16 +69,22 @@ export const useChat = () => {
 
   // ── Gửi tin nhắn với reply ─────────────────────────────────────────
   const sendReplyMessage = useCallback(
-    async (
-      conversationId: string,
-      content: string,
-      replyTo: string,
-    ): Promise<void> => {
+    async (conversationId: string, content: string, replyToMessage: IMessage): Promise<void> => {
+      const clientReplyToDetails: IReplyToDetails = {
+        messageId: replyToMessage.messageId,
+        senderId: replyToMessage.senderId,
+        senderDisplayName: replyToMessage.senderDisplayName ?? null,
+        content: replyToMessage.isRecalled
+          ? "Tin nhắn đã được thu hồi"
+          : replyToMessage.content,
+        type: replyToMessage.type,
+      };
       await sendMessageMutation({
         conversationId,
         type: "text",
         content,
-        replyTo,
+        replyTo: replyToMessage.messageId,
+        clientReplyToDetails,
       }).unwrap();
     },
     [sendMessageMutation],

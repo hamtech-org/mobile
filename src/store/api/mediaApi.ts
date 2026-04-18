@@ -1,4 +1,8 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
+import {
+  FileSystemUploadType,
+  uploadAsync,
+} from "expo-file-system/legacy";
 
 import { env } from "@/config/env";
 
@@ -20,13 +24,14 @@ interface ApiEnvelope<T> {
 }
 
 /**
- * mediaApi — Xử lý upload media (ảnh, video, file) cho mobile.
- * Sử dụng FormData phù hợp với React Native.
+ * mediaApi — Upload media (ảnh, video, file) cho mobile.
+ * Multipart dùng `expo-file-system` `uploadAsync` (native), tránh lỗi fetch+FormData với một số URI (DocumentPicker, v.v.).
  */
 export const mediaApi = createApi({
   reducerPath: "mediaApi",
   baseQuery: fetchBaseQuery({
     baseUrl: env.apiBaseUrl,
+    timeout: 120_000,
     prepareHeaders: (headers, { getState }) => {
       const state = getState() as { auth?: { accessToken?: string | null } };
       const token = state.auth?.accessToken;
@@ -45,27 +50,68 @@ export const mediaApi = createApi({
         mediaType: MediaUploadType;
       }
     >({
-      query: ({ file, mediaType }) => {
-        const body = new FormData();
-        body.append("mediaType", mediaType);
-
-        // React Native FormData đặc thù: field file phải là object có uri, name, type
-        // @ts-ignore
-        body.append("file", {
-          uri: file.uri,
-          name: file.name,
-          type: file.type,
-        });
-
-        return {
-          url: "/media/upload",
-          method: "POST",
-          body,
-          // Content-Type được fetchBaseQuery tự động xử lý khi body là FormData
+      async queryFn({ file, mediaType }, api) {
+        const state = api.getState() as {
+          auth?: { accessToken?: string | null };
         };
+        const token = state.auth?.accessToken;
+        const base = env.apiBaseUrl.replace(/\/$/, "");
+        const url = `${base}/media/upload`;
+        const mimeType = file.type?.trim() || "application/octet-stream";
+
+        try {
+          const result = await uploadAsync(url, file.uri, {
+            httpMethod: "POST",
+            uploadType: FileSystemUploadType.MULTIPART,
+            fieldName: "file",
+            mimeType,
+            parameters: { mediaType },
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+
+          if (result.status < 200 || result.status >= 300) {
+            return {
+              error: {
+                status: result.status,
+                data: result.body,
+              },
+            };
+          }
+
+          let envelope: ApiEnvelope<MediaUploadResult>;
+          try {
+            envelope = JSON.parse(result.body) as ApiEnvelope<MediaUploadResult>;
+          } catch {
+            return {
+              error: {
+                status: "PARSING_ERROR",
+                originalStatus: result.status,
+                data: result.body,
+                error: "Invalid JSON from upload response",
+              },
+            };
+          }
+
+          if (!envelope.success || !envelope.data) {
+            return {
+              error: {
+                status: result.status,
+                data: envelope,
+              },
+            };
+          }
+
+          return { data: envelope.data };
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          return {
+            error: {
+              status: "FETCH_ERROR",
+              error: message,
+            },
+          };
+        }
       },
-      transformResponse: (response: ApiEnvelope<MediaUploadResult>) =>
-        response.data,
     }),
   }),
 });

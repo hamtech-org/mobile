@@ -18,6 +18,7 @@ import { useConversationLifecycle } from "@/hooks/useConversationLifecycle";
 import { useGetConversationsQuery } from "@/store/api/chatApi";
 import { setReplyingTo, clearReplyingTo } from "@/store/slices/chatSlice";
 import type { IMessage } from "@/types/chat.types";
+import { prepareLocalFileForUpload } from "@/utils/uploadAttachment";
 
 const EMPTY_TYPING_USERS: any[] = [];
 
@@ -68,10 +69,9 @@ export default function ChatDetailScreen() {
     togglePinMessage,
     reactMessage,
     emitTyping,
-    isSending,
   } = useChat();
 
-  const [uploadMedia, { isLoading: isUploading }] = useUploadMediaMutation();
+  const [uploadMedia] = useUploadMediaMutation();
 
   // 5. Lấy thông tin conversation từ cache (Memoized for stability)
   const { data: convList } = useGetConversationsQuery();
@@ -82,17 +82,21 @@ export default function ChatDetailScreen() {
   // --- Handlers ---
 
   const handleSendMessage = useCallback(
-    async (content: string) => {
+    (content: string) => {
       if (!conversationId) return;
 
-      if (replyingTo) {
-        await sendReplyMessage(conversationId, content, replyingTo.messageId);
+      const reply = replyingTo;
+      if (reply) {
         dispatch(clearReplyingTo());
+        void sendReplyMessage(conversationId, content, reply).catch((err) => {
+          console.error("sendReplyMessage:", err);
+        });
       } else {
-        await sendMessage(conversationId, content);
+        void sendMessage(conversationId, content).catch((err) => {
+          console.error("sendMessage:", err);
+        });
       }
 
-      // Auto scroll to bottom (đầu danh sách vì inverted)
       listRef.current?.scrollToOffset({ offset: 0, animated: true });
     },
     [conversationId, replyingTo, sendReplyMessage, sendMessage, dispatch],
@@ -102,24 +106,49 @@ export default function ChatDetailScreen() {
     async (attachment: PendingAttachment, caption: string) => {
       if (!conversationId) return;
 
-      try {
-        // 1. Xác định mediaType
-        const mediaType = attachment.mimeType.startsWith("image/") ? "image" : attachment.mimeType.startsWith("video/") ? "video" : "file";
+      const replySnapshot = replyingTo;
+      if (replySnapshot) {
+        dispatch(clearReplyingTo());
+      }
 
-        // 2. Upload file thực tế
+      const mediaType = attachment.mimeType.startsWith("image/")
+        ? "image"
+        : attachment.mimeType.startsWith("video/")
+          ? "video"
+          : "file";
+
+      const clientReplyToDetails = replySnapshot
+        ? {
+            messageId: replySnapshot.messageId,
+            senderId: replySnapshot.senderId,
+            senderDisplayName: replySnapshot.senderDisplayName ?? null,
+            content: replySnapshot.isRecalled ? "Tin nhắn đã được thu hồi" : replySnapshot.content,
+            type: replySnapshot.type,
+          }
+        : undefined;
+
+      try {
+        const file = await prepareLocalFileForUpload({
+          uri: attachment.uri,
+          name: attachment.name,
+          mimeType: attachment.mimeType,
+        });
+
         const uploadRes = await uploadMedia({
           file: {
-            uri: attachment.uri,
-            name: attachment.name,
-            type: attachment.mimeType,
+            uri: file.uri,
+            name: file.name,
+            type: file.type,
           },
           mediaType,
         }).unwrap();
 
-        // 3. Gửi tin nhắn với mediaId nhận được từ backend
-        await sendMediaMessage(conversationId, mediaType, caption, uploadRes.mediaId, replyingTo?.messageId);
+        await sendMediaMessage(conversationId, mediaType, caption, uploadRes.mediaId, replySnapshot?.messageId, {
+          optimisticLocalUri: file.uri,
+          optimisticMediaName: file.name,
+          clientReplyToDetails,
+        });
 
-        if (replyingTo) dispatch(clearReplyingTo());
         listRef.current?.scrollToOffset({ offset: 0, animated: true });
       } catch (err) {
         console.error("Upload/Send failed:", err);
@@ -204,7 +233,6 @@ export default function ChatDetailScreen() {
           <ChatInput
             onSend={handleSendMessage}
             onSendMedia={handleSendMedia}
-            sending={isSending || isUploading}
             replyingTo={replyingTo}
             onClearReply={() => dispatch(clearReplyingTo())}
             onTyping={handleTyping}

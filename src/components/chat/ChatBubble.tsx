@@ -1,5 +1,5 @@
-import { Ban, Check, CheckCheck, FileText, Phone, Video } from "lucide-react-native";
-import { Image, Pressable, Text, View } from "react-native";
+import { Ban, AlertCircle, Check, CheckCheck, FileText, Phone, Video } from "lucide-react-native";
+import { ActivityIndicator, Image, Pressable, Text, View } from "react-native";
 
 import { useIconColors } from "@/hooks/useIconColors";
 import type { IMessage } from "@/types/chat.types";
@@ -204,9 +204,11 @@ export const ChatBubble = ({ message, isOwn, isGroup = false, prevMessage, nextM
   const showTimestamp = !isSameSenderAsNext;
 
   // ── Media checks ──────────────────────────────────────────
-  const hasImage = message.type === "image" && message.mediaUrl;
-  const hasVideo = message.type === "video" && (message.thumbnailUrl || message.mediaUrl);
-  const hasFile = message.type === "file" && message.mediaUrl;
+  const rawMedia = message.mediaUrl?.trim();
+  const isLocalMedia = Boolean(rawMedia && (rawMedia.startsWith("file:") || rawMedia.startsWith("content:")));
+  const hasImage = message.type === "image" && rawMedia;
+  const hasVideo = message.type === "video" && (message.thumbnailUrl || rawMedia);
+  const hasFile = message.type === "file" && (rawMedia || isLocalMedia);
   const hasCaption = (message.content ?? "").trim().length > 0;
   const hasReactions = message.reactions && Object.keys(message.reactions).length > 0;
 
@@ -249,7 +251,9 @@ export const ChatBubble = ({ message, isOwn, isGroup = false, prevMessage, nextM
                 {/* Image */}
                 {hasImage && (
                   <Image
-                    source={{ uri: normalizeMediaUrl(message.thumbnailUrl ?? message.mediaUrl) }}
+                    source={{
+                      uri: isLocalMedia ? rawMedia! : normalizeMediaUrl(message.thumbnailUrl ?? message.mediaUrl) ?? "",
+                    }}
                     className="w-full aspect-[4/3] rounded-2xl"
                     resizeMode="cover"
                   />
@@ -260,7 +264,9 @@ export const ChatBubble = ({ message, isOwn, isGroup = false, prevMessage, nextM
                   <View className="w-full aspect-video rounded-2xl bg-black/80 items-center justify-center overflow-hidden">
                     <Image
                       source={{
-                        uri: normalizeMediaUrl(message.thumbnailUrl ?? message.mediaUrl!),
+                        uri: isLocalMedia
+                          ? (message.thumbnailUrl ?? rawMedia)!
+                          : normalizeMediaUrl(message.thumbnailUrl ?? message.mediaUrl!) ?? "",
                       }}
                       className="w-full h-full absolute"
                       resizeMode="cover"
@@ -336,6 +342,12 @@ function DateSeparator({ date }: { date: string }) {
 }
 
 function StatusIcon({ status, primary, muted }: { status: string; primary: string; muted: string }) {
+  if (status === "sending") {
+    return <ActivityIndicator size={10} color={muted} />;
+  }
+  if (status === "failed") {
+    return <AlertCircle size={12} color="#ef4444" strokeWidth={2} />;
+  }
   if (status === "read") {
     return <CheckCheck size={12} color={primary} strokeWidth={2} />;
   }
