@@ -1,11 +1,12 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocalSearchParams } from "expo-router";
-import { FlatList, View, Alert, Keyboard } from "react-native";
+import { FlatList, View, Keyboard } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 
 import {
   ChatBubble,
+  ChatFrameBanner,
   ChatHeader,
   ChatInput,
   MessageActionSheet,
@@ -15,6 +16,8 @@ import {
   type PendingAttachment,
   type PollVoteModalPoll,
 } from "@/components/chat";
+import { ChatPinnedReminderBar } from "@/components/chat/ChatPinnedReminderBar";
+import { GroupManageModal, type GroupManagePanel } from "@/components/chat/GroupManageModal";
 import { MessageSquare } from "lucide-react-native";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Loading } from "@/components/common/Loading";
@@ -31,9 +34,11 @@ import { useAppDispatch, useAppSelector } from "@/hooks/useAppStore";
 import { useChat } from "@/hooks/useChat";
 import { useChatMessageData } from "@/hooks/useChatMessageData";
 import { useConversationLifecycle } from "@/hooks/useConversationLifecycle";
-import { setReplyingTo, clearReplyingTo } from "@/store/slices/chatSlice";
+import { setReplyingTo, clearReplyingTo, clearChatFrameBanner } from "@/store/slices/chatSlice";
 import type { IMessage, TypingUserEntry } from "@/types/chat.types";
 import { prepareLocalFileForUpload } from "@/utils/uploadAttachment";
+import { toast } from "@/utils/appToast";
+import { formatChatPreviewLine } from "@/utils/messageDisplay";
 
 const EMPTY_TYPING_USERS: TypingUserEntry[] = [];
 
@@ -70,6 +75,7 @@ export default function ChatDetailScreen() {
   const insets = useSafeAreaInsets();
 
   const currentUserId = useAppSelector((state) => state.auth.user?.userId);
+  const frameBanner = useAppSelector((state) => state.chat.frameBanner);
   const replyingTo = useAppSelector((state) => state.chat.replyingTo);
   const typingUsers = useAppSelector((state) =>
     conversationId ? (state.chat.typingUsers[conversationId] ?? EMPTY_TYPING_USERS) : EMPTY_TYPING_USERS,
@@ -79,13 +85,27 @@ export default function ChatDetailScreen() {
   const [selectedMessage, setSelectedMessage] = useState<IMessage | null>(null);
   const [activePollId, setActivePollId] = useState<string | null>(null);
   const [votingIndex, setVotingIndex] = useState<number | null>(null);
+  const [groupManageOpen, setGroupManageOpen] = useState(false);
+  const [groupModalInitial, setGroupModalInitial] = useState<GroupManagePanel | undefined>(undefined);
 
   const { allMessages, isLoading, latestMessageId } = useChatMessageData(conversationId);
+
+  const pinnedMessages = useMemo(
+    () =>
+      allMessages
+        .filter((m) => m.isPinned)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+    [allMessages],
+  );
 
   useConversationLifecycle({
     conversationId,
     latestMessageId,
   });
+
+  useEffect(() => {
+    dispatch(clearChatFrameBanner());
+  }, [conversationId, dispatch]);
 
   const {
     sendMessage,
@@ -151,7 +171,7 @@ export default function ChatDetailScreen() {
           await votePollMut({ groupId: conversationId, pollId, optionIndex }).unwrap();
         }
       } catch {
-        Alert.alert("Lỗi", "Không thể cập nhật bình chọn");
+        toast.error("Không thể cập nhật bình chọn");
       } finally {
         setVotingIndex(null);
       }
@@ -211,7 +231,7 @@ export default function ChatDetailScreen() {
             messageId: replySnapshot.messageId,
             senderId: replySnapshot.senderId,
             senderDisplayName: replySnapshot.senderDisplayName ?? null,
-            content: replySnapshot.isRecalled ? "Tin nhắn đã được thu hồi" : replySnapshot.content,
+            content: formatChatPreviewLine(replySnapshot, currentUserId ?? ""),
             type: replySnapshot.type,
           }
         : undefined;
@@ -241,10 +261,10 @@ export default function ChatDetailScreen() {
         listRef.current?.scrollToOffset({ offset: 0, animated: true });
       } catch (err) {
         console.error("Upload/Send failed:", err);
-        Alert.alert("Lỗi", "Không thể gửi file. Vui lòng thử lại.");
+        toast.error("Không thể gửi file. Vui lòng thử lại.");
       }
     },
-    [conversationId, uploadMedia, sendMediaMessage, replyingTo, dispatch],
+    [conversationId, uploadMedia, sendMediaMessage, replyingTo, dispatch, currentUserId],
   );
 
   const handleLongPressMessage = useCallback((msg: IMessage) => {
@@ -273,6 +293,17 @@ export default function ChatDetailScreen() {
     if (conversationId) emitTyping(conversationId);
   }, [conversationId, emitTyping]);
 
+  const handleTogglePinForSheet = useCallback(
+    async (msg: IMessage) => {
+      try {
+        await togglePinMessage(msg);
+      } catch {
+        toast.error("Không cập nhật ghim được. Thử lại.");
+      }
+    },
+    [togglePinMessage],
+  );
+
   if (isLoading) {
     return <Loading fullScreen message="Đang tải tin nhắn..." />;
   }
@@ -285,8 +316,47 @@ export default function ChatDetailScreen() {
           currentUserId={currentUserId}
           typingUsers={typingUsers}
           memberCount={conversation.memberCount}
+          onPressInfo={
+            isGroup
+              ? () => {
+                  setGroupModalInitial(undefined);
+                  setGroupManageOpen(true);
+                }
+              : undefined
+          }
         />
       )}
+
+      {isGroup && conversation ? (
+        <GroupManageModal
+          visible={groupManageOpen}
+          onClose={() => {
+            setGroupManageOpen(false);
+            setGroupModalInitial(undefined);
+          }}
+          conversation={conversation}
+          currentUserId={currentUserId}
+          initialPanel={groupModalInitial}
+        />
+      ) : null}
+
+      <ChatPinnedReminderBar
+        pinnedMessages={pinnedMessages}
+        tasksRaw={isGroup && tasksEnvelope?.data ? (tasksEnvelope.data as unknown[]) : []}
+        isGroup={Boolean(isGroup)}
+        currentUserId={currentUserId ?? ""}
+        onJumpToMessage={handleJumpToMessage}
+        onManagePins={
+          isGroup
+            ? () => {
+                setGroupModalInitial("pinned");
+                setGroupManageOpen(true);
+              }
+            : undefined
+        }
+      />
+
+      {frameBanner && frameBanner.conversationId === conversationId ? <ChatFrameBanner banner={frameBanner} /> : null}
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <FlatList
@@ -294,6 +364,10 @@ export default function ChatDetailScreen() {
           data={allMessages}
           keyExtractor={(item) => item.messageId}
           inverted
+          onScrollToIndexFailed={({ averageItemLength, index }) => {
+            const offset = Math.max(0, index * (averageItemLength || 72));
+            listRef.current?.scrollToOffset({ offset, animated: true });
+          }}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{
             paddingHorizontal: 8,
@@ -322,6 +396,7 @@ export default function ChatDetailScreen() {
             onSend={handleSendMessage}
             onSendMedia={handleSendMedia}
             replyingTo={replyingTo}
+            currentUserId={currentUserId ?? ""}
             onClearReply={() => dispatch(clearReplyingTo())}
             onTyping={handleTyping}
           />
@@ -342,10 +417,10 @@ export default function ChatDetailScreen() {
         isOwn={selectedMessage?.senderId === currentUserId}
         onClose={() => setSelectedMessage(null)}
         onReply={handleReply}
-        onEdit={(_msg) => Alert.alert("Sửa tin nhắn", "Tính năng đang hoàn thiện")}
+        onEdit={(_msg) => toast.info("Tính năng sửa tin đang hoàn thiện")}
         onRecall={recallMessage}
         onDelete={deleteMessage}
-        onTogglePin={togglePinMessage}
+        onTogglePin={handleTogglePinForSheet}
         onReact={reactMessage}
       />
     </SafeAreaView>
