@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Alert, Image, Pressable, Text, TextInput, View } from "react-native";
+import { Image, Pressable, Text, TextInput, View } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
 import {
   Camera,
@@ -15,8 +15,10 @@ import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 
 import { useIconColors } from "@/hooks/useIconColors";
+import { toast } from "@/utils/appToast";
 import type { IMessage } from "@/types/chat.types";
 import { formatFileSize } from "@/utils/file";
+import { formatChatPreviewLine } from "@/utils/messageDisplay";
 
 export interface PendingAttachment {
   localId: string;
@@ -31,6 +33,8 @@ interface ChatInputProps {
   onSendMedia?: (attachment: PendingAttachment, caption: string) => void | Promise<void>;
   /** Tin nhắn đang reply (null = không reply) */
   replyingTo?: IMessage | null;
+  /** Dùng để format preview reply (tránh JSON thô). */
+  currentUserId?: string;
   onClearReply?: () => void;
   /** Gọi khi user đang gõ (debounced emit typing) */
   onTyping?: () => void;
@@ -48,6 +52,7 @@ export const ChatInput = ({
   onSend,
   onSendMedia,
   replyingTo,
+  currentUserId = "",
   onClearReply,
   onTyping,
 }: ChatInputProps) => {
@@ -100,7 +105,7 @@ export const ChatInput = ({
     setShowMediaMenu(false);
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert("Quyền truy cập", "Cần quyền sử dụng camera để chụp ảnh.");
+      toast.error("Cần quyền sử dụng camera để chụp ảnh");
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
@@ -154,9 +159,7 @@ export const ChatInput = ({
               Trả lời {replyingTo.senderDisplayName ?? replyingTo.senderId}
             </Text>
             <Text className="text-muted-foreground text-[12px]" numberOfLines={1}>
-              {replyingTo.isRecalled
-                ? "Tin nhắn đã được thu hồi"
-                : replyingTo.content}
+              {formatChatPreviewLine(replyingTo, currentUserId)}
             </Text>
           </View>
           <Pressable
