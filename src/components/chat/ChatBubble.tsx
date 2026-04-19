@@ -385,11 +385,7 @@ export const ChatBubble = ({
                   isVisualMedia ? "rounded-2xl overflow-hidden" : "",
                   !isVisualMedia
                     ? `${hasFile ? "py-1" : "px-4 py-2.5"} ${
-                        hasFile
-                          ? ""
-                          : isOwn
-                            ? "bg-primary rounded-[20px] rounded-br-[5px]"
-                            : "bg-card rounded-[20px] rounded-bl-[5px]"
+                        hasFile ? "" : isOwn ? "bg-primary rounded-[20px] rounded-br-[5px]" : "bg-card rounded-[20px] rounded-bl-[5px]"
                       }`
                     : "",
                 ]
@@ -448,16 +444,11 @@ export const ChatBubble = ({
                   >
                     <FileText size={28} color={muted} strokeWidth={1.5} />
                     <View className="flex-1" style={{ minWidth: 0 }}>
-                      <Text
-                        className="text-[13px] font-semibold leading-tight text-foreground"
-                        numberOfLines={1}
-                      >
+                      <Text className="text-[13px] font-semibold leading-tight text-foreground" numberOfLines={1}>
                         {message.mediaOriginalName?.trim() || "Tệp đính kèm"}
                       </Text>
                       {message.mediaSize != null && message.mediaSize > 0 ? (
-                        <Text className="text-[11px] mt-1 text-muted-foreground">
-                          {formatFileSize(message.mediaSize)}
-                        </Text>
+                        <Text className="text-[11px] mt-1 text-muted-foreground">{formatFileSize(message.mediaSize)}</Text>
                       ) : null}
                     </View>
                     <Pressable
@@ -515,10 +506,10 @@ export const ChatBubble = ({
                 )}
 
                 {hasFile && hasCaption && (
-                  <View className={`px-4 py-2 mt-1 border border-border/40 ${isOwn ? "bg-muted/60 rounded-[20px] rounded-br-[5px]" : "bg-card rounded-[20px] rounded-bl-[5px]"}`}>
-                    <Text className="text-[15px] leading-[22px] text-foreground">
-                      {message.content}
-                    </Text>
+                  <View
+                    className={`px-4 py-2 mt-1 border border-border/40 ${isOwn ? "bg-muted/60 rounded-[20px] rounded-br-[5px]" : "bg-card rounded-[20px] rounded-bl-[5px]"}`}
+                  >
+                    <Text className="text-[15px] leading-[22px] text-foreground">{message.content}</Text>
                   </View>
                 )}
 
