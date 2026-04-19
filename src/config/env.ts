@@ -24,4 +24,5 @@ const defaultHost = resolvedHost ?? localhostFallback;
 export const env = {
   apiBaseUrl: extra.apiBaseUrl ?? `http://${defaultHost}:3000/api/v1`,
   socketUrl: extra.socketUrl ?? `http://${defaultHost}:3000`,
+  host: defaultHost,
 };

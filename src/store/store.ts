@@ -1,6 +1,8 @@
 import { configureStore } from "@reduxjs/toolkit";
 
 import { authApi } from "./api/authApi";
+import { chatApi } from "./api/chatApi";
+import { mediaApi } from "./api/mediaApi";
 import { authReducer } from "./slices/authSlice";
 import { chatReducer } from "./slices/chatSlice";
 import { contactReducer } from "./slices/contactSlice";
@@ -17,8 +19,15 @@ export const store = configureStore({
     notification: notificationReducer,
     ui: uiReducer,
     [authApi.reducerPath]: authApi.reducer,
+    [chatApi.reducerPath]: chatApi.reducer,
+    [mediaApi.reducerPath]: mediaApi.reducer,
   },
-  middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(authApi.middleware),
+  middleware: (getDefaultMiddleware) =>
+    getDefaultMiddleware().concat(
+      authApi.middleware,
+      chatApi.middleware,
+      mediaApi.middleware
+    ),
 });
 
 export type RootState = ReturnType<typeof store.getState>;
