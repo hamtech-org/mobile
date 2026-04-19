@@ -16,6 +16,27 @@ export interface ILastMessage {
   senderDisplayName?: string | null;
 }
 
+export interface IGroupMemberPermissions {
+  changeNameAvatar: boolean;
+  pinMessages: boolean;
+  createNotesReminders: boolean;
+  createPolls: boolean;
+  sendMessages: boolean;
+}
+
+export interface IGroupAdminSettings {
+  approvalRequired: boolean;
+  highlightLeaderMessages: boolean;
+  newMembersReadRecent: boolean;
+  allowJoinLink: boolean;
+}
+
+export interface IGroupSettings {
+  memberPermissions: IGroupMemberPermissions;
+  adminSettings: IGroupAdminSettings;
+  joinLinkSuffix?: string;
+}
+
 export interface IConversation {
   conversationId: string;
   type: ConversationType;
@@ -26,6 +47,10 @@ export interface IConversation {
   unreadCount: number;
   updatedAt?: string;
   otherUserId?: string;
+  /** Theo MEMBER# của user đang đăng nhập (danh sách hội thoại). */
+  isMuted?: boolean;
+  isPinnedToTop?: boolean;
+  notificationsMutedUntil?: string | null;
 }
 
 export interface IReplyToDetails {

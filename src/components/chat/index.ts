@@ -1,8 +1,12 @@
+export { ChatFrameBanner } from "./ChatFrameBanner";
+export { ChatPinnedReminderBar } from "./ChatPinnedReminderBar";
 export { ChatBubble } from "./ChatBubble";
 export type { ChatBubbleGroupExtras } from "./ChatBubble";
 export { PollVoteModal } from "./PollVoteModal";
 export type { PollVoteModalPoll } from "./PollVoteModal";
 export { ChatHeader } from "./ChatHeader";
+export { GroupManageModal } from "./GroupManageModal";
+export { CreateGroupModal } from "./CreateGroupModal";
 export { ChatInput } from "./ChatInput";
 export type { PendingAttachment } from "./ChatInput";
 export { ConversationItem } from "./ConversationItem";

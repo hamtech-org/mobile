@@ -1,28 +1,20 @@
+import { useMemo } from "react";
 import { Pressable, Text, View } from "react-native";
 
 import { Avatar } from "@/components/common/Avatar";
 import { Badge } from "@/components/common/Badge";
+import { useCalendarNow } from "@/contexts/CalendarClockContext";
 import { useAppSelector } from "@/hooks/useAppStore";
 import type { IConversation } from "@/types/chat.types";
-import { getMessageTypeLabel } from "@/utils/messageDisplay";
-import { formatSystemLastMessagePreview } from "@/utils/systemMessage";
+import { formatChatPreviewLine } from "@/utils/messageDisplay";
+import { formatConversationListActivityTime } from "@/utils/time";
 
 interface ConversationItemProps {
   conversation: IConversation;
   onPress: () => void;
+  /** Menu ghim / tắt thông báo (giữ list). */
+  onLongPressMenu?: (conversation: IConversation) => void;
   isOnline?: boolean;
-}
-
-function formatTime(isoString: string): string {
-  const date = new Date(isoString);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffDays === 0) return date.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
-  if (diffDays === 1) return "Hôm qua";
-  if (diffDays < 7) return date.toLocaleDateString("vi-VN", { weekday: "short" });
-  return date.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" });
 }
 
 /**
@@ -30,36 +22,49 @@ function formatTime(isoString: string): string {
  * - Hiển thị unread badge và media preview [Ảnh], [Video],...
  * - Tên bold khi có tin mới chưa đọc
  */
-export const ConversationItem = ({ conversation, onPress, isOnline = false }: ConversationItemProps) => {
+export const ConversationItem = ({ conversation, onPress, onLongPressMenu, isOnline = false }: ConversationItemProps) => {
   const currentUserId = useAppSelector((s) => s.auth.user?.userId ?? "");
+  const calendarNow = useCalendarNow();
   const isGroup = conversation.type === "group";
   const lastMsg = conversation.lastMessage;
   const unreadCount = conversation.unreadCount ?? 0;
   const hasUnread = unreadCount > 0;
 
+  const activityIso = lastMsg?.createdAt ?? conversation.updatedAt;
+  const timeLabel = useMemo(() => {
+    if (!activityIso) return "";
+    return formatConversationListActivityTime(activityIso, calendarNow);
+  }, [activityIso, calendarNow]);
+
   // Render preview text
   let preview = "Chưa có tin nhắn";
   if (lastMsg) {
-    const typeLabel = getMessageTypeLabel(lastMsg.type);
-    let line = lastMsg.content?.trim() || "";
-
-    if (lastMsg.type === "system") {
-      const sys = formatSystemLastMessagePreview(lastMsg.content, lastMsg.senderId, currentUserId, lastMsg.senderDisplayName);
-      if (sys) line = sys;
-    }
-
-    const content = line || typeLabel || "Tin nhắn mới";
+    const line = formatChatPreviewLine(
+      {
+        type: lastMsg.type,
+        content: lastMsg.content,
+        senderId: lastMsg.senderId,
+        senderDisplayName: lastMsg.senderDisplayName ?? null,
+        isRecalled: false,
+      },
+      currentUserId,
+    );
     const shouldPrefixSender = isGroup && lastMsg.senderDisplayName && lastMsg.type !== "system";
 
     if (shouldPrefixSender) {
-      preview = `${lastMsg.senderDisplayName}: ${content}`;
+      preview = `${lastMsg.senderDisplayName}: ${line}`;
     } else {
-      preview = content;
+      preview = line;
     }
   }
 
   return (
-    <Pressable onPress={onPress} className="flex-row items-center gap-3 px-4 py-3 active:bg-muted/60">
+    <Pressable
+      onPress={onPress}
+      onLongPress={onLongPressMenu ? () => onLongPressMenu(conversation) : undefined}
+      delayLongPress={380}
+      className="flex-row items-center gap-3 px-4 py-3 active:bg-muted/60"
+    >
       {/* Avatar */}
       <Avatar
         uri={conversation.avatar || undefined}
@@ -79,9 +84,9 @@ export const ConversationItem = ({ conversation, onPress, isOnline = false }: Co
           >
             {conversation.name ?? "Hội thoại"}
           </Text>
-          {lastMsg?.createdAt ? (
+          {timeLabel ? (
             <Text className={`text-[12px] shrink-0 ${hasUnread ? "text-primary font-bold" : "text-muted-foreground"}`}>
-              {formatTime(lastMsg.createdAt)}
+              {timeLabel}
             </Text>
           ) : null}
         </View>

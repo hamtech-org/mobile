@@ -14,6 +14,7 @@ import * as Clipboard from "expo-clipboard";
 
 import { useIconColors } from "@/hooks/useIconColors";
 import type { IMessage } from "@/types/chat.types";
+import { toast } from "@/utils/appToast";
 
 interface MessageActionSheetProps {
   /** Tin nhắn đang được chọn (null = ẩn sheet) */
@@ -66,6 +67,7 @@ export const MessageActionSheet = ({
     if (!message) return;
     await Clipboard.setStringAsync(message.content ?? "");
     onClose();
+    toast.success("Đã sao chép");
   }, [message, onClose]);
 
   const handleEmojiReact = useCallback(

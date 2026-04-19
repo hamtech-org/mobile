@@ -1,14 +1,16 @@
 import { useCallback, useState } from "react";
-import { Alert, Image, Pressable, Text, TextInput, View } from "react-native";
+import { Image, Pressable, Text, TextInput, View } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { Camera, FileText, Image as ImageIcon, PlusCircle, SendHorizontal, Smile, ThumbsUp, X } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 
 import { useIconColors } from "@/hooks/useIconColors";
+import { toast } from "@/utils/appToast";
 import type { IMessage } from "@/types/chat.types";
 import { formatFileSize } from "@/utils/file";
 import EmojiPicker, { EmojiType } from "rn-emoji-keyboard";
+import { formatChatPreviewLine } from "@/utils/messageDisplay";
 
 export interface PendingAttachment {
   localId: string;
@@ -23,6 +25,8 @@ interface ChatInputProps {
   onSendMedia?: (attachment: PendingAttachment, caption: string) => void | Promise<void>;
   /** Tin nhắn đang reply (null = không reply) */
   replyingTo?: IMessage | null;
+  /** Dùng để format preview reply (tránh JSON thô). */
+  currentUserId?: string;
   onClearReply?: () => void;
   /** Gọi khi user đang gõ (debounced emit typing) */
   onTyping?: () => void;
@@ -36,7 +40,7 @@ interface ChatInputProps {
  * - Send button / ThumbsUp
  * - Typing emit khi gõ
  */
-export const ChatInput = ({ onSend, onSendMedia, replyingTo, onClearReply, onTyping }: ChatInputProps) => {
+export const ChatInput = ({ onSend, onSendMedia, replyingTo, currentUserId = "", onClearReply, onTyping }: ChatInputProps) => {
   const [content, setContent] = useState("");
   const [attachment, setAttachment] = useState<PendingAttachment | null>(null);
   const [showMediaMenu, setShowMediaMenu] = useState(false);
@@ -92,7 +96,7 @@ export const ChatInput = ({ onSend, onSendMedia, replyingTo, onClearReply, onTyp
     setShowMediaMenu(false);
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert("Quyền truy cập", "Cần quyền sử dụng camera để chụp ảnh.");
+      toast.error("Cần quyền sử dụng camera để chụp ảnh");
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
@@ -146,7 +150,7 @@ export const ChatInput = ({ onSend, onSendMedia, replyingTo, onClearReply, onTyp
               Trả lời {replyingTo.senderDisplayName ?? replyingTo.senderId}
             </Text>
             <Text className="text-muted-foreground text-[12px]" numberOfLines={1}>
-              {replyingTo.isRecalled ? "Tin nhắn đã được thu hồi" : replyingTo.content}
+              {formatChatPreviewLine(replyingTo, currentUserId)}
             </Text>
           </View>
           <Pressable onPress={onClearReply} className="p-1.5 rounded-full active:bg-muted" hitSlop={8}>

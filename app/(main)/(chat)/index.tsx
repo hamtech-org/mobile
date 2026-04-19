@@ -1,15 +1,18 @@
 import { useMemo, useState, useCallback } from "react";
 import { router } from "expo-router";
-import { FlatList, Pressable, Text, View, RefreshControl } from "react-native";
+import { Alert, FlatList, Pressable, Text, View, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { CloudOff, MessageSquare, Search, SquarePen } from "lucide-react-native";
+import { CloudOff, MessageSquare, Search, SquarePen, Users } from "lucide-react-native";
 
 import { Loading } from "@/components/common/Loading";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SearchBar } from "@/components/common/SearchBar";
 import { ConversationItem } from "@/components/chat/ConversationItem";
-import { useGetConversationsQuery } from "@/store/api/chatApi";
+import { CreateGroupModal } from "@/components/chat";
+import { useGetConversationsQuery, usePatchConversationPreferencesMutation } from "@/store/api/chatApi";
 import { useIconColors } from "@/hooks/useIconColors";
+import type { IConversation } from "@/types/chat.types";
+import { toast } from "@/utils/appToast";
 
 /**
  * ChatListScreen — Danh sách hội thoại.
@@ -19,12 +22,43 @@ import { useIconColors } from "@/hooks/useIconColors";
  */
 export default function ChatListScreen() {
   const { data, isLoading, isError, refetch, isFetching } = useGetConversationsQuery();
+  const [patchPrefs] = usePatchConversationPreferencesMutation();
   const [searchText, setSearchText] = useState("");
+  const [createGroupOpen, setCreateGroupOpen] = useState(false);
   const { primary } = useIconColors();
 
   const onRefresh = useCallback(() => {
     void refetch();
   }, [refetch]);
+
+  const openConversationQuickMenu = useCallback(
+    (item: IConversation) => {
+      const pinned = item.isPinnedToTop ?? false;
+      const muted = item.isMuted ?? false;
+      Alert.alert(item.name ?? "Hội thoại", undefined, [
+        {
+          text: pinned ? "Bỏ ghim" : "Ghim lên đầu",
+          onPress: () => {
+            void patchPrefs({ conversationId: item.conversationId, isPinnedToTop: !pinned })
+              .unwrap()
+              .then(() => toast.success(pinned ? "Đã bỏ ghim hội thoại" : "Đã ghim hội thoại"))
+              .catch(() => toast.error("Không cập nhật được ghim hội thoại"));
+          },
+        },
+        {
+          text: muted ? "Bật thông báo" : "Tắt thông báo",
+          onPress: () => {
+            void patchPrefs({ conversationId: item.conversationId, isMuted: !muted })
+              .unwrap()
+              .then(() => toast.success(muted ? "Đã bật thông báo" : "Đã tắt thông báo"))
+              .catch(() => toast.error("Không cập nhật được thông báo"));
+          },
+        },
+        { text: "Hủy", style: "cancel" },
+      ]);
+    },
+    [patchPrefs],
+  );
 
   // Sắp xếp hội thoại mới nhất lên đầu + lọc theo search
   const filtered = useMemo(() => {
@@ -32,6 +66,9 @@ export default function ChatListScreen() {
     
     // Sort by last message / update time
     list.sort((a, b) => {
+      const pinA = a.isPinnedToTop ? 1 : 0;
+      const pinB = b.isPinnedToTop ? 1 : 0;
+      if (pinB !== pinA) return pinB - pinA;
       const timeA = new Date(a.updatedAt || a.lastMessage?.createdAt || 0).getTime();
       const timeB = new Date(b.updatedAt || b.lastMessage?.createdAt || 0).getTime();
       return timeB - timeA;
@@ -61,9 +98,24 @@ export default function ChatListScreen() {
           >
             <Search size={22} color={primary} strokeWidth={1.5} />
           </Pressable>
-          <Pressable 
-            className="size-10 items-center justify-center rounded-full active:bg-muted/50" 
+          <Pressable
+            className="size-10 items-center justify-center rounded-full active:bg-muted/50"
             hitSlop={6}
+            onPress={() =>
+              Alert.alert("Tạo mới", undefined, [
+                { text: "Tạo nhóm", onPress: () => setCreateGroupOpen(true) },
+                { text: "Hủy", style: "cancel" },
+              ])
+            }
+          >
+            <Users size={22} color={primary} strokeWidth={1.5} />
+          </Pressable>
+          <Pressable
+            className="size-10 items-center justify-center rounded-full active:bg-muted/50"
+            hitSlop={6}
+            onPress={() =>
+              Alert.alert("Soạn tin", "Chọn nhóm hoặc mở cuộc trò chuyện từ danh sách.", [{ text: "OK" }])
+            }
           >
             <SquarePen size={22} color={primary} strokeWidth={1.5} />
           </Pressable>
@@ -103,6 +155,7 @@ export default function ChatListScreen() {
               <ConversationItem 
                 conversation={item} 
                 onPress={() => router.push(`/(main)/(chat)/${item.conversationId}`)} 
+                onLongPressMenu={openConversationQuickMenu}
               />
             )}
             ListEmptyComponent={
@@ -117,6 +170,8 @@ export default function ChatListScreen() {
           />
         )}
       </View>
+
+      <CreateGroupModal visible={createGroupOpen} onClose={() => setCreateGroupOpen(false)} />
     </SafeAreaView>
   );
 }

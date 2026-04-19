@@ -15,6 +15,6 @@ export interface ApiEnvelope<T> {
 export const chatApi = createApi({
   reducerPath: "chatApi",
   baseQuery: baseQueryWithReauth,
-  tagTypes: ["Conversations", "Messages", "Polls", "Tasks", "GroupRequests"],
+  tagTypes: ["Conversations", "Messages", "Polls", "Tasks", "GroupRequests", "GroupSettings"],
   endpoints: () => ({}), // Endpoints will be injected in separate files
 });

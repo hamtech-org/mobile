@@ -20,7 +20,10 @@ export const pollApi = chatApi.injectEndpoints({
         method: "POST",
         body,
       }),
-      invalidatesTags: (_result, _error, { groupId }) => [{ type: "Polls", id: groupId }],
+      invalidatesTags: (_result, _error, { groupId }) => [
+        { type: "Polls", id: groupId },
+        { type: "Messages", id: groupId },
+      ],
     }),
 
     votePoll: builder.mutation<ApiEnvelope<unknown>, { groupId: string; pollId: string; optionIndex: number }>({
@@ -41,7 +44,7 @@ export const pollApi = chatApi.injectEndpoints({
       invalidatesTags: (_result, _error, { groupId }) => [{ type: "Polls", id: groupId }],
     }),
   }),
-  overrideExisting: false,
+  overrideExisting: true,
 });
 
 export const { useGetPollsQuery, useCreatePollMutation, useVotePollMutation, useUnvotePollMutation } = pollApi;

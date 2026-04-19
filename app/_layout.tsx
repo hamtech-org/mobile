@@ -8,7 +8,9 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { CallProvider } from "@/contexts/CallContext";
 import { SocketProvider } from "@/contexts/SocketContext";
+import { ToastHost } from "@/components/common/ToastHost";
 import { store } from "@/store/store";
+import { View } from "react-native";
 
 export default function RootLayout() {
   return (
@@ -19,7 +21,10 @@ export default function RootLayout() {
             <SocketProvider>
               <CallProvider>
                 <KeyboardProvider>
-                  <Stack screenOptions={{ headerShown: false }} />
+                  <View style={{ flex: 1 }}>
+                    <Stack screenOptions={{ headerShown: false }} />
+                    <ToastHost />
+                  </View>
                 </KeyboardProvider>
               </CallProvider>
             </SocketProvider>

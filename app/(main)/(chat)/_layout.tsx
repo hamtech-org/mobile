@@ -4,6 +4,7 @@ import { useAppDispatch } from "@/hooks/useAppStore";
 import { useSocket } from "@/hooks/useSocket";
 import { useConversationRoomSync } from "@/hooks/useConversationRoomSync";
 import { useChatRealtimeEvents } from "@/hooks/useChatRealtimeEvents";
+import { CalendarClockProvider } from "@/contexts/CalendarClockContext";
 
 export default function ChatLayout() {
   const dispatch = useAppDispatch();
@@ -20,5 +21,9 @@ export default function ChatLayout() {
   useConversationRoomSync({ socket });
   useChatRealtimeEvents({ dispatch, socket, activeConversationId });
 
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return (
+    <CalendarClockProvider>
+      <Stack screenOptions={{ headerShown: false }} />
+    </CalendarClockProvider>
+  );
 }
