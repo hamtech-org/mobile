@@ -1,19 +1,23 @@
-import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
+import { Link } from "expo-router";
+import { Pressable, Text } from "react-native";
 
+import { AuthScreenShell } from "@/components/auth/AuthScreenShell";
 import { RegisterForm } from "@/components/auth/RegisterForm";
 
 export default function RegisterScreen() {
   return (
-    <KeyboardAvoidingView className="flex-1 bg-background" behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <ScrollView contentContainerClassName="flex-grow justify-center px-6 py-10">
-        <View className="bg-card border border-border rounded-2xl p-5 gap-5">
-          <View className="gap-1">
-            <Text className="text-foreground text-2xl font-bold">Tạo tài khoản</Text>
-            <Text className="text-muted-foreground text-sm">Tham gia Hamtech để bắt đầu kết nối.</Text>
-          </View>
-          <RegisterForm />
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+    <AuthScreenShell
+      title="Tạo tài khoản"
+      description="Tham gia Hamtech để bắt đầu kết nối."
+      footer={
+        <Link href="/(auth)/login" asChild>
+          <Pressable className="py-3 active:opacity-80" accessibilityRole="link" accessibilityLabel="Chuyển tới đăng nhập">
+            <Text className="text-center text-sm text-primary">Đã có tài khoản? Đăng nhập</Text>
+          </Pressable>
+        </Link>
+      }
+    >
+      <RegisterForm />
+    </AuthScreenShell>
   );
 }

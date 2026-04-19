@@ -1,4 +1,4 @@
-import { Link, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Text, View } from "react-native";
 import { z } from "zod";
@@ -39,9 +39,6 @@ export const ForgotPasswordForm = () => {
       {errorMessage ? <Text className="text-destructive text-sm">{errorMessage}</Text> : null}
       {successMessage ? <Text className="text-primary text-sm">{successMessage}</Text> : null}
       <Button label="Gửi OTP" onPress={handleSubmit} loading={isLoading} />
-      <Link href="/(auth)/login" asChild>
-        <Text className="text-primary text-sm text-center">Quay lại đăng nhập</Text>
-      </Link>
     </View>
   );
 };
