@@ -1,13 +1,5 @@
-import { useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Image,
-  Linking,
-  Pressable,
-  Text,
-  View,
-} from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Alert, Image, Linking, Pressable, Text, View } from "react-native";
 import {
   Ban,
   AlertCircle,
@@ -16,6 +8,7 @@ import {
   Check,
   CheckCheck,
   ClipboardList,
+  Download,
   FileText,
   MapPin,
   Phone,
@@ -26,11 +19,7 @@ import {
 import { useIconColors } from "@/hooks/useIconColors";
 import type { IMessage } from "@/types/chat.types";
 import { formatFileSize } from "@/utils/file";
-import {
-  getMessageTypeLabel,
-  mapsUrlForLatLng,
-  parseLocationPayload,
-} from "@/utils/messageDisplay";
+import { getMessageTypeLabel, mapsUrlForLatLng, parseLocationPayload } from "@/utils/messageDisplay";
 import { buildSystemBubbleView, isCenterPositionMessage } from "@/utils/systemMessage";
 import { formatDateLabel, formatTimestamp, isSameDay } from "@/utils/time";
 import { normalizeMediaUrl } from "@/utils/url";
@@ -154,10 +143,7 @@ function SystemCenterBlock({
               {view.actorLabel} đã tạo một bình chọn{view.question ? `: ${view.question}` : ""}
             </Text>
             {showVoteCta ? (
-              <Pressable
-                onPress={() => groupExtras!.onOpenPollVote(view.pollId)}
-                className="bg-orange-500 px-3 py-1.5 rounded-full"
-              >
+              <Pressable onPress={() => groupExtras!.onOpenPollVote(view.pollId)} className="bg-orange-500 px-3 py-1.5 rounded-full">
                 <Text className="text-white text-[11px] font-bold">Bình chọn</Text>
               </Pressable>
             ) : null}
@@ -196,9 +182,7 @@ function SystemCenterBlock({
       <View className="bg-muted/60 px-3 py-3 rounded-2xl max-w-[92%] w-full border border-border/30">
         {groupExtras ? (
           <View className="flex-row items-center justify-center gap-2 mb-2 flex-wrap">
-            <Text className="text-muted-foreground text-[12px] font-semibold">
-              {participantsCount} người đã tham gia
-            </Text>
+            <Text className="text-muted-foreground text-[12px] font-semibold">{participantsCount} người đã tham gia</Text>
             <Pressable
               onPress={() => void onJoin()}
               disabled={joined || !canJoinThisTask || joinBusy}
@@ -213,9 +197,7 @@ function SystemCenterBlock({
               {joinBusy ? (
                 <ActivityIndicator color="white" size="small" />
               ) : (
-                <Text
-                  className={`text-[12px] font-bold ${joined || !canJoinThisTask ? "text-muted-foreground" : "text-white"}`}
-                >
+                <Text className={`text-[12px] font-bold ${joined || !canJoinThisTask ? "text-muted-foreground" : "text-white"}`}>
                   {joined ? "Đã tham gia" : "Tham gia"}
                 </Text>
               )}
@@ -266,8 +248,7 @@ function ReplyToPreview({ message, isOwn, onPress }: { message: IMessage; isOwn:
   if (!message.replyToDetails) return null;
 
   const reply = message.replyToDetails;
-  const previewContent =
-    reply.content?.trim() || getMessageTypeLabel(reply.type) || "[Tin nhắn]";
+  const previewContent = reply.content?.trim() || getMessageTypeLabel(reply.type) || "[Tin nhắn]";
 
   return (
     <Pressable
@@ -309,9 +290,7 @@ function parseTitleBodyJson(content: string): { title: string; body?: string } |
     const o = JSON.parse(t) as Record<string, unknown>;
     const title = String(o.title ?? o.question ?? o.name ?? "").trim();
     if (!title) return null;
-    const body = [o.description, o.note, o.location]
-      .map((x) => (typeof x === "string" ? x.trim() : ""))
-      .find(Boolean);
+    const body = [o.description, o.note, o.location].map((x) => (typeof x === "string" ? x.trim() : "")).find(Boolean);
     return { title, body: body || undefined };
   } catch {
     return null;
@@ -341,12 +320,7 @@ export const ChatBubble = ({
     return (
       <>
         {showDateSeparator && <DateSeparator date={message.createdAt} />}
-        <SystemCenterBlock
-          message={message}
-          isOwn={isOwn}
-          viewerUserId={viewerUserId}
-          groupExtras={isGroup ? groupExtras : undefined}
-        />
+        <SystemCenterBlock message={message} isOwn={isOwn} viewerUserId={viewerUserId} groupExtras={isGroup ? groupExtras : undefined} />
       </>
     );
   }
@@ -379,22 +353,15 @@ export const ChatBubble = ({
   const isVisualMedia = Boolean(hasImage || hasVideo || hasSticker);
   const parsedLocation = message.type === "location" ? parseLocationPayload(message.content ?? "") : null;
   const hasLocationBlock = message.type === "location" && (parsedLocation !== null || hasCaption);
-  const structuredPollSchedule =
-    message.type === "poll" || message.type === "schedule" ? parseTitleBodyJson(message.content ?? "") : null;
-  const hasPollScheduleBlock =
-    (message.type === "poll" || message.type === "schedule") && (structuredPollSchedule !== null || hasCaption);
+  const structuredPollSchedule = message.type === "poll" || message.type === "schedule" ? parseTitleBodyJson(message.content ?? "") : null;
+  const hasPollScheduleBlock = (message.type === "poll" || message.type === "schedule") && (structuredPollSchedule !== null || hasCaption);
 
   const isEmojiMessage = message.type === "emoji";
   const fallbackLabel = getMessageTypeLabel(message.type);
   const hasRenderableSpecial =
-    isVisualMedia ||
-    hasFile ||
-    hasLocationBlock ||
-    hasPollScheduleBlock ||
-    (isEmojiMessage && (hasCaption || Boolean(fallbackLabel)));
+    isVisualMedia || hasFile || hasLocationBlock || hasPollScheduleBlock || (isEmojiMessage && (hasCaption || Boolean(fallbackLabel)));
 
-  const plainTextFallback =
-    !hasRenderableSpecial && !hasCaption ? (fallbackLabel || "Tin nhắn") : "";
+  const plainTextFallback = !hasRenderableSpecial && !hasCaption ? fallbackLabel || "Tin nhắn" : "";
 
   return (
     <>
@@ -417,7 +384,13 @@ export const ChatBubble = ({
                 className={[
                   isVisualMedia ? "rounded-2xl overflow-hidden" : "",
                   !isVisualMedia
-                    ? `px-4 py-2.5 ${isOwn ? "bg-primary rounded-[20px] rounded-br-[5px]" : "bg-card rounded-[20px] rounded-bl-[5px]"}`
+                    ? `${hasFile ? "py-1" : "px-4 py-2.5"} ${
+                        hasFile
+                          ? ""
+                          : isOwn
+                            ? "bg-primary rounded-[20px] rounded-br-[5px]"
+                            : "bg-card rounded-[20px] rounded-bl-[5px]"
+                      }`
                     : "",
                 ]
                   .filter(Boolean)
@@ -432,7 +405,7 @@ export const ChatBubble = ({
                 {hasImage && (
                   <Image
                     source={{
-                      uri: isLocalMedia ? rawMedia! : normalizeMediaUrl(message.thumbnailUrl ?? message.mediaUrl) ?? "",
+                      uri: isLocalMedia ? rawMedia! : (normalizeMediaUrl(message.thumbnailUrl ?? message.mediaUrl) ?? ""),
                     }}
                     className="w-full aspect-[4/3] rounded-2xl"
                     resizeMode="cover"
@@ -442,7 +415,7 @@ export const ChatBubble = ({
                 {hasSticker && (
                   <Image
                     source={{
-                      uri: isLocalMedia ? rawMedia! : normalizeMediaUrl(message.thumbnailUrl ?? message.mediaUrl) ?? "",
+                      uri: isLocalMedia ? rawMedia! : (normalizeMediaUrl(message.thumbnailUrl ?? message.mediaUrl) ?? ""),
                     }}
                     className="w-[168px] h-[168px] rounded-2xl self-center"
                     resizeMode="contain"
@@ -455,7 +428,7 @@ export const ChatBubble = ({
                       source={{
                         uri: isLocalMedia
                           ? (message.thumbnailUrl ?? rawMedia)!
-                          : normalizeMediaUrl(message.thumbnailUrl ?? message.mediaUrl!) ?? "",
+                          : (normalizeMediaUrl(message.thumbnailUrl ?? message.mediaUrl!) ?? ""),
                       }}
                       className="w-full h-full absolute"
                       resizeMode="cover"
@@ -467,18 +440,35 @@ export const ChatBubble = ({
                 )}
 
                 {hasFile && (
-                  <View className={`flex-row items-center gap-2 px-3 py-2.5 rounded-2xl ${isOwn ? "bg-primary" : "bg-card"}`}>
-                    <FileText size={28} color={isOwn ? "rgba(255,255,255,0.7)" : muted} strokeWidth={1.5} />
-                    <View className="flex-1 min-w-0">
-                      <Text className={`text-xs font-semibold ${isOwn ? "text-white" : "text-foreground"}`} numberOfLines={1}>
-                        {message.mediaOriginalName?.trim() || "File đính kèm"}
+                  <View
+                    className={`flex-row items-center gap-3 px-3 py-2.5 mt-1 mb-1.5 border border-border/40 ${
+                      isOwn ? "bg-muted/60 rounded-[20px] rounded-br-[5px]" : "bg-card border-border/50 rounded-[20px] rounded-bl-[5px]"
+                    }`}
+                    style={{ maxWidth: 260, minWidth: 160 }}
+                  >
+                    <FileText size={28} color={muted} strokeWidth={1.5} />
+                    <View className="flex-1" style={{ minWidth: 0 }}>
+                      <Text
+                        className="text-[13px] font-semibold leading-tight text-foreground"
+                        numberOfLines={1}
+                      >
+                        {message.mediaOriginalName?.trim() || "Tệp đính kèm"}
                       </Text>
-                      {message.mediaSize != null && message.mediaSize > 0 && (
-                        <Text className={`text-[10px] ${isOwn ? "text-white/60" : "text-muted-foreground"}`}>
+                      {message.mediaSize != null && message.mediaSize > 0 ? (
+                        <Text className="text-[11px] mt-1 text-muted-foreground">
                           {formatFileSize(message.mediaSize)}
                         </Text>
-                      )}
+                      ) : null}
                     </View>
+                    <Pressable
+                      onPress={() => {
+                        const url = normalizeMediaUrl(message.mediaUrl);
+                        if (url) void Linking.openURL(url);
+                      }}
+                      className="p-2 rounded-xl border bg-muted/80 border-border/50"
+                    >
+                      <Download size={16} color={muted} strokeWidth={2} />
+                    </Pressable>
                   </View>
                 )}
 
@@ -499,9 +489,13 @@ export const ChatBubble = ({
 
                 {(message.type === "poll" || message.type === "schedule") && structuredPollSchedule ? (
                   <View className={isOwn ? "bg-white/10 px-2 py-1 rounded-lg" : "bg-muted/40 px-2 py-1 rounded-lg"}>
-                    <Text className={`text-[13px] font-bold ${isOwn ? "text-white" : "text-foreground"}`}>{structuredPollSchedule.title}</Text>
+                    <Text className={`text-[13px] font-bold ${isOwn ? "text-white" : "text-foreground"}`}>
+                      {structuredPollSchedule.title}
+                    </Text>
                     {structuredPollSchedule.body ? (
-                      <Text className={`text-[12px] mt-1 ${isOwn ? "text-white/80" : "text-muted-foreground"}`}>{structuredPollSchedule.body}</Text>
+                      <Text className={`text-[12px] mt-1 ${isOwn ? "text-white/80" : "text-muted-foreground"}`}>
+                        {structuredPollSchedule.body}
+                      </Text>
                     ) : null}
                   </View>
                 ) : null}
@@ -515,6 +509,14 @@ export const ChatBubble = ({
                 {!hasFile && !isEmojiMessage && hasCaption && (
                   <View className={isVisualMedia ? "px-3 py-2" : ""}>
                     <Text className={`text-[15px] leading-[22px] ${isOwn && !isVisualMedia ? "text-white" : "text-foreground"}`}>
+                      {message.content}
+                    </Text>
+                  </View>
+                )}
+
+                {hasFile && hasCaption && (
+                  <View className={`px-4 py-2 mt-1 border border-border/40 ${isOwn ? "bg-muted/60 rounded-[20px] rounded-br-[5px]" : "bg-card rounded-[20px] rounded-bl-[5px]"}`}>
+                    <Text className="text-[15px] leading-[22px] text-foreground">
                       {message.content}
                     </Text>
                   </View>
