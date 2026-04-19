@@ -3,8 +3,10 @@ import {
   FileSystemUploadType,
   uploadAsync,
 } from "expo-file-system/legacy";
+import { router } from "expo-router";
 
 import { env } from "@/config/env";
+import { invalidateSessionAfterAuthFailure, refreshAuthSession } from "@/store/api/sessionRefresh";
 
 export type MediaUploadType = "image" | "video" | "audio" | "file";
 
@@ -51,25 +53,48 @@ export const mediaApi = createApi({
       }
     >({
       async queryFn({ file, mediaType }, api) {
-        const state = api.getState() as {
-          auth?: { accessToken?: string | null };
-        };
-        const token = state.auth?.accessToken;
+        type AuthRef = { auth?: { accessToken?: string | null } };
         const base = env.apiBaseUrl.replace(/\/$/, "");
         const url = `${base}/media/upload`;
         const mimeType = file.type?.trim() || "application/octet-stream";
 
-        try {
-          const result = await uploadAsync(url, file.uri, {
+        const readBearer = () => (api.getState() as AuthRef).auth?.accessToken;
+
+        const uploadOnce = async (bearer: string | null | undefined) =>
+          uploadAsync(url, file.uri, {
             httpMethod: "POST",
             uploadType: FileSystemUploadType.MULTIPART,
             fieldName: "file",
             mimeType,
             parameters: { mediaType },
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            headers: bearer ? { Authorization: `Bearer ${bearer}` } : {},
           });
 
+        try {
+          let bearer = readBearer();
+          let result = await uploadOnce(bearer);
+
+          if (result.status === 401 && bearer) {
+            const refreshed = await refreshAuthSession(api.dispatch);
+            if (!refreshed) {
+              await invalidateSessionAfterAuthFailure(api.dispatch);
+              router.replace("/(auth)/login");
+              return {
+                error: {
+                  status: 401,
+                  data: result.body,
+                },
+              };
+            }
+            bearer = readBearer();
+            result = await uploadOnce(bearer);
+          }
+
           if (result.status < 200 || result.status >= 300) {
+            if (result.status === 401) {
+              await invalidateSessionAfterAuthFailure(api.dispatch);
+              router.replace("/(auth)/login");
+            }
             return {
               error: {
                 status: result.status,

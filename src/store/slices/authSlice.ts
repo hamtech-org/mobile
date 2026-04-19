@@ -46,8 +46,15 @@ const authSlice = createSlice({
     setBootstrappingDone: (state) => {
       state.isBootstrapping = false;
     },
+    setSessionTokens: (
+      state,
+      action: PayloadAction<{ accessToken: string; refreshToken: string }>,
+    ) => {
+      state.accessToken = action.payload.accessToken;
+      state.refreshToken = action.payload.refreshToken;
+    },
   },
 });
 
-export const { setAuthState, clearAuthState, setBootstrappingDone } = authSlice.actions;
+export const { setAuthState, clearAuthState, setBootstrappingDone, setSessionTokens } = authSlice.actions;
 export const authReducer = authSlice.reducer;

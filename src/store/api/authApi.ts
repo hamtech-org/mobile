@@ -1,6 +1,6 @@
-import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
+import { createApi } from "@reduxjs/toolkit/query/react";
 
-import { env } from "@/config/env";
+import { baseQueryWithReauth } from "@/store/api/baseQueryWithReauth";
 
 interface LoginRequest {
   email: string;
@@ -55,17 +55,7 @@ interface ApiEnvelope<T> {
 
 export const authApi = createApi({
   reducerPath: "authApi",
-  baseQuery: fetchBaseQuery({
-    baseUrl: env.apiBaseUrl,
-    prepareHeaders: (headers, { getState }) => {
-      const state = getState() as { auth?: { accessToken?: string | null } };
-      const token = state.auth?.accessToken;
-      if (token) {
-        headers.set("Authorization", `Bearer ${token}`);
-      }
-      return headers;
-    },
-  }),
+  baseQuery: baseQueryWithReauth,
   endpoints: (builder) => ({
     login: builder.mutation<AuthStepOneResponse, LoginRequest>({
       query: (body) => ({
