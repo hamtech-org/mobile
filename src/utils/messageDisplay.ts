@@ -1,4 +1,5 @@
-import type { MessageType } from "@/types/chat.types";
+import type { IMessage, MessageType } from "@/types/chat.types";
+import { formatSystemLastMessagePreview } from "@/utils/systemMessage";
 
 /** Nhãn ngắn cho reply preview / placeholder theo loại tin. */
 export function getMessageTypeLabel(type: MessageType | string | undefined): string {
@@ -54,4 +55,35 @@ export function parseLocationPayload(content: string): ParsedLocation | null {
 
 export function mapsUrlForLatLng(lat: number, lng: number): string {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lng}`)}`;
+}
+
+const PREVIEW_MAX = 220;
+
+/**
+ * Một dòng preview thân thiện (danh sách chat, reply strip) — không để lộ JSON thô.
+ */
+export function formatChatPreviewLine(
+  msg: Pick<IMessage, "type" | "content" | "senderId" | "senderDisplayName" | "isRecalled">,
+  currentUserId: string,
+): string {
+  if (msg.isRecalled) return "Tin nhắn đã được thu hồi";
+  const raw = (msg.content ?? "").trim();
+  if (msg.type === "system") {
+    const sys = formatSystemLastMessagePreview(raw, msg.senderId, currentUserId, msg.senderDisplayName);
+    if (sys) return truncatePreview(sys, PREVIEW_MAX);
+    return raw ? truncatePreview(raw, PREVIEW_MAX) : getMessageTypeLabel("system");
+  }
+  if (raw.startsWith("{")) {
+    const sys = formatSystemLastMessagePreview(raw, msg.senderId, currentUserId, msg.senderDisplayName);
+    if (sys) return truncatePreview(sys, PREVIEW_MAX);
+    return getMessageTypeLabel(msg.type) || "Tin nhắn";
+  }
+  if (!raw) return getMessageTypeLabel(msg.type) || "Tin nhắn";
+  return truncatePreview(raw, PREVIEW_MAX);
+}
+
+export function truncatePreview(text: string, max: number): string {
+  const t = text.trim();
+  if (t.length <= max) return t;
+  return `${t.slice(0, max - 1)}…`;
 }

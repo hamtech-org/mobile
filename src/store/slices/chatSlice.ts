@@ -6,11 +6,19 @@ import type {
   TypingUserEntry,
 } from "@/types/chat.types";
 
+/** Thông báo ngắn trong khung chat (ghim, đổi tên nhóm, …) kèm mốc giờ. */
+export interface ChatFrameBanner {
+  conversationId: string;
+  message: string;
+  atIso: string;
+}
+
 interface ChatState {
   activeConversationId: string | null;
   messages: Record<string, IMessage[]>;
   typingUsers: Record<string, TypingUserEntry[]>;
   replyingTo: IMessage | null;
+  frameBanner: ChatFrameBanner | null;
 }
 
 const initialState: ChatState = {
@@ -18,6 +26,7 @@ const initialState: ChatState = {
   messages: {},
   typingUsers: {},
   replyingTo: null,
+  frameBanner: null,
 };
 
 const chatSlice = createSlice({
@@ -203,6 +212,14 @@ const chatSlice = createSlice({
     clearReplyingTo: (state) => {
       state.replyingTo = null;
     },
+
+    showChatFrameBanner: (state, action: PayloadAction<ChatFrameBanner>) => {
+      state.frameBanner = action.payload;
+    },
+
+    clearChatFrameBanner: (state) => {
+      state.frameBanner = null;
+    },
   },
 });
 
@@ -221,6 +238,8 @@ export const {
   resetUnread,
   setReplyingTo,
   clearReplyingTo,
+  showChatFrameBanner,
+  clearChatFrameBanner,
 } = chatSlice.actions;
 
 export const chatReducer = chatSlice.reducer;
