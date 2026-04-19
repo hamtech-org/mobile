@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Image, Linking, Pressable, Text, View } from "react-native";
+import { useVideoPlayer, VideoView } from "expo-video";
 import {
   Ban,
   AlertCircle,
@@ -12,6 +13,7 @@ import {
   FileText,
   MapPin,
   Phone,
+  Play,
   Users,
   Video,
 } from "lucide-react-native";
@@ -283,6 +285,42 @@ function ReactionsRow({ reactions, isOwn }: { reactions: Record<string, string[]
   );
 }
 
+// ── Inline Video Player ──────────────────────────────────────────────────
+
+function ActiveVideoPlayer({ videoUri }: { videoUri: string }) {
+  const player = useVideoPlayer(videoUri, (p) => {
+    p.loop = false;
+    p.play(); // Tự động phát khi người dùng bấm vào Thumbnail
+  });
+  return <VideoView player={player} style={{ width: "100%", height: "100%" }} contentFit="cover" nativeControls allowsFullscreen />;
+}
+
+function InlineVideoPlayer({ videoUri, posterUri }: { videoUri: string; posterUri: string }) {
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  // Layout 1: Chỉ tải hình ảnh (Tối ưu Memory - Không Crash App khi Chat có 30 videos)
+  if (!isLoaded) {
+    return (
+      <Pressable
+        className="w-full aspect-video rounded-2xl bg-black/80 items-center justify-center overflow-hidden border border-border/20"
+        onPress={() => setIsLoaded(true)}
+      >
+        <Image source={{ uri: posterUri }} className="w-full h-full absolute" resizeMode="cover" />
+        <View className="bg-black/50 rounded-full p-3">
+          <Play size={24} color="white" strokeWidth={2} fill="white" />
+        </View>
+      </Pressable>
+    );
+  }
+
+  // Layout 2: Click vào -> Khởi tạo VideoView & Native Controls để xem
+  return (
+    <View className="w-full aspect-video rounded-2xl bg-black overflow-hidden border border-border/20">
+      <ActiveVideoPlayer videoUri={videoUri} />
+    </View>
+  );
+}
+
 function parseTitleBodyJson(content: string): { title: string; body?: string } | null {
   const t = content.trim();
   if (!t.startsWith("{")) return null;
@@ -419,20 +457,14 @@ export const ChatBubble = ({
                 )}
 
                 {hasVideo && (
-                  <View className="w-full aspect-video rounded-2xl bg-black/80 items-center justify-center overflow-hidden">
-                    <Image
-                      source={{
-                        uri: isLocalMedia
-                          ? (message.thumbnailUrl ?? rawMedia)!
-                          : (normalizeMediaUrl(message.thumbnailUrl ?? message.mediaUrl!) ?? ""),
-                      }}
-                      className="w-full h-full absolute"
-                      resizeMode="cover"
-                    />
-                    <View className="bg-black/50 rounded-full p-3">
-                      <Video size={24} color="white" strokeWidth={2} />
-                    </View>
-                  </View>
+                  <InlineVideoPlayer
+                    videoUri={isLocalMedia ? rawMedia! : (normalizeMediaUrl(message.mediaUrl!) ?? "")}
+                    posterUri={
+                      isLocalMedia
+                        ? (message.thumbnailUrl ?? rawMedia)!
+                        : (normalizeMediaUrl(message.thumbnailUrl ?? message.mediaUrl!) ?? "")
+                    }
+                  />
                 )}
 
                 {hasFile && (
