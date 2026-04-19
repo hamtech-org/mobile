@@ -1,16 +1,7 @@
 import { useCallback, useState } from "react";
 import { Image, Pressable, Text, TextInput, View } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
-import {
-  Camera,
-  FileText,
-  Image as ImageIcon,
-  PlusCircle,
-  SendHorizontal,
-  Smile,
-  ThumbsUp,
-  X,
-} from "lucide-react-native";
+import { Camera, FileText, Image as ImageIcon, PlusCircle, SendHorizontal, Smile, ThumbsUp, X } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 
@@ -18,6 +9,7 @@ import { useIconColors } from "@/hooks/useIconColors";
 import { toast } from "@/utils/appToast";
 import type { IMessage } from "@/types/chat.types";
 import { formatFileSize } from "@/utils/file";
+import EmojiPicker, { EmojiType } from "rn-emoji-keyboard";
 import { formatChatPreviewLine } from "@/utils/messageDisplay";
 
 export interface PendingAttachment {
@@ -48,20 +40,19 @@ interface ChatInputProps {
  * - Send button / ThumbsUp
  * - Typing emit khi gõ
  */
-export const ChatInput = ({
-  onSend,
-  onSendMedia,
-  replyingTo,
-  currentUserId = "",
-  onClearReply,
-  onTyping,
-}: ChatInputProps) => {
+export const ChatInput = ({ onSend, onSendMedia, replyingTo, currentUserId = "", onClearReply, onTyping }: ChatInputProps) => {
   const [content, setContent] = useState("");
   const [attachment, setAttachment] = useState<PendingAttachment | null>(null);
   const [showMediaMenu, setShowMediaMenu] = useState(false);
+  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const { muted, primary, foreground } = useIconColors();
   const hasText = content.trim().length > 0;
   const hasSendable = hasText || attachment !== null;
+
+  const handleEmojiSelected = (emojiObject: EmojiType) => {
+    setContent((prev) => prev + emojiObject.emoji);
+    onTyping?.();
+  };
 
   // ── Send handler — clear ngay, gửi nền (không chờ API, không loading ô nhập) ──
   const handleSend = useCallback(() => {
@@ -162,11 +153,7 @@ export const ChatInput = ({
               {formatChatPreviewLine(replyingTo, currentUserId)}
             </Text>
           </View>
-          <Pressable
-            onPress={onClearReply}
-            className="p-1.5 rounded-full active:bg-muted"
-            hitSlop={8}
-          >
+          <Pressable onPress={onClearReply} className="p-1.5 rounded-full active:bg-muted" hitSlop={8}>
             <X size={16} color={muted} strokeWidth={2} />
           </Pressable>
         </View>
@@ -184,10 +171,7 @@ export const ChatInput = ({
                 accessibilityLabel="Xem trước ảnh"
               />
             ) : attachment.mimeType.startsWith("video/") ? (
-              <AttachmentVideoPreview
-                key={attachment.uri}
-                uri={attachment.uri}
-              />
+              <AttachmentVideoPreview key={attachment.uri} uri={attachment.uri} />
             ) : (
               <View className="flex-row items-center gap-3 px-4 py-6">
                 <FileText size={40} color={primary} strokeWidth={1.5} />
@@ -223,11 +207,7 @@ export const ChatInput = ({
       <View className="flex-row items-end px-2 pt-4 min-h-[56px] gap-1">
         {/* Nút Add — toggle media menu */}
         <View className="h-11 w-11 items-center justify-center">
-          <Pressable
-            onPress={() => setShowMediaMenu(!showMediaMenu)}
-            className="active:opacity-70"
-            hitSlop={10}
-          >
+          <Pressable onPress={() => setShowMediaMenu(!showMediaMenu)} className="active:opacity-70" hitSlop={10}>
             <PlusCircle
               size={28}
               color={showMediaMenu ? foreground : primary}
@@ -238,10 +218,7 @@ export const ChatInput = ({
         </View>
 
         {/* Pill Input */}
-        <View
-          className="flex-1 bg-muted rounded-[22px] px-4 flex-row items-center"
-          style={{ minHeight: 44, paddingVertical: 4 }}
-        >
+        <View className="flex-1 bg-muted rounded-[22px] px-4 flex-row items-center" style={{ minHeight: 44, paddingVertical: 4 }}>
           <TextInput
             className="flex-1 text-[16px] text-foreground p-0 m-0"
             placeholder="Aa"
@@ -257,20 +234,15 @@ export const ChatInput = ({
               paddingBottom: 4,
             }}
           />
-          {!hasText && !attachment && (
-            <Pressable hitSlop={10}>
-              <Smile size={24} color={muted} strokeWidth={1.5} />
-            </Pressable>
-          )}
+          <Pressable onPress={() => setIsEmojiPickerOpen(true)} hitSlop={10}>
+            <Smile size={24} color={muted} strokeWidth={1.5} />
+          </Pressable>
         </View>
 
         {/* Nút Send hoặc Like */}
         <View className="h-11 w-11 items-center justify-center">
           {hasSendable ? (
-            <Pressable
-              onPress={handleSend}
-              className="size-9 rounded-full bg-primary items-center justify-center active:opacity-80"
-            >
+            <Pressable onPress={handleSend} className="size-9 rounded-full bg-primary items-center justify-center active:opacity-80">
               <SendHorizontal size={18} color="white" strokeWidth={2.0} />
             </Pressable>
           ) : (
@@ -290,23 +262,30 @@ export const ChatInput = ({
       {/* Media menu popup */}
       {showMediaMenu && (
         <View className="flex-row justify-around px-6 py-3 bg-muted/20 border-t border-border/15">
-          <MediaMenuItem
-            icon={<ImageIcon size={22} color={primary} strokeWidth={1.5} />}
-            label="Ảnh/Video"
-            onPress={pickImage}
-          />
-          <MediaMenuItem
-            icon={<Camera size={22} color={primary} strokeWidth={1.5} />}
-            label="Chụp ảnh"
-            onPress={takePhoto}
-          />
-          <MediaMenuItem
-            icon={<FileText size={22} color={primary} strokeWidth={1.5} />}
-            label="Tài liệu"
-            onPress={pickFile}
-          />
+          <MediaMenuItem icon={<ImageIcon size={22} color={primary} strokeWidth={1.5} />} label="Ảnh/Video" onPress={pickImage} />
+          <MediaMenuItem icon={<Camera size={22} color={primary} strokeWidth={1.5} />} label="Chụp ảnh" onPress={takePhoto} />
+          <MediaMenuItem icon={<FileText size={22} color={primary} strokeWidth={1.5} />} label="Tài liệu" onPress={pickFile} />
         </View>
       )}
+
+      <EmojiPicker
+        open={isEmojiPickerOpen}
+        onClose={() => setIsEmojiPickerOpen(false)}
+        onEmojiSelected={handleEmojiSelected}
+        theme={{
+          backdrop: "#00000088",
+          knob: primary,
+          container: "#1e1e1e", // or use a variable if you have one
+          header: foreground,
+          skinTonesContainer: "#252427",
+          category: {
+            icon: muted,
+            iconActive: primary,
+            container: "#252427",
+            containerActive: "#333333",
+          },
+        }}
+      />
     </View>
   );
 };
@@ -330,20 +309,9 @@ function AttachmentVideoPreview({ uri }: { uri: string }) {
 
 // ── Media Menu Item ──────────────────────────────────────────────────────
 
-function MediaMenuItem({
-  icon,
-  label,
-  onPress,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  onPress: () => void;
-}) {
+function MediaMenuItem({ icon, label, onPress }: { icon: React.ReactNode; label: string; onPress: () => void }) {
   return (
-    <Pressable
-      onPress={onPress}
-      className="items-center gap-1.5 px-4 py-2 rounded-xl active:bg-muted/50"
-    >
+    <Pressable onPress={onPress} className="items-center gap-1.5 px-4 py-2 rounded-xl active:bg-muted/50">
       {icon}
       <Text className="text-foreground text-[12px] font-medium">{label}</Text>
     </Pressable>
