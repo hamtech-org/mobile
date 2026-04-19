@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Linking,
   Pressable,
@@ -23,16 +22,24 @@ import {
   Video,
 } from "lucide-react-native";
 
+import { useCalendarNow } from "@/contexts/CalendarClockContext";
 import { useIconColors } from "@/hooks/useIconColors";
 import type { IMessage } from "@/types/chat.types";
 import { formatFileSize } from "@/utils/file";
 import {
+  formatChatPreviewLine,
   getMessageTypeLabel,
   mapsUrlForLatLng,
   parseLocationPayload,
 } from "@/utils/messageDisplay";
 import { buildSystemBubbleView, isCenterPositionMessage } from "@/utils/systemMessage";
-import { formatDateLabel, formatTimestamp, isSameDay } from "@/utils/time";
+import {
+  formatConversationListActivityTime,
+  formatDateLabel,
+  formatTimestamp,
+  isSameDay,
+} from "@/utils/time";
+import { toast } from "@/utils/appToast";
 import { normalizeMediaUrl } from "@/utils/url";
 
 /** Dữ liệu nhóm để card giao việc / nút bình chọn (chỉ khi `isGroup`). */
@@ -108,6 +115,21 @@ function CallLogMessage({ message }: { message: IMessage }) {
   );
 }
 
+/** Dải giờ trong cùng khung thông báo (viền + nền) với nội dung bên dưới. */
+function SystemNotifyTimeHeader({ createdAt, now }: { createdAt?: string | null; now: Date }) {
+  const iso = createdAt?.trim();
+  if (!iso) return null;
+  const label = formatConversationListActivityTime(iso, now) || formatTimestamp(iso);
+  if (!label) return null;
+  return (
+    <View className="border-b border-border/40 bg-muted/90 px-3 py-1.5">
+      <Text className="text-center text-[11px] font-semibold text-muted-foreground" numberOfLines={1}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
 // ── System center (JSON + card) ───────────────────────────────────────────
 
 function SystemCenterBlock({
@@ -115,11 +137,13 @@ function SystemCenterBlock({
   isOwn,
   viewerUserId,
   groupExtras,
+  calendarNow,
 }: {
   message: IMessage;
   isOwn: boolean;
   viewerUserId?: string | null;
   groupExtras?: ChatBubbleGroupExtras;
+  calendarNow: Date;
 }) {
   const { muted } = useIconColors();
   const view = useMemo(
@@ -136,8 +160,11 @@ function SystemCenterBlock({
   if (view.variant === "text") {
     return (
       <View className="items-center my-2 px-6">
-        <View className="bg-muted/60 px-4 py-2 rounded-2xl max-w-[85%]">
-          <Text className="text-muted-foreground text-[12px] text-center leading-[18px]">{view.text}</Text>
+        <View className="max-w-[85%] w-full overflow-hidden rounded-2xl border border-border/40 bg-muted/60">
+          <SystemNotifyTimeHeader createdAt={message.createdAt} now={calendarNow} />
+          <View className="px-4 py-2.5">
+            <Text className="text-muted-foreground text-[12px] text-center leading-[18px]">{view.text}</Text>
+          </View>
         </View>
       </View>
     );
@@ -147,8 +174,9 @@ function SystemCenterBlock({
     const showVoteCta = Boolean(view.pollId && groupExtras?.onOpenPollVote);
     return (
       <View className="items-center my-2 px-4">
-        <View className="bg-muted/60 px-4 py-3 rounded-2xl max-w-[92%] w-full">
-          <View className="flex-row items-center justify-center gap-2 flex-wrap">
+        <View className="max-w-[92%] w-full overflow-hidden rounded-2xl border border-border/40 bg-muted/60">
+          <SystemNotifyTimeHeader createdAt={message.createdAt} now={calendarNow} />
+          <View className="flex-row items-center justify-center gap-2 flex-wrap px-4 py-3">
             <BarChart2 size={16} color="#f97316" strokeWidth={2} />
             <Text className="text-muted-foreground text-[12px] text-center leading-[18px] flex-1 min-w-[120px]">
               {view.actorLabel} đã tạo một bình chọn{view.question ? `: ${view.question}` : ""}
@@ -180,12 +208,12 @@ function SystemCenterBlock({
     try {
       await groupExtras.joinTask(view.taskId);
       groupExtras.onTaskJoined?.(view.taskId);
-      Alert.alert("Thành công", "Bạn đã tham gia công việc");
+      toast.success("Bạn đã tham gia công việc");
     } catch (e: unknown) {
       const err = e as { status?: number; data?: { status?: number } };
       const status = err?.status ?? err?.data?.status;
-      if (status === 403) Alert.alert("Lỗi", "Bạn không được giao công việc này");
-      else Alert.alert("Lỗi", "Không thể tham gia công việc");
+      if (status === 403) toast.error("Bạn không được giao công việc này");
+      else toast.error("Không thể tham gia công việc");
     } finally {
       setJoinBusy(false);
     }
@@ -193,7 +221,9 @@ function SystemCenterBlock({
 
   return (
     <View className="items-center my-2 px-4">
-      <View className="bg-muted/60 px-3 py-3 rounded-2xl max-w-[92%] w-full border border-border/30">
+      <View className="max-w-[92%] w-full overflow-hidden rounded-2xl border border-border/40 bg-muted/60">
+        <SystemNotifyTimeHeader createdAt={message.createdAt} now={calendarNow} />
+        <View className="px-3 py-3">
         {groupExtras ? (
           <View className="flex-row items-center justify-center gap-2 mb-2 flex-wrap">
             <Text className="text-muted-foreground text-[12px] font-semibold">
@@ -255,6 +285,7 @@ function SystemCenterBlock({
             ) : null}
           </View>
         </View>
+        </View>
       </View>
     </View>
   );
@@ -262,12 +293,30 @@ function SystemCenterBlock({
 
 // ── Reply-To Preview ────────────────────────────────────────────────────
 
-function ReplyToPreview({ message, isOwn, onPress }: { message: IMessage; isOwn: boolean; onPress?: () => void }) {
+function ReplyToPreview({
+  message,
+  isOwn,
+  viewerUserId,
+  onPress,
+}: {
+  message: IMessage;
+  isOwn: boolean;
+  viewerUserId?: string | null;
+  onPress?: () => void;
+}) {
   if (!message.replyToDetails) return null;
 
   const reply = message.replyToDetails;
-  const previewContent =
-    reply.content?.trim() || getMessageTypeLabel(reply.type) || "[Tin nhắn]";
+  const previewContent = formatChatPreviewLine(
+    {
+      type: reply.type,
+      content: reply.content ?? "",
+      senderId: reply.senderId,
+      senderDisplayName: reply.senderDisplayName,
+      isRecalled: false,
+    },
+    viewerUserId ?? "",
+  );
 
   return (
     <Pressable
@@ -332,6 +381,7 @@ export const ChatBubble = ({
   groupExtras,
 }: ChatBubbleProps) => {
   const { muted, primary } = useIconColors();
+  const calendarNow = useCalendarNow();
   const isRecalled = Boolean(message.isRecalled);
   const isDeleted = Boolean(message.isDeleted);
 
@@ -340,12 +390,13 @@ export const ChatBubble = ({
   if (message.type === "system" || isCenterPositionMessage(message)) {
     return (
       <>
-        {showDateSeparator && <DateSeparator date={message.createdAt} />}
+        {showDateSeparator && <DateSeparator date={message.createdAt} now={calendarNow} />}
         <SystemCenterBlock
           message={message}
           isOwn={isOwn}
           viewerUserId={viewerUserId}
           groupExtras={isGroup ? groupExtras : undefined}
+          calendarNow={calendarNow}
         />
       </>
     );
@@ -354,7 +405,7 @@ export const ChatBubble = ({
   if (message.type === "call") {
     return (
       <>
-        {showDateSeparator && <DateSeparator date={message.createdAt} />}
+        {showDateSeparator && <DateSeparator date={message.createdAt} now={calendarNow} />}
         <CallLogMessage message={message} />
       </>
     );
@@ -398,7 +449,7 @@ export const ChatBubble = ({
 
   return (
     <>
-      {showDateSeparator && <DateSeparator date={message.createdAt} />}
+      {showDateSeparator && <DateSeparator date={message.createdAt} now={calendarNow} />}
 
       <View className={`${isSameSenderAsPrev ? "mt-0.5" : "mt-2"} ${isOwn ? "items-end" : "items-start"}`}>
         {showSenderName && message.senderDisplayName ? (
@@ -426,6 +477,7 @@ export const ChatBubble = ({
                 <ReplyToPreview
                   message={message}
                   isOwn={isOwn && !isVisualMedia}
+                  viewerUserId={viewerUserId}
                   onPress={() => onPressReplyTo?.(message.replyToDetails!.messageId)}
                 />
 
@@ -551,11 +603,11 @@ export const ChatBubble = ({
   );
 };
 
-function DateSeparator({ date }: { date: string }) {
+function DateSeparator({ date, now }: { date: string; now: Date }) {
   return (
     <View className="items-center my-3">
       <View className="bg-muted/50 px-3 py-1 rounded-full">
-        <Text className="text-muted-foreground text-[11px] font-medium">{formatDateLabel(date)}</Text>
+        <Text className="text-muted-foreground text-[11px] font-medium">{formatDateLabel(date, now)}</Text>
       </View>
     </View>
   );
