@@ -1,5 +1,7 @@
 import { Image, Text, View } from "react-native";
 
+import { normalizeMediaUrl } from "@/utils/url";
+
 // Kích thước avatar — map sang NativeWind size classes
 type AvatarSize = "xs" | "sm" | "md" | "lg" | "xl";
 
@@ -68,12 +70,13 @@ export const Avatar = ({
   const textClass = TEXT_CLASS[size];
   const dotClass = DOT_CLASS[size];
   const initials = getInitials(name, isGroup);
+  const imageUri = uri ? normalizeMediaUrl(uri) : undefined;
 
   return (
     <View className="relative">
-      {uri ? (
+      {imageUri ? (
         <Image
-          source={{ uri }}
+          source={{ uri: imageUri }}
           className={`${sizeClass} rounded-full bg-muted`}
           resizeMode="cover"
         />

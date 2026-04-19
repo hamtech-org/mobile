@@ -1,5 +1,6 @@
 import { useCallback, useRef } from "react";
 
+import { useAppSelector } from "@/hooks/useAppStore";
 import {
   useSendMessageMutation,
   useEditMessageMutation,
@@ -11,12 +12,14 @@ import {
 } from "@/store/api/chatApi";
 import { useSocket } from "@/hooks/useSocket";
 import type { IMessage, IReplyToDetails, MessageType } from "@/types/chat.types";
+import { formatChatPreviewLine } from "@/utils/messageDisplay";
 
 /**
  * Hook cung cấp tất cả actions liên quan đến chat messaging.
  * Mở rộng từ sendMessage cơ bản sang full CRUD + reactions + typing.
  */
 export const useChat = () => {
+  const currentUserId = useAppSelector((s) => s.auth.user?.userId ?? "");
   const socket = useSocket();
   const [sendMessageMutation, sendState] = useSendMessageMutation();
   const [editMessageMutation, editState] = useEditMessageMutation();
@@ -74,9 +77,7 @@ export const useChat = () => {
         messageId: replyToMessage.messageId,
         senderId: replyToMessage.senderId,
         senderDisplayName: replyToMessage.senderDisplayName ?? null,
-        content: replyToMessage.isRecalled
-          ? "Tin nhắn đã được thu hồi"
-          : replyToMessage.content,
+        content: formatChatPreviewLine(replyToMessage, currentUserId),
         type: replyToMessage.type,
       };
       await sendMessageMutation({
@@ -87,7 +88,7 @@ export const useChat = () => {
         clientReplyToDetails,
       }).unwrap();
     },
-    [sendMessageMutation],
+    [sendMessageMutation, currentUserId],
   );
 
   // ── Chỉnh sửa tin nhắn ────────────────────────────────────────────
