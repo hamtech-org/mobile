@@ -1,24 +1,64 @@
-import { useCallback, useRef, useState, useMemo } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useLocalSearchParams } from "expo-router";
 import { FlatList, View, Alert, Keyboard } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 
-import { ChatBubble, ChatHeader, ChatInput, MessageActionSheet, TypingIndicator, type PendingAttachment } from "@/components/chat";
+import {
+  ChatBubble,
+  ChatHeader,
+  ChatInput,
+  MessageActionSheet,
+  PollVoteModal,
+  TypingIndicator,
+  type ChatBubbleGroupExtras,
+  type PendingAttachment,
+  type PollVoteModalPoll,
+} from "@/components/chat";
 import { MessageSquare } from "lucide-react-native";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Loading } from "@/components/common/Loading";
 import { useUploadMediaMutation } from "@/store/api/mediaApi";
+import {
+  useGetConversationsQuery,
+  useGetPollsQuery,
+  useGetTasksQuery,
+  useJoinTaskMutation,
+  useUnvotePollMutation,
+  useVotePollMutation,
+} from "@/store/api/chatApi";
 import { useAppDispatch, useAppSelector } from "@/hooks/useAppStore";
 import { useChat } from "@/hooks/useChat";
 import { useChatMessageData } from "@/hooks/useChatMessageData";
 import { useConversationLifecycle } from "@/hooks/useConversationLifecycle";
-import { useGetConversationsQuery } from "@/store/api/chatApi";
 import { setReplyingTo, clearReplyingTo } from "@/store/slices/chatSlice";
-import type { IMessage } from "@/types/chat.types";
+import type { IMessage, TypingUserEntry } from "@/types/chat.types";
 import { prepareLocalFileForUpload } from "@/utils/uploadAttachment";
 
-const EMPTY_TYPING_USERS: any[] = [];
+const EMPTY_TYPING_USERS: TypingUserEntry[] = [];
+
+function toPollVoteModalPoll(raw: unknown): PollVoteModalPoll | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const pollId = String(o.pollId ?? "").trim();
+  if (!pollId) return null;
+  const question = String(o.question ?? "");
+  const optionsRaw = Array.isArray(o.options) ? o.options : [];
+  const options = optionsRaw.map((opt) => {
+    const ox = opt as Record<string, unknown>;
+    return {
+      text: String(ox.text ?? ""),
+      voters: Array.isArray(ox.voters) ? (ox.voters as string[]) : [],
+    };
+  });
+  return {
+    pollId,
+    question,
+    options,
+    isClosed: Boolean(o.isClosed),
+    isMultipleChoice: Boolean(o.isMultipleChoice),
+  };
+}
 
 /**
  * ChatDetailScreen — Màn hình chi tiết cuộc trò chuyện.
@@ -37,22 +77,20 @@ export default function ChatDetailScreen() {
 
   const listRef = useRef<FlatList<IMessage>>(null);
   const [selectedMessage, setSelectedMessage] = useState<IMessage | null>(null);
+  const [activePollId, setActivePollId] = useState<string | null>(null);
+  const [votingIndex, setVotingIndex] = useState<number | null>(null);
 
-  // 1. Data logic: Merge API + Socket messages
-  const { allMessages, isLoading, isError, refetch, latestMessageId } = useChatMessageData(conversationId);
+  const { allMessages, isLoading, latestMessageId } = useChatMessageData(conversationId);
 
-  // 2. Lifecycle logic: Auto markAsRead
   useConversationLifecycle({
     conversationId,
     latestMessageId,
   });
 
-  // 3. Messaging actions
   const {
     sendMessage,
     sendMediaMessage,
     sendReplyMessage,
-    editMessage,
     recallMessage,
     deleteMessage,
     togglePinMessage,
@@ -62,13 +100,75 @@ export default function ChatDetailScreen() {
 
   const [uploadMedia] = useUploadMediaMutation();
 
-  // 4. Lấy thông tin conversation từ cache (Memoized for stability)
   const { data: convList } = useGetConversationsQuery();
   const conversation = useMemo(() => convList?.find((c) => c.conversationId === conversationId), [convList, conversationId]);
 
   const isGroup = conversation?.type === "group";
 
-  // --- Handlers ---
+  const { data: tasksEnvelope } = useGetTasksQuery(conversationId!, { skip: !isGroup || !conversationId });
+  const { data: pollsEnvelope } = useGetPollsQuery(conversationId!, { skip: !isGroup || !conversationId });
+
+  const groupTasks = useMemo((): ChatBubbleGroupExtras["groupTasks"] => {
+    const raw = tasksEnvelope?.data;
+    return Array.isArray(raw) ? (raw as ChatBubbleGroupExtras["groupTasks"]) : [];
+  }, [tasksEnvelope]);
+
+  const pollsList = useMemo(() => {
+    const raw = pollsEnvelope?.data;
+    return Array.isArray(raw) ? raw : [];
+  }, [pollsEnvelope]);
+
+  const activePoll = useMemo(() => {
+    if (!activePollId) return null;
+    const found = pollsList.find((p) => String((p as { pollId?: string }).pollId) === activePollId);
+    return found ? toPollVoteModalPoll(found) : null;
+  }, [activePollId, pollsList]);
+
+  const [joinTaskMut] = useJoinTaskMutation();
+  const [votePollMut] = useVotePollMutation();
+  const [unvotePollMut] = useUnvotePollMutation();
+
+  const joinTask = useCallback(
+    async (taskId: string) => {
+      if (!conversationId) throw new Error("Thiếu hội thoại");
+      await joinTaskMut({ groupId: conversationId, taskId }).unwrap();
+    },
+    [conversationId, joinTaskMut],
+  );
+
+  const handleTogglePollVote = useCallback(
+    async (pollId: string, optionIndex: number) => {
+      if (!conversationId || !currentUserId) return;
+      const raw = pollsList.find((p) => String((p as { pollId?: string }).pollId) === pollId) as
+        | { options?: { voters?: string[] }[] }
+        | undefined;
+      const had = Boolean(raw?.options?.[optionIndex]?.voters?.includes(currentUserId));
+      setVotingIndex(optionIndex);
+      try {
+        if (had) {
+          await unvotePollMut({ groupId: conversationId, pollId, optionIndex }).unwrap();
+        } else {
+          await votePollMut({ groupId: conversationId, pollId, optionIndex }).unwrap();
+        }
+      } catch {
+        Alert.alert("Lỗi", "Không thể cập nhật bình chọn");
+      } finally {
+        setVotingIndex(null);
+      }
+    },
+    [conversationId, currentUserId, pollsList, unvotePollMut, votePollMut],
+  );
+
+  const groupExtras = useMemo((): ChatBubbleGroupExtras | undefined => {
+    if (!isGroup || !conversationId || !currentUserId) return undefined;
+    return {
+      conversationId,
+      currentUserId,
+      groupTasks,
+      joinTask,
+      onOpenPollVote: (pollId) => setActivePollId(pollId),
+    };
+  }, [isGroup, conversationId, currentUserId, groupTasks, joinTask]);
 
   const handleSendMessage = useCallback(
     (content: string) => {
@@ -148,7 +248,6 @@ export default function ChatDetailScreen() {
   );
 
   const handleLongPressMessage = useCallback((msg: IMessage) => {
-    // Đóng bàn phím trước khi mở action sheet để tránh keyboard đè menu.
     Keyboard.dismiss();
     setTimeout(() => setSelectedMessage(msg), 120);
   }, []);
@@ -162,7 +261,6 @@ export default function ChatDetailScreen() {
 
   const handleJumpToMessage = useCallback(
     (messageId: string) => {
-      // Logic scroll đến tin nhắn cụ thể
       const index = allMessages.findIndex((m) => m.messageId === messageId);
       if (index !== -1) {
         listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
@@ -181,7 +279,6 @@ export default function ChatDetailScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
-      {/* Header */}
       {conversation && (
         <ChatHeader
           conversation={conversation}
@@ -191,7 +288,6 @@ export default function ChatDetailScreen() {
         />
       )}
 
-      {/* Message List */}
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <FlatList
           ref={listRef}
@@ -208,17 +304,18 @@ export default function ChatDetailScreen() {
             <ChatBubble
               message={item}
               isOwn={item.senderId === currentUserId}
+              viewerUserId={currentUserId}
               isGroup={isGroup}
-              prevMessage={allMessages[index + 1]} // index + 1 vì inverted
+              prevMessage={allMessages[index + 1]}
               nextMessage={allMessages[index - 1]}
               onLongPress={handleLongPressMessage}
               onPressReplyTo={handleJumpToMessage}
+              groupExtras={groupExtras}
             />
           )}
           ListEmptyComponent={<EmptyState icon={MessageSquare} title="Chưa có tin nhắn" description="Hãy bắt đầu cuộc trò chuyện!" />}
         />
 
-        {/* Typing & Input */}
         <View style={{ paddingBottom: insets.bottom }}>
           <TypingIndicator typingUsers={typingUsers} currentUserId={currentUserId ?? ""} />
           <ChatInput
@@ -231,13 +328,21 @@ export default function ChatDetailScreen() {
         </View>
       </KeyboardAvoidingView>
 
-      {/* Action Menu */}
+      <PollVoteModal
+        visible={Boolean(activePollId && activePoll)}
+        poll={activePoll}
+        currentUserId={currentUserId ?? ""}
+        votingIndex={votingIndex}
+        onClose={() => setActivePollId(null)}
+        onToggleOption={handleTogglePollVote}
+      />
+
       <MessageActionSheet
         message={selectedMessage}
         isOwn={selectedMessage?.senderId === currentUserId}
         onClose={() => setSelectedMessage(null)}
         onReply={handleReply}
-        onEdit={(msg) => Alert.alert("Sửa tin nhắn", "Tính năng đang hoàn thiện")}
+        onEdit={(_msg) => Alert.alert("Sửa tin nhắn", "Tính năng đang hoàn thiện")}
         onRecall={recallMessage}
         onDelete={deleteMessage}
         onTogglePin={togglePinMessage}

@@ -1,15 +1,55 @@
-import { Ban, AlertCircle, Check, CheckCheck, FileText, Phone, Video } from "lucide-react-native";
-import { ActivityIndicator, Image, Pressable, Text, View } from "react-native";
+import { useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Linking,
+  Pressable,
+  Text,
+  View,
+} from "react-native";
+import {
+  Ban,
+  AlertCircle,
+  BarChart2,
+  CalendarClock,
+  Check,
+  CheckCheck,
+  ClipboardList,
+  FileText,
+  MapPin,
+  Phone,
+  Users,
+  Video,
+} from "lucide-react-native";
 
 import { useIconColors } from "@/hooks/useIconColors";
 import type { IMessage } from "@/types/chat.types";
 import { formatFileSize } from "@/utils/file";
+import {
+  getMessageTypeLabel,
+  mapsUrlForLatLng,
+  parseLocationPayload,
+} from "@/utils/messageDisplay";
+import { buildSystemBubbleView, isCenterPositionMessage } from "@/utils/systemMessage";
 import { formatDateLabel, formatTimestamp, isSameDay } from "@/utils/time";
 import { normalizeMediaUrl } from "@/utils/url";
+
+/** Dữ liệu nhóm để card giao việc / nút bình chọn (chỉ khi `isGroup`). */
+export interface ChatBubbleGroupExtras {
+  conversationId: string;
+  currentUserId: string;
+  groupTasks: Array<{ taskId?: string; participants?: string[]; assignees?: string[] }>;
+  joinTask: (taskId: string) => Promise<void>;
+  onTaskJoined?: (taskId: string) => void;
+  onOpenPollVote: (pollId: string) => void;
+}
 
 interface ChatBubbleProps {
   message: IMessage;
   isOwn: boolean;
+  /** User đang xem — dùng cho system JSON (ai là "Bạn"). */
+  viewerUserId?: string | null;
   /** Có phải tin nhắn trong group không — để hiện sender name */
   isGroup?: boolean;
   /** Tin nhắn trước đó (để quyết định hiện sender name / date separator) */
@@ -20,64 +60,8 @@ interface ChatBubbleProps {
   onLongPress?: (message: IMessage) => void;
   /** Callback khi nhấn vào reply-to để scroll đến tin gốc */
   onPressReplyTo?: (messageId: string) => void;
-}
-
-// ── Helpers ──────────────────────────────────────────────────────────────
-
-function getMediaTypeLabel(type: string | undefined): string {
-  switch (type) {
-    case "image":
-      return "[Ảnh]";
-    case "video":
-      return "[Video]";
-    case "file":
-      return "[File]";
-    default:
-      return "";
-  }
-}
-
-// ── System Message ──────────────────────────────────────────────────────
-
-function SystemMessage({ message, isOwn }: { message: IMessage; isOwn: boolean }) {
-  let content = message.content;
-
-  // Thay tên sender bằng "Bạn" nếu chính mình
-  if (isOwn && message.senderDisplayName) {
-    const name = message.senderDisplayName.trim();
-    if (name) content = content.replace(name, "Bạn");
-  }
-
-  // Cố parse JSON system message (poll, task)
-  if (content.trim().startsWith("{")) {
-    try {
-      const obj = JSON.parse(content) as Record<string, unknown>;
-      const kind = obj?.kind as string | undefined;
-      const actor = (obj as { actor?: { name?: string } })?.actor?.name;
-      const actorName = isOwn ? "Bạn" : (actor ?? "Ai đó");
-
-      if (kind === "poll_created") {
-        const question = String((obj as { poll?: { question?: string } })?.poll?.question ?? "");
-        content = `${actorName} đã tạo bình chọn${question ? `: ${question}` : ""}`;
-      } else if (kind === "task_assigned") {
-        const title = String((obj as { task?: { title?: string } })?.task?.title ?? "");
-        content = `${actorName} đã giao việc: ${title}`;
-      } else if (kind === "task_joined") {
-        const title = String((obj as { task?: { title?: string } })?.task?.title ?? "");
-        content = `${actorName} đã tham gia: ${title}`;
-      }
-    } catch {
-      // ignore — render raw content
-    }
-  }
-
-  return (
-    <View className="items-center my-2 px-6">
-      <View className="bg-muted/60 px-4 py-2 rounded-2xl max-w-[85%]">
-        <Text className="text-muted-foreground text-[12px] text-center leading-[18px]">{content}</Text>
-      </View>
-    </View>
-  );
+  /** Thông tin nhóm: join task, mở poll (tuỳ chọn) */
+  groupExtras?: ChatBubbleGroupExtras;
 }
 
 // ── Call Log Message ────────────────────────────────────────────────────
@@ -124,13 +108,166 @@ function CallLogMessage({ message }: { message: IMessage }) {
   );
 }
 
+// ── System center (JSON + card) ───────────────────────────────────────────
+
+function SystemCenterBlock({
+  message,
+  isOwn,
+  viewerUserId,
+  groupExtras,
+}: {
+  message: IMessage;
+  isOwn: boolean;
+  viewerUserId?: string | null;
+  groupExtras?: ChatBubbleGroupExtras;
+}) {
+  const { muted } = useIconColors();
+  const view = useMemo(
+    () =>
+      buildSystemBubbleView(message, {
+        isOwn,
+        currentUserId: viewerUserId ?? groupExtras?.currentUserId,
+      }),
+    [message, isOwn, viewerUserId, groupExtras?.currentUserId],
+  );
+
+  const [joinBusy, setJoinBusy] = useState(false);
+
+  if (view.variant === "text") {
+    return (
+      <View className="items-center my-2 px-6">
+        <View className="bg-muted/60 px-4 py-2 rounded-2xl max-w-[85%]">
+          <Text className="text-muted-foreground text-[12px] text-center leading-[18px]">{view.text}</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (view.variant === "poll_created_row") {
+    const showVoteCta = Boolean(view.pollId && groupExtras?.onOpenPollVote);
+    return (
+      <View className="items-center my-2 px-4">
+        <View className="bg-muted/60 px-4 py-3 rounded-2xl max-w-[92%] w-full">
+          <View className="flex-row items-center justify-center gap-2 flex-wrap">
+            <BarChart2 size={16} color="#f97316" strokeWidth={2} />
+            <Text className="text-muted-foreground text-[12px] text-center leading-[18px] flex-1 min-w-[120px]">
+              {view.actorLabel} đã tạo một bình chọn{view.question ? `: ${view.question}` : ""}
+            </Text>
+            {showVoteCta ? (
+              <Pressable
+                onPress={() => groupExtras!.onOpenPollVote(view.pollId)}
+                className="bg-orange-500 px-3 py-1.5 rounded-full"
+              >
+                <Text className="text-white text-[11px] font-bold">Bình chọn</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  const t = (groupExtras?.groupTasks ?? []).find((x) => String(x.taskId ?? "") === view.taskId);
+  const participants = Array.isArray(t?.participants) ? (t.participants as string[]) : [];
+  const participantsCount = participants.length;
+  const joined = groupExtras ? participants.includes(groupExtras.currentUserId) : false;
+  const assignees = Array.isArray(t?.assignees) ? (t.assignees as string[]) : [];
+  const canJoinThisTask = groupExtras ? assignees.includes(groupExtras.currentUserId) : false;
+
+  const onJoin = async (): Promise<void> => {
+    if (!groupExtras) return;
+    setJoinBusy(true);
+    try {
+      await groupExtras.joinTask(view.taskId);
+      groupExtras.onTaskJoined?.(view.taskId);
+      Alert.alert("Thành công", "Bạn đã tham gia công việc");
+    } catch (e: unknown) {
+      const err = e as { status?: number; data?: { status?: number } };
+      const status = err?.status ?? err?.data?.status;
+      if (status === 403) Alert.alert("Lỗi", "Bạn không được giao công việc này");
+      else Alert.alert("Lỗi", "Không thể tham gia công việc");
+    } finally {
+      setJoinBusy(false);
+    }
+  };
+
+  return (
+    <View className="items-center my-2 px-4">
+      <View className="bg-muted/60 px-3 py-3 rounded-2xl max-w-[92%] w-full border border-border/30">
+        {groupExtras ? (
+          <View className="flex-row items-center justify-center gap-2 mb-2 flex-wrap">
+            <Text className="text-muted-foreground text-[12px] font-semibold">
+              {participantsCount} người đã tham gia
+            </Text>
+            <Pressable
+              onPress={() => void onJoin()}
+              disabled={joined || !canJoinThisTask || joinBusy}
+              className={
+                joined
+                  ? "px-3 py-1 rounded-full bg-muted"
+                  : !canJoinThisTask
+                    ? "px-3 py-1 rounded-full bg-primary/40"
+                    : "px-3 py-1 rounded-full bg-primary"
+              }
+            >
+              {joinBusy ? (
+                <ActivityIndicator color="white" size="small" />
+              ) : (
+                <Text
+                  className={`text-[12px] font-bold ${joined || !canJoinThisTask ? "text-muted-foreground" : "text-white"}`}
+                >
+                  {joined ? "Đã tham gia" : "Tham gia"}
+                </Text>
+              )}
+            </Pressable>
+          </View>
+        ) : null}
+
+        <View className="flex-row items-center justify-center gap-2 mb-1">
+          <ClipboardList size={16} color="#22c55e" strokeWidth={2} />
+          <Text className="text-foreground text-[12px] font-bold">Giao việc</Text>
+        </View>
+
+        <View className="rounded-xl bg-background/80 border border-border/40 px-3 py-2">
+          <Text className="text-muted-foreground text-[12px] font-semibold text-center mb-1">
+            {message.senderId === (viewerUserId ?? groupExtras?.currentUserId) ? "Bạn" : view.actorLabel} đã giao việc
+          </Text>
+          <Text className="text-foreground text-[13px] font-extrabold text-center">{view.title}</Text>
+          <View className="mt-2 gap-1">
+            <View className="flex-row items-center justify-center gap-2 flex-wrap">
+              <Users size={14} color={muted} strokeWidth={2} />
+              <Text className="text-muted-foreground text-[12px]">
+                <Text className="font-semibold">Giao cho:</Text> {view.assigneeLabel}
+              </Text>
+            </View>
+            {view.dueDate ? (
+              <View className="flex-row items-center justify-center gap-2 flex-wrap">
+                <CalendarClock size={14} color={muted} strokeWidth={2} />
+                <Text className="text-muted-foreground text-[12px]">
+                  <Text className="font-semibold">Deadline:</Text> {new Date(view.dueDate).toLocaleString("vi-VN")}
+                </Text>
+              </View>
+            ) : null}
+            {view.note ? (
+              <Text className="text-muted-foreground text-[12px] text-center">
+                <Text className="font-semibold">Ghi chú:</Text> {view.note}
+              </Text>
+            ) : null}
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 // ── Reply-To Preview ────────────────────────────────────────────────────
 
 function ReplyToPreview({ message, isOwn, onPress }: { message: IMessage; isOwn: boolean; onPress?: () => void }) {
   if (!message.replyToDetails) return null;
 
   const reply = message.replyToDetails;
-  const previewContent = reply.content?.trim() || getMediaTypeLabel(reply.type) || "[Media]";
+  const previewContent =
+    reply.content?.trim() || getMessageTypeLabel(reply.type) || "[Tin nhắn]";
 
   return (
     <Pressable
@@ -165,27 +302,55 @@ function ReactionsRow({ reactions, isOwn }: { reactions: Record<string, string[]
   );
 }
 
+function parseTitleBodyJson(content: string): { title: string; body?: string } | null {
+  const t = content.trim();
+  if (!t.startsWith("{")) return null;
+  try {
+    const o = JSON.parse(t) as Record<string, unknown>;
+    const title = String(o.title ?? o.question ?? o.name ?? "").trim();
+    if (!title) return null;
+    const body = [o.description, o.note, o.location]
+      .map((x) => (typeof x === "string" ? x.trim() : ""))
+      .find(Boolean);
+    return { title, body: body || undefined };
+  } catch {
+    return null;
+  }
+}
+
 // ── Main ChatBubble ─────────────────────────────────────────────────────
 
-export const ChatBubble = ({ message, isOwn, isGroup = false, prevMessage, nextMessage, onLongPress, onPressReplyTo }: ChatBubbleProps) => {
+export const ChatBubble = ({
+  message,
+  isOwn,
+  viewerUserId,
+  isGroup = false,
+  prevMessage,
+  nextMessage,
+  onLongPress,
+  onPressReplyTo,
+  groupExtras,
+}: ChatBubbleProps) => {
   const { muted, primary } = useIconColors();
   const isRecalled = Boolean(message.isRecalled);
   const isDeleted = Boolean(message.isDeleted);
 
-  // ── Date separator ─────────────────────────────────────────
   const showDateSeparator = !prevMessage || !isSameDay(prevMessage.createdAt, message.createdAt);
 
-  // ── System message ─────────────────────────────────────────
-  if (message.type === "system" || (message as any).position === "center") {
+  if (message.type === "system" || isCenterPositionMessage(message)) {
     return (
       <>
         {showDateSeparator && <DateSeparator date={message.createdAt} />}
-        <SystemMessage message={message} isOwn={isOwn} />
+        <SystemCenterBlock
+          message={message}
+          isOwn={isOwn}
+          viewerUserId={viewerUserId}
+          groupExtras={isGroup ? groupExtras : undefined}
+        />
       </>
     );
   }
 
-  // ── Call log ───────────────────────────────────────────────
   if (message.type === "call") {
     return (
       <>
@@ -195,7 +360,6 @@ export const ChatBubble = ({ message, isOwn, isGroup = false, prevMessage, nextM
     );
   }
 
-  // ── Grouping logic ────────────────────────────────────────
   const isSameSenderAsPrev =
     !!prevMessage && prevMessage.senderId === message.senderId && isSameDay(prevMessage.createdAt, message.createdAt);
   const isSameSenderAsNext =
@@ -203,27 +367,45 @@ export const ChatBubble = ({ message, isOwn, isGroup = false, prevMessage, nextM
   const showSenderName = !isOwn && isGroup && !isSameSenderAsPrev;
   const showTimestamp = !isSameSenderAsNext;
 
-  // ── Media checks ──────────────────────────────────────────
   const rawMedia = message.mediaUrl?.trim();
   const isLocalMedia = Boolean(rawMedia && (rawMedia.startsWith("file:") || rawMedia.startsWith("content:")));
   const hasImage = message.type === "image" && rawMedia;
+  const hasSticker = message.type === "sticker" && rawMedia;
   const hasVideo = message.type === "video" && (message.thumbnailUrl || rawMedia);
   const hasFile = message.type === "file" && (rawMedia || isLocalMedia);
   const hasCaption = (message.content ?? "").trim().length > 0;
   const hasReactions = message.reactions && Object.keys(message.reactions).length > 0;
+
+  const isVisualMedia = Boolean(hasImage || hasVideo || hasSticker);
+  const parsedLocation = message.type === "location" ? parseLocationPayload(message.content ?? "") : null;
+  const hasLocationBlock = message.type === "location" && (parsedLocation !== null || hasCaption);
+  const structuredPollSchedule =
+    message.type === "poll" || message.type === "schedule" ? parseTitleBodyJson(message.content ?? "") : null;
+  const hasPollScheduleBlock =
+    (message.type === "poll" || message.type === "schedule") && (structuredPollSchedule !== null || hasCaption);
+
+  const isEmojiMessage = message.type === "emoji";
+  const fallbackLabel = getMessageTypeLabel(message.type);
+  const hasRenderableSpecial =
+    isVisualMedia ||
+    hasFile ||
+    hasLocationBlock ||
+    hasPollScheduleBlock ||
+    (isEmojiMessage && (hasCaption || Boolean(fallbackLabel)));
+
+  const plainTextFallback =
+    !hasRenderableSpecial && !hasCaption ? (fallbackLabel || "Tin nhắn") : "";
 
   return (
     <>
       {showDateSeparator && <DateSeparator date={message.createdAt} />}
 
       <View className={`${isSameSenderAsPrev ? "mt-0.5" : "mt-2"} ${isOwn ? "items-end" : "items-start"}`}>
-        {/* Sender name — group chat only */}
         {showSenderName && message.senderDisplayName ? (
           <Text className="text-primary text-[11px] font-semibold mb-1 ml-2">{message.senderDisplayName}</Text>
         ) : null}
 
         <Pressable onLongPress={() => onLongPress?.(message)} delayLongPress={300} className="max-w-[78%]">
-          {/* Deleted / Recalled */}
           {isDeleted || isRecalled ? (
             <View className="flex-row items-center gap-1.5 px-4 py-2.5 rounded-[20px] border border-dashed border-border/40 opacity-60">
               <Ban size={13} color={muted} strokeWidth={1.5} />
@@ -231,24 +413,22 @@ export const ChatBubble = ({ message, isOwn, isGroup = false, prevMessage, nextM
             </View>
           ) : (
             <View>
-              {/* Main bubble */}
               <View
                 className={[
-                  hasImage || hasVideo
-                    ? "rounded-2xl overflow-hidden"
-                    : `px-4 py-2.5 ${isOwn ? "bg-primary rounded-[20px] rounded-br-[5px]" : "bg-card rounded-[20px] rounded-bl-[5px]"}`,
+                  isVisualMedia ? "rounded-2xl overflow-hidden" : "",
+                  !isVisualMedia
+                    ? `px-4 py-2.5 ${isOwn ? "bg-primary rounded-[20px] rounded-br-[5px]" : "bg-card rounded-[20px] rounded-bl-[5px]"}`
+                    : "",
                 ]
                   .filter(Boolean)
                   .join(" ")}
               >
-                {/* Reply-to preview */}
                 <ReplyToPreview
                   message={message}
-                  isOwn={isOwn && !hasImage && !hasVideo}
+                  isOwn={isOwn && !isVisualMedia}
                   onPress={() => onPressReplyTo?.(message.replyToDetails!.messageId)}
                 />
 
-                {/* Image */}
                 {hasImage && (
                   <Image
                     source={{
@@ -259,7 +439,16 @@ export const ChatBubble = ({ message, isOwn, isGroup = false, prevMessage, nextM
                   />
                 )}
 
-                {/* Video thumbnail */}
+                {hasSticker && (
+                  <Image
+                    source={{
+                      uri: isLocalMedia ? rawMedia! : normalizeMediaUrl(message.thumbnailUrl ?? message.mediaUrl) ?? "",
+                    }}
+                    className="w-[168px] h-[168px] rounded-2xl self-center"
+                    resizeMode="contain"
+                  />
+                )}
+
                 {hasVideo && (
                   <View className="w-full aspect-video rounded-2xl bg-black/80 items-center justify-center overflow-hidden">
                     <Image
@@ -277,7 +466,6 @@ export const ChatBubble = ({ message, isOwn, isGroup = false, prevMessage, nextM
                   </View>
                 )}
 
-                {/* File */}
                 {hasFile && (
                   <View className={`flex-row items-center gap-2 px-3 py-2.5 rounded-2xl ${isOwn ? "bg-primary" : "bg-card"}`}>
                     <FileText size={28} color={isOwn ? "rgba(255,255,255,0.7)" : muted} strokeWidth={1.5} />
@@ -294,30 +482,64 @@ export const ChatBubble = ({ message, isOwn, isGroup = false, prevMessage, nextM
                   </View>
                 )}
 
-                {/* Text content / caption */}
-                {!hasFile && hasCaption && (
-                  <View className={hasImage || hasVideo ? "px-3 py-2" : ""}>
-                    <Text className={`text-[15px] leading-[22px] ${isOwn && !hasImage && !hasVideo ? "text-white" : "text-foreground"}`}>
+                {message.type === "location" && parsedLocation ? (
+                  <Pressable
+                    onPress={() => void Linking.openURL(mapsUrlForLatLng(parsedLocation.lat, parsedLocation.lng))}
+                    className={`flex-row items-center gap-2 px-3 py-2 rounded-xl ${isOwn ? "bg-white/15" : "bg-muted/50"}`}
+                  >
+                    <MapPin size={20} color={isOwn ? "rgba(255,255,255,0.85)" : primary} strokeWidth={2} />
+                    <View className="flex-1 min-w-0">
+                      <Text className={`text-[13px] font-semibold ${isOwn ? "text-white" : "text-foreground"}`} numberOfLines={2}>
+                        {parsedLocation.title}
+                      </Text>
+                      <Text className={`text-[11px] mt-0.5 ${isOwn ? "text-white/70" : "text-primary"}`}>Mở bản đồ</Text>
+                    </View>
+                  </Pressable>
+                ) : null}
+
+                {(message.type === "poll" || message.type === "schedule") && structuredPollSchedule ? (
+                  <View className={isOwn ? "bg-white/10 px-2 py-1 rounded-lg" : "bg-muted/40 px-2 py-1 rounded-lg"}>
+                    <Text className={`text-[13px] font-bold ${isOwn ? "text-white" : "text-foreground"}`}>{structuredPollSchedule.title}</Text>
+                    {structuredPollSchedule.body ? (
+                      <Text className={`text-[12px] mt-1 ${isOwn ? "text-white/80" : "text-muted-foreground"}`}>{structuredPollSchedule.body}</Text>
+                    ) : null}
+                  </View>
+                ) : null}
+
+                {isEmojiMessage && hasCaption ? (
+                  <View className={isVisualMedia ? "px-3 py-2" : ""}>
+                    <Text className={`text-[34px] leading-[42px] ${isOwn ? "text-white" : "text-foreground"}`}>{message.content}</Text>
+                  </View>
+                ) : null}
+
+                {!hasFile && !isEmojiMessage && hasCaption && (
+                  <View className={isVisualMedia ? "px-3 py-2" : ""}>
+                    <Text className={`text-[15px] leading-[22px] ${isOwn && !isVisualMedia ? "text-white" : "text-foreground"}`}>
                       {message.content}
                     </Text>
                   </View>
                 )}
 
-                {/* Edited indicator */}
+                {plainTextFallback ? (
+                  <Text className={`text-[14px] ${isOwn ? "text-white/90" : "text-muted-foreground"}`}>{plainTextFallback}</Text>
+                ) : null}
+
+                {isEmojiMessage && !hasCaption && fallbackLabel ? (
+                  <Text className={`text-[15px] ${isOwn ? "text-white/80" : "text-muted-foreground"}`}>{fallbackLabel}</Text>
+                ) : null}
+
                 {message.isEdited && (
-                  <Text className={`text-[10px] mt-0.5 ${isOwn && !hasImage && !hasVideo ? "text-white/50" : "text-muted-foreground/60"}`}>
+                  <Text className={`text-[10px] mt-0.5 ${isOwn && !isVisualMedia ? "text-white/50" : "text-muted-foreground/60"}`}>
                     (đã sửa)
                   </Text>
                 )}
               </View>
 
-              {/* Reactions */}
               {hasReactions && <ReactionsRow reactions={message.reactions} isOwn={isOwn} />}
             </View>
           )}
         </Pressable>
 
-        {/* Timestamp + Status */}
         {showTimestamp && (
           <View className={`flex-row items-center gap-1 mt-0.5 px-1 ${isOwn ? "flex-row-reverse" : "flex-row"}`}>
             <Text className="text-muted-foreground text-[11px]">{formatTimestamp(message.createdAt)}</Text>
@@ -328,8 +550,6 @@ export const ChatBubble = ({ message, isOwn, isGroup = false, prevMessage, nextM
     </>
   );
 };
-
-// ── Sub-components ──────────────────────────────────────────────────────
 
 function DateSeparator({ date }: { date: string }) {
   return (

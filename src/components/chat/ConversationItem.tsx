@@ -2,7 +2,10 @@ import { Pressable, Text, View } from "react-native";
 
 import { Avatar } from "@/components/common/Avatar";
 import { Badge } from "@/components/common/Badge";
+import { useAppSelector } from "@/hooks/useAppStore";
 import type { IConversation } from "@/types/chat.types";
+import { getMessageTypeLabel } from "@/utils/messageDisplay";
+import { formatSystemLastMessagePreview } from "@/utils/systemMessage";
 
 interface ConversationItemProps {
   conversation: IConversation;
@@ -22,28 +25,13 @@ function formatTime(isoString: string): string {
   return date.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" });
 }
 
-function getMediaLabel(type: string): string {
-  switch (type) {
-    case "image": return "[Ảnh]";
-    case "video": return "[Video]";
-    case "file": return "[File]";
-    case "poll": return "[Bình chọn]";
-    case "task": return "[Giao việc]";
-    case "call": return "[Cuộc gọi]";
-    default: return "";
-  }
-}
-
 /**
  * ConversationItem — Messenger/Zalo flat style:
  * - Hiển thị unread badge và media preview [Ảnh], [Video],...
  * - Tên bold khi có tin mới chưa đọc
  */
-export const ConversationItem = ({ 
-  conversation, 
-  onPress, 
-  isOnline = false 
-}: ConversationItemProps) => {
+export const ConversationItem = ({ conversation, onPress, isOnline = false }: ConversationItemProps) => {
+  const currentUserId = useAppSelector((s) => s.auth.user?.userId ?? "");
   const isGroup = conversation.type === "group";
   const lastMsg = conversation.lastMessage;
   const unreadCount = conversation.unreadCount ?? 0;
@@ -52,10 +40,18 @@ export const ConversationItem = ({
   // Render preview text
   let preview = "Chưa có tin nhắn";
   if (lastMsg) {
-    const mediaLabel = getMediaLabel(lastMsg.type);
-    const content = lastMsg.content?.trim() || mediaLabel || "Tin nhắn mới";
-    
-    if (isGroup && lastMsg.senderDisplayName) {
+    const typeLabel = getMessageTypeLabel(lastMsg.type);
+    let line = lastMsg.content?.trim() || "";
+
+    if (lastMsg.type === "system") {
+      const sys = formatSystemLastMessagePreview(lastMsg.content, lastMsg.senderId, currentUserId, lastMsg.senderDisplayName);
+      if (sys) line = sys;
+    }
+
+    const content = line || typeLabel || "Tin nhắn mới";
+    const shouldPrefixSender = isGroup && lastMsg.senderDisplayName && lastMsg.type !== "system";
+
+    if (shouldPrefixSender) {
       preview = `${lastMsg.senderDisplayName}: ${content}`;
     } else {
       preview = content;
@@ -92,15 +88,10 @@ export const ConversationItem = ({
 
         {/* Row 2: Preview + badge */}
         <View className="flex-row items-center justify-between gap-2">
-          <Text
-            className={`flex-1 text-[14px] ${hasUnread ? "text-foreground font-semibold" : "text-muted-foreground"}`}
-            numberOfLines={1}
-          >
+          <Text className={`flex-1 text-[14px] ${hasUnread ? "text-foreground font-semibold" : "text-muted-foreground"}`} numberOfLines={1}>
             {preview}
           </Text>
-          {hasUnread ? (
-            <Badge count={unreadCount} variant="primary" />
-          ) : null}
+          {hasUnread ? <Badge count={unreadCount} variant="primary" /> : null}
         </View>
       </View>
     </Pressable>

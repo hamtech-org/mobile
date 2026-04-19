@@ -7,11 +7,7 @@
 export * from "./baseChatApi";
 
 // 2. Import hooks from modular APIs to trigger endpoint injection and re-export them
-export {
-  useGetConversationsQuery,
-  useGetConversationMembersQuery,
-  useCreateConversationMutation,
-} from "./endpoints/conversationApi";
+export { useGetConversationsQuery, useGetConversationMembersQuery, useCreateConversationMutation } from "./endpoints/conversationApi";
 
 export {
   useGetMessagesQuery,
@@ -35,23 +31,11 @@ export {
   useGetGroupRequestsQuery,
 } from "./endpoints/groupApi";
 
-export {
-  useGetPollsQuery,
-  useCreatePollMutation,
-  useVotePollMutation,
-  useUnvotePollMutation,
-} from "./endpoints/pollApi";
+export { useGetPollsQuery, useCreatePollMutation, useVotePollMutation, useUnvotePollMutation } from "./endpoints/pollApi";
 
-export {
-  useGetTasksQuery,
-  useCreateTaskMutation,
-  useUpdateTaskStatusMutation,
-} from "./endpoints/taskApi";
+export { useGetTasksQuery, useCreateTaskMutation, useUpdateTaskStatusMutation, useJoinTaskMutation } from "./endpoints/taskApi";
 
-export {
-  useGetLatestAIRecapQuery,
-  useGenerateAIRecapMutation,
-} from "./endpoints/aiRecapApi";
+export { useGetLatestAIRecapQuery, useGenerateAIRecapMutation } from "./endpoints/aiRecapApi";
 
 // 3. Re-export specific request interfaces for convenience
 export type { CreateConversationRequest } from "./endpoints/conversationApi";
@@ -65,13 +49,6 @@ export type {
   ReactMessageRequest,
 } from "./endpoints/messageApi";
 export { CHAT_MESSAGES_QUERY_LIMIT } from "./endpoints/messageApi";
-export type {
-  UpdateGroupRequest,
-  AddMembersRequest,
-  ChangeMemberRoleRequest,
-} from "./endpoints/groupApi";
+export type { UpdateGroupRequest, AddMembersRequest, ChangeMemberRoleRequest } from "./endpoints/groupApi";
 export type { CreatePollRequest } from "./endpoints/pollApi";
-export type {
-  CreateTaskRequest,
-  UpdateTaskStatusRequest,
-} from "./endpoints/taskApi";
+export type { CreateTaskRequest, UpdateTaskStatusRequest } from "./endpoints/taskApi";
