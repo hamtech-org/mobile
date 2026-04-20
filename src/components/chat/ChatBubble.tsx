@@ -5,8 +5,10 @@ import {
   Linking,
   Pressable,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
+import { useVideoPlayer, VideoView } from "expo-video";
 import {
   Ban,
   AlertCircle,
@@ -14,6 +16,7 @@ import {
   CalendarClock,
   Check,
   CheckCheck,
+  ChevronRight,
   ClipboardList,
   FileText,
   MapPin,
@@ -380,6 +383,7 @@ export const ChatBubble = ({
   onPressReplyTo,
   groupExtras,
 }: ChatBubbleProps) => {
+  const { width: windowWidth } = useWindowDimensions();
   const { muted, primary } = useIconColors();
   const calendarNow = useCalendarNow();
   const isRecalled = Boolean(message.isRecalled);
@@ -422,10 +426,18 @@ export const ChatBubble = ({
   const isLocalMedia = Boolean(rawMedia && (rawMedia.startsWith("file:") || rawMedia.startsWith("content:")));
   const hasImage = message.type === "image" && rawMedia;
   const hasSticker = message.type === "sticker" && rawMedia;
-  const hasVideo = message.type === "video" && (message.thumbnailUrl || rawMedia);
+  /** Video: cần `mediaUrl` (hoặc URI local lúc gửi) — RN `Image` không hiển thị MP4. */
+  const hasVideo = message.type === "video" && Boolean((rawMedia ?? "").trim());
   const hasFile = message.type === "file" && (rawMedia || isLocalMedia);
   const hasCaption = (message.content ?? "").trim().length > 0;
   const hasReactions = message.reactions && Object.keys(message.reactions).length > 0;
+
+  const fileMetaSubline = [
+    message.mediaSize != null && message.mediaSize > 0 ? formatFileSize(message.mediaSize) : "",
+    message.mediaType?.includes("/") ? (message.mediaType.split("/").pop() ?? "").toUpperCase() : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   const isVisualMedia = Boolean(hasImage || hasVideo || hasSticker);
   const parsedLocation = message.type === "location" ? parseLocationPayload(message.content ?? "") : null;
@@ -447,28 +459,43 @@ export const ChatBubble = ({
   const plainTextFallback =
     !hasRenderableSpecial && !hasCaption ? (fallbackLabel || "Tin nhắn") : "";
 
+  /** Bubble file kiểu Zalo: thẻ ngang rộng ~82% màn hình (tối đa ~360pt). */
+  const fileBubbleMinWidth = Math.max(248, Math.min(Math.round(windowWidth * 0.82), 360));
+  const widenFileBubble = hasFile;
+
   return (
     <>
       {showDateSeparator && <DateSeparator date={message.createdAt} now={calendarNow} />}
 
-      <View className={`${isSameSenderAsPrev ? "mt-0.5" : "mt-2"} ${isOwn ? "items-end" : "items-start"}`}>
+      <View
+        className={`w-full ${isSameSenderAsPrev ? "mt-0.5" : "mt-2"} ${isOwn ? "items-end" : "items-start"}`}
+      >
         {showSenderName && message.senderDisplayName ? (
           <Text className="text-primary text-[11px] font-semibold mb-1 ml-2">{message.senderDisplayName}</Text>
         ) : null}
 
-        <Pressable onLongPress={() => onLongPress?.(message)} delayLongPress={300} className="max-w-[78%]">
+        <Pressable
+          onLongPress={() => onLongPress?.(message)}
+          delayLongPress={300}
+          className={
+            isOwn
+              ? `${widenFileBubble ? "max-w-[92%]" : "max-w-[78%]"} min-w-0 self-end`
+              : `${widenFileBubble ? "max-w-[92%]" : "max-w-[78%]"} min-w-0 self-start`
+          }
+        >
           {isDeleted || isRecalled ? (
             <View className="flex-row items-center gap-1.5 px-4 py-2.5 rounded-[20px] border border-dashed border-border/40 opacity-60">
               <Ban size={13} color={muted} strokeWidth={1.5} />
               <Text className="text-muted-foreground text-sm italic">{isDeleted ? "Tin nhắn đã bị xóa" : "Tin nhắn đã được thu hồi"}</Text>
             </View>
           ) : (
-            <View>
+            <View className="max-w-full">
               <View
                 className={[
+                  "max-w-full",
                   isVisualMedia ? "rounded-2xl overflow-hidden" : "",
                   !isVisualMedia
-                    ? `px-4 py-2.5 ${isOwn ? "bg-primary rounded-[20px] rounded-br-[5px]" : "bg-card rounded-[20px] rounded-bl-[5px]"}`
+                    ? `${hasFile ? "px-2 py-2" : "px-4 py-2.5"} ${isOwn ? "bg-primary rounded-[20px] rounded-br-[5px]" : "bg-card rounded-[20px] rounded-bl-[5px]"}`
                     : "",
                 ]
                   .filter(Boolean)
@@ -502,35 +529,37 @@ export const ChatBubble = ({
                 )}
 
                 {hasVideo && (
-                  <View className="w-full aspect-video rounded-2xl bg-black/80 items-center justify-center overflow-hidden">
-                    <Image
-                      source={{
-                        uri: isLocalMedia
-                          ? (message.thumbnailUrl ?? rawMedia)!
-                          : normalizeMediaUrl(message.thumbnailUrl ?? message.mediaUrl!) ?? "",
-                      }}
-                      className="w-full h-full absolute"
-                      resizeMode="cover"
+                  <View className="w-full rounded-2xl overflow-hidden bg-black">
+                    <ChatBubbleVideo
+                      key={`${message.messageId}-${isLocalMedia ? rawMedia : normalizeMediaUrl(message.mediaUrl) ?? ""}`}
+                      playUri={
+                        isLocalMedia
+                          ? (rawMedia ?? "").trim()
+                          : (normalizeMediaUrl(message.mediaUrl) ?? "").trim()
+                      }
                     />
-                    <View className="bg-black/50 rounded-full p-3">
-                      <Video size={24} color="white" strokeWidth={2} />
-                    </View>
                   </View>
                 )}
 
                 {hasFile && (
-                  <View className={`flex-row items-center gap-2 px-3 py-2.5 rounded-2xl ${isOwn ? "bg-primary" : "bg-card"}`}>
-                    <FileText size={28} color={isOwn ? "rgba(255,255,255,0.7)" : muted} strokeWidth={1.5} />
-                    <View className="flex-1 min-w-0">
-                      <Text className={`text-xs font-semibold ${isOwn ? "text-white" : "text-foreground"}`} numberOfLines={1}>
+                  <View
+                    className="w-full flex-row items-center gap-3 px-3.5 py-3 rounded-xl bg-white border border-border/25"
+                    style={{ minWidth: fileBubbleMinWidth }}
+                  >
+                    <View className="h-11 w-11 shrink-0 rounded-lg items-center justify-center bg-primary/10">
+                      <FileText size={24} color={primary} strokeWidth={2} />
+                    </View>
+                    <View className="min-w-0 flex-1 pr-1">
+                      <Text className="text-foreground text-[15px] font-semibold leading-5" numberOfLines={2}>
                         {message.mediaOriginalName?.trim() || "File đính kèm"}
                       </Text>
-                      {message.mediaSize != null && message.mediaSize > 0 && (
-                        <Text className={`text-[10px] ${isOwn ? "text-white/60" : "text-muted-foreground"}`}>
-                          {formatFileSize(message.mediaSize)}
+                      {fileMetaSubline ? (
+                        <Text className="text-muted-foreground text-[12px] mt-1" numberOfLines={1}>
+                          {fileMetaSubline}
                         </Text>
-                      )}
+                      ) : null}
                     </View>
+                    <ChevronRight size={20} color={muted} strokeWidth={2} />
                   </View>
                 )}
 
@@ -564,8 +593,8 @@ export const ChatBubble = ({
                   </View>
                 ) : null}
 
-                {!hasFile && !isEmojiMessage && hasCaption && (
-                  <View className={isVisualMedia ? "px-3 py-2" : ""}>
+                {!isEmojiMessage && hasCaption && (
+                  <View className={isVisualMedia || hasFile ? "px-3 py-2" : ""}>
                     <Text className={`text-[15px] leading-[22px] ${isOwn && !isVisualMedia ? "text-white" : "text-foreground"}`}>
                       {message.content}
                     </Text>
@@ -602,6 +631,31 @@ export const ChatBubble = ({
     </>
   );
 };
+
+/** Phát MP4/HLS trong bubble — `Image` không hiển thị được khung hình từ URL video. */
+function ChatBubbleVideo({ playUri }: { playUri: string }) {
+  if (!playUri) {
+    return (
+      <View className="w-full aspect-video items-center justify-center bg-muted px-4">
+        <Text className="text-muted-foreground text-center text-sm">Không có đường dẫn video</Text>
+      </View>
+    );
+  }
+
+  const player = useVideoPlayer(playUri, (p) => {
+    p.loop = false;
+  });
+
+  return (
+    <VideoView
+      player={player}
+      style={{ width: "100%", minHeight: 200, aspectRatio: 16 / 9 }}
+      contentFit="contain"
+      nativeControls
+      accessibilityLabel="Video trong tin nhắn"
+    />
+  );
+}
 
 function DateSeparator({ date, now }: { date: string; now: Date }) {
   return (
