@@ -255,6 +255,8 @@ export default function ChatDetailScreen() {
         await sendMediaMessage(conversationId, mediaType, caption, uploadRes.mediaId, replySnapshot?.messageId, {
           optimisticLocalUri: file.uri,
           optimisticMediaName: file.name,
+          optimisticMediaSize: attachment.size,
+          optimisticMimeType: attachment.mimeType,
           clientReplyToDetails,
         });
 
@@ -361,6 +363,7 @@ export default function ChatDetailScreen() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <FlatList
           ref={listRef}
+          style={{ flex: 1 }}
           data={allMessages}
           keyExtractor={(item) => item.messageId}
           inverted
