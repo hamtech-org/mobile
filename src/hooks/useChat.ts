@@ -53,6 +53,8 @@ export const useChat = () => {
       options?: {
         optimisticLocalUri?: string;
         optimisticMediaName?: string;
+        optimisticMediaSize?: number;
+        optimisticMimeType?: string;
         clientReplyToDetails?: IReplyToDetails | null;
       },
     ): Promise<void> => {
@@ -64,6 +66,8 @@ export const useChat = () => {
         replyTo,
         optimisticLocalUri: options?.optimisticLocalUri,
         optimisticMediaName: options?.optimisticMediaName,
+        optimisticMediaSize: options?.optimisticMediaSize,
+        optimisticMimeType: options?.optimisticMimeType,
         clientReplyToDetails: options?.clientReplyToDetails,
       }).unwrap();
     },
