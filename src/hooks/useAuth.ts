@@ -61,7 +61,11 @@ export const useAuth = () => {
         await loginMutation({ email, password }).unwrap();
         router.push({
           pathname: "/(auth)/otp-verification",
-          params: { email, mode: "login", notice: "Đã gửi OTP đăng nhập. Vui lòng kiểm tra email." },
+          params: {
+            email,
+            mode: "login",
+            notice: "Đã gửi OTP đăng nhập. Vui lòng kiểm tra email.",
+          },
         });
         return true;
       } catch {
@@ -77,7 +81,11 @@ export const useAuth = () => {
         await registerMutation(payload).unwrap();
         router.push({
           pathname: "/(auth)/otp-verification",
-          params: { email: payload.email, mode: "register", notice: "Đã gửi OTP xác thực email đăng ký." },
+          params: {
+            email: payload.email,
+            mode: "register",
+            notice: "Đã gửi OTP xác thực email đăng ký.",
+          },
         });
         return true;
       } catch {

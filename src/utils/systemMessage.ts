@@ -45,7 +45,10 @@ function replaceFirst(haystack: string, needle: string, replacement: string): st
 }
 
 /** Chuẩn bị nội dung system (không parse JSON): thay tên, case ảnh đại diện nhóm. */
-export function preprocessSystemPlainText(message: IMessage, ctx: SystemMessageFormatContext): string {
+export function preprocessSystemPlainText(
+  message: IMessage,
+  ctx: SystemMessageFormatContext,
+): string {
   let text = message.content ?? "";
 
   if (ctx.isOwn && text.includes("đã cập nhật ảnh đại diện nhóm")) {
@@ -74,7 +77,10 @@ function actorWho(
 /**
  * Parse JSON system message → view cho bubble (text / card giao việc / hàng poll tạo).
  */
-export function buildSystemBubbleView(message: IMessage, ctx: SystemMessageFormatContext): SystemBubbleView {
+export function buildSystemBubbleView(
+  message: IMessage,
+  ctx: SystemMessageFormatContext,
+): SystemBubbleView {
   const baseText = preprocessSystemPlainText(message, ctx);
   const raw = baseText.trim();
   if (!raw.startsWith("{")) {
@@ -119,7 +125,9 @@ export function buildSystemBubbleView(message: IMessage, ctx: SystemMessageForma
 
     if (kind === "task_joined") {
       const title = String(obj.task?.title ?? "").trim();
-      const line = title ? `${who} đã tham gia công việc "${title}"` : `${who} đã tham gia công việc`;
+      const line = title
+        ? `${who} đã tham gia công việc "${title}"`
+        : `${who} đã tham gia công việc`;
       return { variant: "text", text: line };
     }
     if (kind === "poll_voted") {
@@ -185,10 +193,13 @@ export function formatSystemLastMessagePreview(
     const opt = String(obj.poll?.optionText ?? "").trim();
     const q = String(obj.poll?.question ?? "").trim();
     if (kind === "poll_voted") return opt ? `${who} đã bình chọn: ${opt}` : `${who} đã bình chọn`;
-    if (kind === "poll_vote_changed") return opt ? `${who} đã thay đổi bình chọn: ${opt}` : `${who} đã thay đổi bình chọn`;
+    if (kind === "poll_vote_changed")
+      return opt ? `${who} đã thay đổi bình chọn: ${opt}` : `${who} đã thay đổi bình chọn`;
     if (kind === "poll_unvoted") return opt ? `${who} đã rút phiếu: ${opt}` : `${who} đã rút phiếu`;
-    if (kind === "poll_option_added") return opt ? `${who} đã thêm lựa chọn: ${opt}` : `${who} đã thêm lựa chọn`;
-    if (kind === "poll_closed") return q ? `${who} đã đóng bình chọn: ${q}` : `${who} đã đóng bình chọn`;
+    if (kind === "poll_option_added")
+      return opt ? `${who} đã thêm lựa chọn: ${opt}` : `${who} đã thêm lựa chọn`;
+    if (kind === "poll_closed")
+      return q ? `${who} đã đóng bình chọn: ${q}` : `${who} đã đóng bình chọn`;
   } catch {
     return null;
   }

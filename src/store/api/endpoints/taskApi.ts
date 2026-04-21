@@ -50,4 +50,9 @@ export const taskApi = chatApi.injectEndpoints({
   overrideExisting: false,
 });
 
-export const { useGetTasksQuery, useCreateTaskMutation, useUpdateTaskStatusMutation, useJoinTaskMutation } = taskApi;
+export const {
+  useGetTasksQuery,
+  useCreateTaskMutation,
+  useUpdateTaskStatusMutation,
+  useJoinTaskMutation,
+} = taskApi;

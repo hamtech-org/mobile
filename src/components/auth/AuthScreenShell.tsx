@@ -54,21 +54,27 @@ export const AuthScreenShell = ({
               accessibilityLabel="Quay lại"
             >
               <Ionicons name="chevron-back" size={22} color="hsl(var(--foreground) / 1)" />
-              <Text className="text-foreground text-base">Quay lại</Text>
+              <Text className="text-base text-foreground">Quay lại</Text>
             </Pressable>
           ) : null}
 
           {showHero ? <AuthHero /> : null}
 
-          <View className="bg-card rounded-3xl border border-border/40 p-6 gap-6">
+          <View className="gap-6 rounded-3xl border border-border/40 bg-card p-6">
             {badge ? (
               <View className="self-start rounded-lg bg-muted px-3 py-1">
-                <Text className="text-muted-foreground text-xs font-semibold uppercase tracking-wide">{badge}</Text>
+                <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {badge}
+                </Text>
               </View>
             ) : null}
             <View className="gap-2">
               <Text className="text-3xl font-bold text-foreground">{title}</Text>
-              {description ? <Text className="text-base leading-relaxed text-muted-foreground">{description}</Text> : null}
+              {description ? (
+                <Text className="text-base leading-relaxed text-muted-foreground">
+                  {description}
+                </Text>
+              ) : null}
             </View>
             {children}
           </View>

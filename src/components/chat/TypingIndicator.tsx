@@ -12,10 +12,7 @@ interface TypingIndicatorProps {
  * TypingIndicator — hiện "Tên đang gõ..." với animated dots.
  * Render phía trên input bar khi có người đang gõ.
  */
-export const TypingIndicator = ({
-  typingUsers,
-  currentUserId,
-}: TypingIndicatorProps) => {
+export const TypingIndicator = ({ typingUsers, currentUserId }: TypingIndicatorProps) => {
   // Lọc bỏ chính mình
   const others = typingUsers.filter((u) => u.userId !== currentUserId);
 
@@ -31,9 +28,7 @@ export const TypingIndicator = ({
   return (
     <View className="flex-row items-center gap-2 px-4 py-1.5">
       <AnimatedDots />
-      <Text className="text-muted-foreground text-[12px] italic">
-        {label}
-      </Text>
+      <Text className="text-[12px] italic text-muted-foreground">{label}</Text>
     </View>
   );
 };

@@ -50,8 +50,15 @@ export const RegisterForm = () => {
   return (
     <View className="gap-6">
       <View className="gap-4">
-        <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Hồ sơ</Text>
-        <Input label="Tên hiển thị" value={displayName} onChangeText={setDisplayName} error={fieldErrors.displayName} />
+        <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Hồ sơ
+        </Text>
+        <Input
+          label="Tên hiển thị"
+          value={displayName}
+          onChangeText={setDisplayName}
+          error={fieldErrors.displayName}
+        />
         <Input
           label="Email"
           value={email}
@@ -62,7 +69,9 @@ export const RegisterForm = () => {
         />
       </View>
       <View className="gap-4 border-t border-border/40 pt-2">
-        <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bảo mật</Text>
+        <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Bảo mật
+        </Text>
         <Input
           label="Mật khẩu"
           value={password}
@@ -80,7 +89,7 @@ export const RegisterForm = () => {
           error={fieldErrors.confirmPassword}
         />
       </View>
-      {errorMessage ? <Text className="text-destructive text-sm">{errorMessage}</Text> : null}
+      {errorMessage ? <Text className="text-sm text-destructive">{errorMessage}</Text> : null}
       <Button label="Tạo tài khoản" onPress={handleSubmit} loading={isLoading} />
     </View>
   );

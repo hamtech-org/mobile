@@ -122,7 +122,10 @@ export function ChatPinnedReminderBar({
   const calendarNow = useCalendarNow();
   const [expanded, setExpanded] = useState(false);
 
-  const tasks = useMemo(() => (isGroup ? upcomingTasksSorted(parseTasksEnvelope(tasksRaw)) : []), [isGroup, tasksRaw]);
+  const tasks = useMemo(
+    () => (isGroup ? upcomingTasksSorted(parseTasksEnvelope(tasksRaw)) : []),
+    [isGroup, tasksRaw],
+  );
 
   /** Nhóm: luôn có thanh vào panel; chat đôi: chỉ khi có ghim/task. */
   const showBar = isGroup || pinnedMessages.length > 0 || tasks.length > 0;
@@ -157,7 +160,9 @@ export function ChatPinnedReminderBar({
         : "";
 
   const pinTimeLine =
-    latestPin && !emptyGroupStrip ? formatConversationListActivityTime(latestPin.createdAt, calendarNow) : null;
+    latestPin && !emptyGroupStrip
+      ? formatConversationListActivityTime(latestPin.createdAt, calendarNow)
+      : null;
 
   const winH = Dimensions.get("window").height;
   const sheetTop = insets.top + 52;
@@ -190,7 +195,10 @@ export function ChatPinnedReminderBar({
                 {collapsedSecondary}
               </Text>
               {pinTimeLine ? (
-                <Text className="mt-0.5 text-[11px] font-medium text-muted-foreground/90" numberOfLines={1}>
+                <Text
+                  className="mt-0.5 text-[11px] font-medium text-muted-foreground/90"
+                  numberOfLines={1}
+                >
                   {pinTimeLine}
                 </Text>
               ) : null}
@@ -205,7 +213,13 @@ export function ChatPinnedReminderBar({
         <ChevronDown size={20} color={muted} strokeWidth={2} />
       </Pressable>
 
-      <Modal visible={expanded} animationType="fade" transparent statusBarTranslucent onRequestClose={collapse}>
+      <Modal
+        visible={expanded}
+        animationType="fade"
+        transparent
+        statusBarTranslucent
+        onRequestClose={collapse}
+      >
         <View className="flex-1 justify-start">
           <Pressable className="absolute inset-0" onPress={collapse}>
             <View className="absolute inset-0 bg-black/45" />
@@ -221,25 +235,41 @@ export function ChatPinnedReminderBar({
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={{ paddingBottom: 12 }}
               >
-                <Text className="mb-2.5 mt-1 text-base font-bold text-foreground">Nhắc hẹn sắp tới</Text>
+                <Text className="mb-2.5 mt-1 text-base font-bold text-foreground">
+                  Nhắc hẹn sắp tới
+                </Text>
                 {tasks.length === 0 ? (
-                  <Text className="py-4 text-center text-sm text-muted-foreground">Chưa có nhắc hẹn nào</Text>
+                  <Text className="py-4 text-center text-sm text-muted-foreground">
+                    Chưa có nhắc hẹn nào
+                  </Text>
                 ) : (
                   tasks.map((t) => {
                     const due = formatDueVi(t.dueDate);
                     return (
-                      <View key={t.taskId} className="flex-row items-start border-b border-border py-2.5">
+                      <View
+                        key={t.taskId}
+                        className="flex-row items-start border-b border-border py-2.5"
+                      >
                         <CalendarClock size={18} color={primary} strokeWidth={2} />
                         <View className="ml-2.5 min-w-0 flex-1">
-                          <Text className="text-[15px] font-semibold text-foreground" numberOfLines={2}>
+                          <Text
+                            className="text-[15px] font-semibold text-foreground"
+                            numberOfLines={2}
+                          >
                             {t.title}
                           </Text>
                           {due ? (
-                            <Text className="mt-1 text-[12px] text-muted-foreground" numberOfLines={1}>
+                            <Text
+                              className="mt-1 text-[12px] text-muted-foreground"
+                              numberOfLines={1}
+                            >
                               Hạn: {due}
                             </Text>
                           ) : (
-                            <Text className="mt-1 text-[12px] text-muted-foreground" numberOfLines={1}>
+                            <Text
+                              className="mt-1 text-[12px] text-muted-foreground"
+                              numberOfLines={1}
+                            >
                               {t.status === "in_progress" ? "Đang thực hiện" : "Chưa hoàn thành"}
                             </Text>
                           )}
@@ -249,9 +279,13 @@ export function ChatPinnedReminderBar({
                   })
                 )}
 
-                <Text className="mb-2.5 mt-5 text-base font-bold text-foreground">Danh sách ghim</Text>
+                <Text className="mb-2.5 mt-5 text-base font-bold text-foreground">
+                  Danh sách ghim
+                </Text>
                 {pinnedMessages.length === 0 ? (
-                  <Text className="py-4 text-center text-sm text-muted-foreground">Chưa có tin nhắn ghim</Text>
+                  <Text className="py-4 text-center text-sm text-muted-foreground">
+                    Chưa có tin nhắn ghim
+                  </Text>
                 ) : (
                   pinnedMessages.map((m) => {
                     const row = pinnedMessageDisplay(m, currentUserId);
@@ -268,16 +302,26 @@ export function ChatPinnedReminderBar({
                       >
                         <Pin size={18} color={primary} strokeWidth={2} />
                         <View className="ml-2.5 min-w-0 flex-1">
-                          <Text className="text-[15px] font-semibold text-foreground" numberOfLines={2}>
+                          <Text
+                            className="text-[15px] font-semibold text-foreground"
+                            numberOfLines={2}
+                          >
                             {row.primary}
                           </Text>
-                          <Text className="mt-1 text-[12px] text-muted-foreground" numberOfLines={1}>
+                          <Text
+                            className="mt-1 text-[12px] text-muted-foreground"
+                            numberOfLines={1}
+                          >
                             {row.subtitle}
                             {sentAt ? ` · ${sentAt}` : ""}
                           </Text>
                         </View>
                         {thumb ? (
-                          <Image source={{ uri: thumb }} className="h-12 w-12 rounded-lg bg-muted" resizeMode="cover" />
+                          <Image
+                            source={{ uri: thumb }}
+                            className="h-12 w-12 rounded-lg bg-muted"
+                            resizeMode="cover"
+                          />
                         ) : (
                           <View className="h-12 w-12" />
                         )}
@@ -296,12 +340,20 @@ export function ChatPinnedReminderBar({
               }}
             >
               {onManagePins ? (
-                <Pressable className="flex-row items-center gap-2 px-1 py-1.5 active:opacity-80" onPress={openManage} hitSlop={6}>
+                <Pressable
+                  className="flex-row items-center gap-2 px-1 py-1.5 active:opacity-80"
+                  onPress={openManage}
+                  hitSlop={6}
+                >
                   <Pencil size={18} color={primary} strokeWidth={2} />
                   <Text className="text-[15px] font-semibold text-primary">Chỉnh sửa</Text>
                 </Pressable>
               ) : null}
-              <Pressable className="flex-row items-center gap-2 px-1 py-1.5 active:opacity-80" onPress={collapse} hitSlop={6}>
+              <Pressable
+                className="flex-row items-center gap-2 px-1 py-1.5 active:opacity-80"
+                onPress={collapse}
+                hitSlop={6}
+              >
                 <ChevronUp size={20} color={primary} strokeWidth={2} />
                 <Text className="text-[15px] font-semibold text-primary">Thu gọn</Text>
               </Pressable>

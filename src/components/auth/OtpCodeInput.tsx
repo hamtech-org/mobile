@@ -19,7 +19,7 @@ export const OtpCodeInput = ({ value, onChange, error }: OtpCodeInputProps) => {
 
   return (
     <View className="gap-2">
-      <Text className="text-foreground text-sm font-medium">Mã OTP</Text>
+      <Text className="text-sm font-medium text-foreground">Mã OTP</Text>
       <View className="relative">
         <View className="pointer-events-none flex-row justify-between gap-2">
           {Array.from({ length: CELL_COUNT }, (_, index) => (
@@ -29,7 +29,9 @@ export const OtpCodeInput = ({ value, onChange, error }: OtpCodeInputProps) => {
                 error ? "border-destructive" : "border-border"
               }`}
             >
-              <Text className="text-center text-xl font-semibold text-foreground">{value[index] ?? ""}</Text>
+              <Text className="text-center text-xl font-semibold text-foreground">
+                {value[index] ?? ""}
+              </Text>
             </View>
           ))}
         </View>

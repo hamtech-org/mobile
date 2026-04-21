@@ -22,7 +22,12 @@ interface ConversationItemProps {
  * - Hiển thị unread badge và media preview [Ảnh], [Video],...
  * - Tên bold khi có tin mới chưa đọc
  */
-export const ConversationItem = ({ conversation, onPress, onLongPressMenu, isOnline = false }: ConversationItemProps) => {
+export const ConversationItem = ({
+  conversation,
+  onPress,
+  onLongPressMenu,
+  isOnline = false,
+}: ConversationItemProps) => {
   const currentUserId = useAppSelector((s) => s.auth.user?.userId ?? "");
   const calendarNow = useCalendarNow();
   const isGroup = conversation.type === "group";
@@ -79,13 +84,15 @@ export const ConversationItem = ({ conversation, onPress, onLongPressMenu, isOnl
         {/* Row 1: Tên + thời gian */}
         <View className="flex-row items-center justify-between gap-2">
           <Text
-            className={`flex-1 text-[16px] ${hasUnread ? "text-foreground font-bold" : "text-foreground font-semibold"}`}
+            className={`flex-1 text-[16px] ${hasUnread ? "font-bold text-foreground" : "font-semibold text-foreground"}`}
             numberOfLines={1}
           >
             {conversation.name ?? "Hội thoại"}
           </Text>
           {timeLabel ? (
-            <Text className={`text-[12px] shrink-0 ${hasUnread ? "text-primary font-bold" : "text-muted-foreground"}`}>
+            <Text
+              className={`shrink-0 text-[12px] ${hasUnread ? "font-bold text-primary" : "text-muted-foreground"}`}
+            >
               {timeLabel}
             </Text>
           ) : null}
@@ -93,7 +100,10 @@ export const ConversationItem = ({ conversation, onPress, onLongPressMenu, isOnl
 
         {/* Row 2: Preview + badge */}
         <View className="flex-row items-center justify-between gap-2">
-          <Text className={`flex-1 text-[14px] ${hasUnread ? "text-foreground font-semibold" : "text-muted-foreground"}`} numberOfLines={1}>
+          <Text
+            className={`flex-1 text-[14px] ${hasUnread ? "font-semibold text-foreground" : "text-muted-foreground"}`}
+            numberOfLines={1}
+          >
             {preview}
           </Text>
           {hasUnread ? <Badge count={unreadCount} variant="primary" /> : null}

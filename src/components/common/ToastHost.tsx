@@ -2,12 +2,13 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAppDispatch, useAppSelector } from "@/hooks/useAppStore";
-import { removeToast, type AppToastItem, type AppToastVariant } from "@/store/slices/notificationSlice";
+import {
+  removeToast,
+  type AppToastItem,
+  type AppToastVariant,
+} from "@/store/slices/notificationSlice";
 
-const VARIANT: Record<
-  AppToastVariant,
-  { bg: string; border: string; text: string }
-> = {
+const VARIANT: Record<AppToastVariant, { bg: string; border: string; text: string }> = {
   success: { bg: "#064E3B", border: "#34D399", text: "#ECFDF5" },
   error: { bg: "#7F1D1D", border: "#F87171", text: "#FEF2F2" },
   info: { bg: "#0C4A6E", border: "#38BDF8", text: "#F0F9FF" },

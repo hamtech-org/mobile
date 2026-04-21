@@ -1,10 +1,5 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
-import type {
-  IConversation,
-  IMessage,
-  MessageStatus,
-  TypingUserEntry,
-} from "@/types/chat.types";
+import type { IConversation, IMessage, MessageStatus, TypingUserEntry } from "@/types/chat.types";
 
 /** Thông báo ngắn trong khung chat (ghim, đổi tên nhóm, …) kèm mốc giờ. */
 export interface ChatFrameBanner {
@@ -33,10 +28,7 @@ const chatSlice = createSlice({
   name: "chat",
   initialState,
   reducers: {
-    setActiveConversationId: (
-      state,
-      action: PayloadAction<string | null>,
-    ) => {
+    setActiveConversationId: (state, action: PayloadAction<string | null>) => {
       state.activeConversationId = action.payload;
     },
 
@@ -44,8 +36,7 @@ const chatSlice = createSlice({
       state,
       action: PayloadAction<{ conversationId: string; messages: IMessage[] }>,
     ) => {
-      state.messages[action.payload.conversationId] =
-        action.payload.messages;
+      state.messages[action.payload.conversationId] = action.payload.messages;
     },
 
     // ─── Socket event: tin nhắn mới nhận từ server ────────────────────
@@ -55,9 +46,7 @@ const chatSlice = createSlice({
         state.messages[msg.conversationId] = [];
       }
       // Tránh trùng lặp
-      const exists = state.messages[msg.conversationId].some(
-        (m) => m.messageId === msg.messageId,
-      );
+      const exists = state.messages[msg.conversationId].some((m) => m.messageId === msg.messageId);
       if (!exists) {
         state.messages[msg.conversationId].push(msg);
       }
@@ -125,9 +114,7 @@ const chatSlice = createSlice({
       const { messageId, conversationId } = action.payload;
       const messages = state.messages[conversationId];
       if (!messages) return;
-      state.messages[conversationId] = messages.filter(
-        (m) => m.messageId !== messageId,
-      );
+      state.messages[conversationId] = messages.filter((m) => m.messageId !== messageId);
     },
 
     // ─── Pin/unpin tin nhắn ──────────────────────────────────────────
@@ -185,15 +172,12 @@ const chatSlice = createSlice({
       }
     },
 
-    typingStopped: (
-      state,
-      action: PayloadAction<{ conversationId: string; userId: string }>,
-    ) => {
+    typingStopped: (state, action: PayloadAction<{ conversationId: string; userId: string }>) => {
       const { conversationId, userId } = action.payload;
       if (state.typingUsers[conversationId]) {
-        state.typingUsers[conversationId] = state.typingUsers[
-          conversationId
-        ].filter((e) => e.userId !== userId);
+        state.typingUsers[conversationId] = state.typingUsers[conversationId].filter(
+          (e) => e.userId !== userId,
+        );
       }
     },
 

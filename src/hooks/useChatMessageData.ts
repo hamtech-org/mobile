@@ -26,9 +26,7 @@ function stripOptimisticEchoes(messages: IMessage[]): IMessage[] {
       const c1 = (o.content ?? "").trim();
       const c2 = (r.content ?? "").trim();
       if (c1 !== c2) return false;
-      const dt = Math.abs(
-        new Date(r.createdAt).getTime() - new Date(o.createdAt).getTime(),
-      );
+      const dt = Math.abs(new Date(r.createdAt).getTime() - new Date(o.createdAt).getTime());
       return dt < OPTIMISTIC_REAL_MATCH_MS;
     });
     if (twin) drop.add(o.messageId);
@@ -49,7 +47,12 @@ export function useChatMessageData(conversationId: string | null) {
   });
 
   // 2. API messages từ RTK Query cache
-  const { data: apiMessages, isLoading, isError, refetch } = useGetMessagesQuery(
+  const {
+    data: apiMessages,
+    isLoading,
+    isError,
+    refetch,
+  } = useGetMessagesQuery(
     { conversationId: conversationId!, limit: CHAT_MESSAGES_QUERY_LIMIT },
     { skip: !conversationId },
   );
@@ -65,10 +68,7 @@ export function useChatMessageData(conversationId: string | null) {
 
     const merged = stripOptimisticEchoes(Array.from(map.values()));
 
-    return merged.sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
+    return merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [apiMessages, socketMessages]);
 
   const result = useMemo(
@@ -77,8 +77,7 @@ export function useChatMessageData(conversationId: string | null) {
       isLoading,
       isError,
       refetch,
-      latestMessageId:
-        allMessages.length > 0 ? allMessages[0].messageId : undefined,
+      latestMessageId: allMessages.length > 0 ? allMessages[0].messageId : undefined,
     }),
     [allMessages, isLoading, isError, refetch],
   );

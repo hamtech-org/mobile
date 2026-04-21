@@ -1,9 +1,4 @@
-import type {
-  IConversation,
-  IMessage,
-  IReplyToDetails,
-  MessageType,
-} from "@/types/chat.types";
+import type { IConversation, IMessage, IReplyToDetails, MessageType } from "@/types/chat.types";
 import type { RootState } from "@/store/store";
 import { chatApi, type ApiEnvelope } from "../baseChatApi";
 import { conversationApi } from "./conversationApi";
@@ -82,15 +77,9 @@ function buildOptimisticMessage(
 ): IMessage {
   const replyTo = arg.replyTo ?? null;
   const localUri = arg.optimisticLocalUri?.trim();
-  const mediaUrl =
-    localUri ||
-    (arg.mediaUrl?.trim() ? arg.mediaUrl.trim() : null) ||
-    null;
+  const mediaUrl = localUri || (arg.mediaUrl?.trim() ? arg.mediaUrl.trim() : null) || null;
   const isMedia = arg.type === "image" || arg.type === "video" || arg.type === "file";
-  const thumb =
-    arg.type === "image" || arg.type === "video"
-      ? localUri || mediaUrl
-      : null;
+  const thumb = arg.type === "image" || arg.type === "video" ? localUri || mediaUrl : null;
 
   return {
     messageId: optimisticId,
@@ -161,8 +150,7 @@ function updateGetMessagesCache(
 }
 
 function lastMessagePreviewFromMessage(m: IMessage): string {
-  if (m.content?.trim() !== "")
-    return m.content;
+  if (m.content?.trim() !== "") return m.content;
   if (m.type === "image") return "[Ảnh]";
   if (m.type === "video") return "[Video]";
   if (m.type === "file") return "[File]";
@@ -172,23 +160,17 @@ function lastMessagePreviewFromMessage(m: IMessage): string {
 function newestMessageInList(draft: IMessage[]): IMessage | undefined {
   if (draft.length === 0) return undefined;
   return [...draft].sort(
-    (a, b) =>
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   )[0];
 }
 
 export const messageApi = chatApi.injectEndpoints({
   endpoints: (builder) => ({
-    getMessages: builder.query<
-      IMessage[],
-      { conversationId: string; limit?: number }
-    >({
+    getMessages: builder.query<IMessage[], { conversationId: string; limit?: number }>({
       query: ({ conversationId, limit = 40 }) =>
         `/chat/conversations/${conversationId}/messages?limit=${limit}`,
       transformResponse: (response: ApiEnvelope<IMessage[]>) => response.data,
-      providesTags: (_result, _error, arg) => [
-        { type: "Messages", id: arg.conversationId },
-      ],
+      providesTags: (_result, _error, arg) => [{ type: "Messages", id: arg.conversationId }],
     }),
 
     sendMessage: builder.mutation<ApiEnvelope<IMessage>, SendMessageRequest>({
@@ -213,12 +195,7 @@ export const messageApi = chatApi.injectEndpoints({
         if (!user?.userId) return;
 
         const optimisticId = newOptimisticId();
-        const optimistic = buildOptimisticMessage(
-          arg,
-          optimisticId,
-          user.userId,
-          user.displayName,
-        );
+        const optimistic = buildOptimisticMessage(arg, optimisticId, user.userId, user.displayName);
 
         const patchMessages = updateGetMessagesCache(
           dispatch,
@@ -230,33 +207,25 @@ export const messageApi = chatApi.injectEndpoints({
 
         const preview = lastMessagePreviewFromArg(arg);
         const patchConvs = dispatch(
-          conversationApi.util.updateQueryData(
-            "getConversations",
-            undefined,
-            (draft) => {
-              patchLastMessage(draft, arg.conversationId, {
-                messageId: optimisticId,
-                content: preview,
-                senderId: user.userId,
-                type: arg.type,
-                createdAt: optimistic.createdAt,
-                senderDisplayName: user.displayName,
-              });
-            },
-          ),
+          conversationApi.util.updateQueryData("getConversations", undefined, (draft) => {
+            patchLastMessage(draft, arg.conversationId, {
+              messageId: optimisticId,
+              content: preview,
+              senderId: user.userId,
+              type: arg.type,
+              createdAt: optimistic.createdAt,
+              senderDisplayName: user.displayName,
+            });
+          }),
         );
 
         const mergeServerMessage = (serverMsg: IMessage) => {
           updateGetMessagesCache(dispatch, arg.conversationId, (draft: IMessage[]) => {
             const dup = draft.findIndex(
-              (m: IMessage) =>
-                m.messageId === serverMsg.messageId &&
-                m.messageId !== optimisticId,
+              (m: IMessage) => m.messageId === serverMsg.messageId && m.messageId !== optimisticId,
             );
             if (dup !== -1) draft.splice(dup, 1);
-            const optIdx = draft.findIndex(
-              (m: IMessage) => m.messageId === optimisticId,
-            );
+            const optIdx = draft.findIndex((m: IMessage) => m.messageId === optimisticId);
             if (optIdx !== -1) draft[optIdx] = serverMsg;
             else if (!draft.some((m: IMessage) => m.messageId === serverMsg.messageId))
               draft.unshift(serverMsg);
@@ -265,20 +234,16 @@ export const messageApi = chatApi.injectEndpoints({
           const lastContent = lastMessagePreviewFromMessage(serverMsg);
 
           dispatch(
-            conversationApi.util.updateQueryData(
-              "getConversations",
-              undefined,
-              (draft) => {
-                patchLastMessage(draft, arg.conversationId, {
-                  messageId: serverMsg.messageId,
-                  content: lastContent,
-                  senderId: serverMsg.senderId,
-                  type: serverMsg.type,
-                  createdAt: serverMsg.createdAt,
-                  senderDisplayName: serverMsg.senderDisplayName,
-                });
-              },
-            ),
+            conversationApi.util.updateQueryData("getConversations", undefined, (draft) => {
+              patchLastMessage(draft, arg.conversationId, {
+                messageId: serverMsg.messageId,
+                content: lastContent,
+                senderId: serverMsg.senderId,
+                type: serverMsg.type,
+                createdAt: serverMsg.createdAt,
+                senderDisplayName: serverMsg.senderDisplayName,
+              });
+            }),
           );
         };
 
@@ -313,19 +278,15 @@ export const messageApi = chatApi.injectEndpoints({
           },
         );
         const patchConv = dispatch(
-          conversationApi.util.updateQueryData(
-            "getConversations",
-            undefined,
-            (draft) => {
-              const conv = draft?.find((c) => c.conversationId === arg.conversationId);
-              if (conv?.lastMessage?.messageId === arg.messageId) {
-                conv.lastMessage = {
-                  ...conv.lastMessage,
-                  content: arg.content,
-                };
-              }
-            },
-          ),
+          conversationApi.util.updateQueryData("getConversations", undefined, (draft) => {
+            const conv = draft?.find((c) => c.conversationId === arg.conversationId);
+            if (conv?.lastMessage?.messageId === arg.messageId) {
+              conv.lastMessage = {
+                ...conv.lastMessage,
+                content: arg.content,
+              };
+            }
+          }),
         );
         try {
           await queryFulfilled;
@@ -371,26 +332,22 @@ export const messageApi = chatApi.injectEndpoints({
         let patchConv: { undo: () => void } | undefined;
         if (wasLast) {
           patchConv = dispatch(
-            conversationApi.util.updateQueryData(
-              "getConversations",
-              undefined,
-              (draft) => {
-                const c = draft?.find((x) => x.conversationId === arg.conversationId);
-                if (!c) return;
-                if (newest) {
-                  patchLastMessage(draft, arg.conversationId, {
-                    messageId: newest.messageId,
-                    content: lastMessagePreviewFromMessage(newest),
-                    senderId: newest.senderId,
-                    type: newest.type,
-                    createdAt: newest.createdAt,
-                    senderDisplayName: newest.senderDisplayName,
-                  });
-                } else {
-                  c.lastMessage = null;
-                }
-              },
-            ),
+            conversationApi.util.updateQueryData("getConversations", undefined, (draft) => {
+              const c = draft?.find((x) => x.conversationId === arg.conversationId);
+              if (!c) return;
+              if (newest) {
+                patchLastMessage(draft, arg.conversationId, {
+                  messageId: newest.messageId,
+                  content: lastMessagePreviewFromMessage(newest),
+                  senderId: newest.senderId,
+                  type: newest.type,
+                  createdAt: newest.createdAt,
+                  senderDisplayName: newest.senderDisplayName,
+                });
+              } else {
+                c.lastMessage = null;
+              }
+            }),
           );
         }
 
@@ -424,20 +381,16 @@ export const messageApi = chatApi.injectEndpoints({
           },
         );
         const patchConv = dispatch(
-          conversationApi.util.updateQueryData(
-            "getConversations",
-            undefined,
-            (draft) => {
-              const conv = draft?.find((c) => c.conversationId === arg.conversationId);
-              if (conv?.lastMessage?.messageId === arg.messageId) {
-                conv.lastMessage = {
-                  ...conv.lastMessage,
-                  content: "Tin nhắn đã được thu hồi",
-                  type: "text",
-                };
-              }
-            },
-          ),
+          conversationApi.util.updateQueryData("getConversations", undefined, (draft) => {
+            const conv = draft?.find((c) => c.conversationId === arg.conversationId);
+            if (conv?.lastMessage?.messageId === arg.messageId) {
+              conv.lastMessage = {
+                ...conv.lastMessage,
+                content: "Tin nhắn đã được thu hồi",
+                type: "text",
+              };
+            }
+          }),
         );
         try {
           await queryFulfilled;
@@ -505,10 +458,7 @@ export const messageApi = chatApi.injectEndpoints({
       },
     }),
 
-    reactMessage: builder.mutation<
-      ApiEnvelope<Record<string, string[]>>,
-      ReactMessageRequest
-    >({
+    reactMessage: builder.mutation<ApiEnvelope<Record<string, string[]>>, ReactMessageRequest>({
       query: ({ messageId, ...body }) => ({
         url: `/chat/messages/${messageId}/react`,
         method: "POST",

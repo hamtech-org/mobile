@@ -24,9 +24,7 @@ function safeFileBaseName(name: string): string {
 function isMediaUriSkippableCopy(uri: string, mimeType: string): boolean {
   if (!uri.startsWith("file://")) return false;
   const t = mimeType.toLowerCase();
-  return (
-    t.startsWith("image/") || t.startsWith("video/") || t.startsWith("audio/")
-  );
+  return t.startsWith("image/") || t.startsWith("video/") || t.startsWith("audio/");
 }
 
 /**
@@ -53,12 +51,7 @@ export async function prepareLocalFileForUpload(
   const extFromName = name.includes(".") ? (name.split(".").pop() ?? "") : "";
   const cleaned = extFromName.replace(/[^a-zA-Z0-9]/g, "").slice(0, 12);
   const ext =
-    cleaned ||
-    (type.startsWith("image/")
-      ? "jpg"
-      : type.startsWith("video/")
-        ? "mp4"
-        : "bin");
+    cleaned || (type.startsWith("image/") ? "jpg" : type.startsWith("video/") ? "mp4" : "bin");
 
   const dest = `${baseDir}upload_${Date.now()}_${Math.random().toString(36).slice(2, 9)}.${ext}`;
   await copyAsync({ from: uri, to: dest });

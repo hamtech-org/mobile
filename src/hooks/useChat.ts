@@ -131,9 +131,7 @@ export const useChat = () => {
   // ── Ghim/bỏ ghim tin nhắn ─────────────────────────────────────────
   const togglePinMessage = useCallback(
     async (msg: IMessage): Promise<void> => {
-      const mutation = msg.isPinned
-        ? unpinMessageMutation
-        : pinMessageMutation;
+      const mutation = msg.isPinned ? unpinMessageMutation : pinMessageMutation;
       await mutation({
         messageId: msg.messageId,
         conversationId: msg.conversationId,

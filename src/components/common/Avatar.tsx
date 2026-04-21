@@ -81,19 +81,15 @@ export const Avatar = ({
           resizeMode="cover"
         />
       ) : (
-        <View
-          className={`${sizeClass} rounded-full bg-primary/20 items-center justify-center`}
-        >
-          <Text className={`${textClass} font-semibold text-primary`}>
-            {initials}
-          </Text>
+        <View className={`${sizeClass} items-center justify-center rounded-full bg-primary/20`}>
+          <Text className={`${textClass} font-semibold text-primary`}>{initials}</Text>
         </View>
       )}
 
       {/* Online dot indicator */}
       {showOnlineDot && (
         <View
-          className={`absolute ${dotClass} bg-green-500 rounded-full border-2 border-background`}
+          className={`absolute ${dotClass} rounded-full border-2 border-background bg-green-500`}
         />
       )}
     </View>

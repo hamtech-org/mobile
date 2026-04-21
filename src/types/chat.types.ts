@@ -1,7 +1,18 @@
 // ─── Message & Conversation Types ──────────────────────────────────────────────
 // Đồng bộ với web frontend types — backend là source of truth.
 
-export type MessageType = "system" | "text" | "image" | "video" | "file" | "sticker" | "emoji" | "location" | "poll" | "schedule" | "call";
+export type MessageType =
+  | "system"
+  | "text"
+  | "image"
+  | "video"
+  | "file"
+  | "sticker"
+  | "emoji"
+  | "location"
+  | "poll"
+  | "schedule"
+  | "call";
 
 export type MessageStatus = "sent" | "delivered" | "read" | "sending" | "failed";
 export type ConversationType = "direct" | "group";

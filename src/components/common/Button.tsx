@@ -64,7 +64,9 @@ export const Button = ({
           />
         ) : null}
         {!loading && leftIcon ? <View>{leftIcon}</View> : null}
-        <Text className={`font-semibold ${textVariantClassNames[variant]} ${textSizeClassNames[size]}`}>
+        <Text
+          className={`font-semibold ${textVariantClassNames[variant]} ${textSizeClassNames[size]}`}
+        >
           {loading ? loadingLabel : label}
         </Text>
         {!loading && rightIcon ? <View>{rightIcon}</View> : null}

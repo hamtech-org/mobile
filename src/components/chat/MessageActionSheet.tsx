@@ -1,15 +1,11 @@
 import { useCallback, useMemo, useRef } from "react";
 import { Pressable, Text, View } from "react-native";
-import BottomSheet, { BottomSheetBackdrop, BottomSheetView, type BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
-import {
-  Copy,
-  CornerUpLeft,
-  Pencil,
-  Pin,
-  PinOff,
-  RotateCcw,
-  Trash2,
-} from "lucide-react-native";
+import BottomSheet, {
+  BottomSheetBackdrop,
+  BottomSheetView,
+  type BottomSheetBackdropProps,
+} from "@gorhom/bottom-sheet";
+import { Copy, CornerUpLeft, Pencil, Pin, PinOff, RotateCcw, Trash2 } from "lucide-react-native";
 import * as Clipboard from "expo-clipboard";
 
 import { useIconColors } from "@/hooks/useIconColors";
@@ -105,9 +101,9 @@ export const MessageActionSheet = ({
       backgroundStyle={{ backgroundColor: "transparent" }}
       handleIndicatorStyle={{ backgroundColor: muted, width: 40 }}
     >
-      <BottomSheetView className="flex-1 bg-card rounded-t-3xl px-4 pb-6">
+      <BottomSheetView className="flex-1 rounded-t-3xl bg-card px-4 pb-6">
         {/* Quick emoji react row */}
-        <View className="flex-row justify-center gap-3 py-3 border-b border-border/30">
+        <View className="flex-row justify-center gap-3 border-b border-border/30 py-3">
           {QUICK_EMOJIS.map((emoji) => (
             <Pressable
               key={emoji}
@@ -197,7 +193,7 @@ function ActionItem({
   return (
     <Pressable
       onPress={onPress}
-      className="flex-row items-center gap-4 px-2 py-3.5 rounded-xl active:bg-muted/50"
+      className="flex-row items-center gap-4 rounded-xl px-2 py-3.5 active:bg-muted/50"
     >
       {icon}
       <Text

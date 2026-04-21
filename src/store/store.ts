@@ -29,7 +29,7 @@ export const store = configureStore({
       authApi.middleware,
       chatApi.middleware,
       mediaApi.middleware,
-      userApi.middleware
+      userApi.middleware,
     ),
 });
 

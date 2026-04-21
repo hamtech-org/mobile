@@ -11,8 +11,14 @@ export default function LoginScreen() {
       description="Chào mừng bạn quay lại Hamtech."
       footer={
         <Link href="/(auth)/register" asChild>
-          <Pressable className="py-3 active:opacity-80" accessibilityRole="link" accessibilityLabel="Chuyển tới đăng ký">
-            <Text className="text-center text-sm text-primary">Chưa có tài khoản? Đăng ký ngay</Text>
+          <Pressable
+            className="py-3 active:opacity-80"
+            accessibilityRole="link"
+            accessibilityLabel="Chuyển tới đăng ký"
+          >
+            <Text className="text-center text-sm text-primary">
+              Chưa có tài khoản? Đăng ký ngay
+            </Text>
           </Pressable>
         </Link>
       }

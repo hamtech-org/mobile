@@ -9,7 +9,10 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { SearchBar } from "@/components/common/SearchBar";
 import { ConversationItem } from "@/components/chat/ConversationItem";
 import { CreateGroupModal } from "@/components/chat";
-import { useGetConversationsQuery, usePatchConversationPreferencesMutation } from "@/store/api/chatApi";
+import {
+  useGetConversationsQuery,
+  usePatchConversationPreferencesMutation,
+} from "@/store/api/chatApi";
 import { useIconColors } from "@/hooks/useIconColors";
 import type { IConversation } from "@/types/chat.types";
 import { toast } from "@/utils/appToast";
@@ -63,7 +66,7 @@ export default function ChatListScreen() {
   // Sắp xếp hội thoại mới nhất lên đầu + lọc theo search
   const filtered = useMemo(() => {
     let list = [...(data ?? [])];
-    
+
     // Sort by last message / update time
     list.sort((a, b) => {
       const pinA = a.isPinnedToTop ? 1 : 0;
@@ -76,9 +79,8 @@ export default function ChatListScreen() {
 
     if (!searchText.trim()) return list;
     const q = searchText.toLowerCase();
-    return list.filter((c) => 
-      c.name?.toLowerCase().includes(q) || 
-      c.lastMessage?.content?.toLowerCase().includes(q)
+    return list.filter(
+      (c) => c.name?.toLowerCase().includes(q) || c.lastMessage?.content?.toLowerCase().includes(q),
     );
   }, [data, searchText]);
 
@@ -89,11 +91,11 @@ export default function ChatListScreen() {
   return (
     <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
       {/* Header — "Tin nhắn" bold + action icons */}
-      <View className="flex-row items-center justify-between px-4 pt-3 pb-2">
-        <Text className="text-foreground text-2xl font-bold tracking-tight">Tin nhắn</Text>
+      <View className="flex-row items-center justify-between px-4 pb-2 pt-3">
+        <Text className="text-2xl font-bold tracking-tight text-foreground">Tin nhắn</Text>
         <View className="flex-row gap-1">
-          <Pressable 
-            className="size-10 items-center justify-center rounded-full active:bg-muted/50" 
+          <Pressable
+            className="size-10 items-center justify-center rounded-full active:bg-muted/50"
             hitSlop={6}
           >
             <Search size={22} color={primary} strokeWidth={1.5} />
@@ -114,7 +116,9 @@ export default function ChatListScreen() {
             className="size-10 items-center justify-center rounded-full active:bg-muted/50"
             hitSlop={6}
             onPress={() =>
-              Alert.alert("Soạn tin", "Chọn nhóm hoặc mở cuộc trò chuyện từ danh sách.", [{ text: "OK" }])
+              Alert.alert("Soạn tin", "Chọn nhóm hoặc mở cuộc trò chuyện từ danh sách.", [
+                { text: "OK" },
+              ])
             }
           >
             <SquarePen size={22} color={primary} strokeWidth={1.5} />
@@ -124,10 +128,10 @@ export default function ChatListScreen() {
 
       {/* Search bar */}
       <View className="px-4 pb-3">
-        <SearchBar 
-          value={searchText} 
-          onChangeText={setSearchText} 
-          placeholder="Tìm kiếm tin nhắn, bạn bè..." 
+        <SearchBar
+          value={searchText}
+          onChangeText={setSearchText}
+          placeholder="Tìm kiếm tin nhắn, bạn bè..."
         />
       </View>
 
@@ -152,9 +156,9 @@ export default function ChatListScreen() {
               <RefreshControl refreshing={isFetching} onRefresh={onRefresh} tintColor={primary} />
             }
             renderItem={({ item }) => (
-              <ConversationItem 
-                conversation={item} 
-                onPress={() => router.push(`/(main)/(chat)/${item.conversationId}`)} 
+              <ConversationItem
+                conversation={item}
+                onPress={() => router.push(`/(main)/(chat)/${item.conversationId}`)}
                 onLongPressMenu={openConversationQuickMenu}
               />
             )}
@@ -162,11 +166,15 @@ export default function ChatListScreen() {
               <EmptyState
                 icon={searchText ? Search : MessageSquare}
                 title={searchText ? "Không tìm thấy" : "Chưa có tin nhắn"}
-                description={searchText ? `Không có hội thoại nào khớp với "${searchText}"` : "Bắt đầu nhắn tin với bạn bè ngay!"}
+                description={
+                  searchText
+                    ? `Không có hội thoại nào khớp với "${searchText}"`
+                    : "Bắt đầu nhắn tin với bạn bè ngay!"
+                }
               />
             }
             showsVerticalScrollIndicator={false}
-            ItemSeparatorComponent={() => <View className="h-px bg-border/30 ml-[76px]" />}
+            ItemSeparatorComponent={() => <View className="ml-[76px] h-px bg-border/30" />}
           />
         )}
       </View>

@@ -39,7 +39,9 @@ export function formatConversationListActivityTime(iso: string, now: Date = new 
   const clock = `${hh}:${mi}`;
 
   const sameCalendarDay =
-    d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
 
   if (sameCalendarDay) return clock;
 
