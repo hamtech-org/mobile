@@ -19,6 +19,10 @@ export interface SendMessageRequest {
   clientReplyToDetails?: IReplyToDetails | null;
   /** Chỉ client — tên file hiển thị khi gửi file optimistic */
   optimisticMediaName?: string;
+  /** Chỉ client — dung lượng file (byte) trên bubble optimistic */
+  optimisticMediaSize?: number;
+  /** Chỉ client — MIME khi gửi file (hiển thị trên bubble trước khi server trả về) */
+  optimisticMimeType?: string;
 }
 
 export interface EditMessageRequest {
@@ -89,8 +93,15 @@ function buildOptimisticMessage(
     type: arg.type,
     content: arg.content ?? "",
     mediaUrl: isMedia ? mediaUrl : null,
-    mediaType: isMedia ? arg.type : null,
-    mediaSize: null,
+    mediaType: !isMedia
+      ? null
+      : arg.type === "file"
+        ? (arg.optimisticMimeType?.trim() || arg.type)
+        : arg.type,
+    mediaSize:
+      typeof arg.optimisticMediaSize === "number" && Number.isFinite(arg.optimisticMediaSize) && arg.optimisticMediaSize > 0
+        ? arg.optimisticMediaSize
+        : null,
     mediaOriginalName: arg.optimisticMediaName?.trim() || null,
     thumbnailUrl: thumb,
     replyTo,

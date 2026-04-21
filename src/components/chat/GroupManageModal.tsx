@@ -208,6 +208,7 @@ export function GroupManageModal({
     refetch,
   } = useGetGroupMembersQuery(groupId, {
     skip: !visible,
+    refetchOnMountOrArgChange: true,
   });
 
   const { data: messages = [] } = useGetMessagesQuery(
@@ -226,6 +227,7 @@ export function GroupManageModal({
 
   const { data: joinRequests = [], refetch: refetchRequests } = useGetGroupRequestsQuery(groupId, {
     skip: !canFetchJoinRequests,
+    refetchOnMountOrArgChange: true,
   });
 
   const { data: friends = [], isFetching: loadingFriendsForInvite } = useGetFriendsQuery(

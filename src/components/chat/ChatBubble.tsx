@@ -1,5 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Image, Linking, Pressable, Text, View } from "react-native";
+import { useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Image,
+  Linking,
+  Pressable,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
 import {
   Ban,
@@ -8,6 +16,7 @@ import {
   CalendarClock,
   Check,
   CheckCheck,
+  ChevronRight,
   ClipboardList,
   Download,
   FileText,
@@ -453,6 +462,7 @@ export const ChatBubble = ({
   onPressReplyTo,
   groupExtras,
 }: ChatBubbleProps) => {
+  const { width: windowWidth } = useWindowDimensions();
   const { muted, primary } = useIconColors();
   const calendarNow = useCalendarNow();
   const isRecalled = Boolean(message.isRecalled);
@@ -501,10 +511,18 @@ export const ChatBubble = ({
   );
   const hasImage = message.type === "image" && rawMedia;
   const hasSticker = message.type === "sticker" && rawMedia;
-  const hasVideo = message.type === "video" && (message.thumbnailUrl || rawMedia);
+  /** Video: cần `mediaUrl` (hoặc URI local lúc gửi) — RN `Image` không hiển thị MP4. */
+  const hasVideo = message.type === "video" && Boolean((rawMedia ?? "").trim());
   const hasFile = message.type === "file" && (rawMedia || isLocalMedia);
   const hasCaption = (message.content ?? "").trim().length > 0;
   const hasReactions = message.reactions && Object.keys(message.reactions).length > 0;
+
+  const fileMetaSubline = [
+    message.mediaSize != null && message.mediaSize > 0 ? formatFileSize(message.mediaSize) : "",
+    message.mediaType?.includes("/") ? (message.mediaType.split("/").pop() ?? "").toUpperCase() : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   const isVisualMedia = Boolean(hasImage || hasVideo || hasSticker);
   const parsedLocation =
@@ -529,12 +547,16 @@ export const ChatBubble = ({
 
   const plainTextFallback = !hasRenderableSpecial && !hasCaption ? fallbackLabel || "Tin nhắn" : "";
 
+  /** Bubble file kiểu Zalo: thẻ ngang rộng ~82% màn hình (tối đa ~360pt). */
+  const fileBubbleMinWidth = Math.max(248, Math.min(Math.round(windowWidth * 0.82), 360));
+  const widenFileBubble = hasFile;
+
   return (
     <>
       {showDateSeparator && <DateSeparator date={message.createdAt} now={calendarNow} />}
 
       <View
-        className={`${isSameSenderAsPrev ? "mt-0.5" : "mt-2"} ${isOwn ? "items-end" : "items-start"}`}
+        className={`w-full ${isSameSenderAsPrev ? "mt-0.5" : "mt-2"} ${isOwn ? "items-end" : "items-start"}`}
       >
         {showSenderName && message.senderDisplayName ? (
           <Text className="mb-1 ml-2 text-[11px] font-semibold text-primary">
@@ -545,7 +567,11 @@ export const ChatBubble = ({
         <Pressable
           onLongPress={() => onLongPress?.(message)}
           delayLongPress={300}
-          className="max-w-[78%]"
+          className={
+            isOwn
+              ? `${widenFileBubble ? "max-w-[92%]" : "max-w-[78%]"} min-w-0 self-end`
+              : `${widenFileBubble ? "max-w-[92%]" : "max-w-[78%]"} min-w-0 self-start`
+          }
         >
           {isDeleted || isRecalled ? (
             <View className="flex-row items-center gap-1.5 rounded-[20px] border border-dashed border-border/40 px-4 py-2.5 opacity-60">
@@ -555,18 +581,13 @@ export const ChatBubble = ({
               </Text>
             </View>
           ) : (
-            <View>
+            <View className="max-w-full">
               <View
                 className={[
-                  isVisualMedia ? "overflow-hidden rounded-2xl" : "",
+                  "max-w-full",
+                  isVisualMedia ? "rounded-2xl overflow-hidden" : "",
                   !isVisualMedia
-                    ? `${hasFile ? "py-1" : "px-4 py-2.5"} ${
-                        hasFile
-                          ? ""
-                          : isOwn
-                            ? "rounded-[20px] rounded-br-[5px] bg-primary"
-                            : "rounded-[20px] rounded-bl-[5px] bg-card"
-                      }`
+                    ? `${hasFile ? "px-2 py-2" : "px-4 py-2.5"} ${isOwn ? "bg-primary rounded-[20px] rounded-br-[5px]" : "bg-card rounded-[20px] rounded-bl-[5px]"}`
                     : "",
                 ]
                   .filter(Boolean)
@@ -604,50 +625,37 @@ export const ChatBubble = ({
                 )}
 
                 {hasVideo && (
-                  <InlineVideoPlayer
-                    videoUri={
-                      isLocalMedia ? rawMedia! : (normalizeMediaUrl(message.mediaUrl!) ?? "")
-                    }
-                    posterUri={
-                      isLocalMedia
-                        ? (message.thumbnailUrl ?? rawMedia)!
-                        : (normalizeMediaUrl(message.thumbnailUrl ?? message.mediaUrl!) ?? "")
-                    }
-                  />
+                  <View className="w-full rounded-2xl overflow-hidden bg-black">
+                    <ChatBubbleVideo
+                      key={`${message.messageId}-${isLocalMedia ? rawMedia : normalizeMediaUrl(message.mediaUrl) ?? ""}`}
+                      playUri={
+                        isLocalMedia
+                          ? (rawMedia ?? "").trim()
+                          : (normalizeMediaUrl(message.mediaUrl) ?? "").trim()
+                      }
+                    />
+                  </View>
                 )}
 
                 {hasFile && (
                   <View
-                    className={`mb-1.5 mt-1 flex-row items-center gap-3 border border-border/40 px-3 py-2.5 ${
-                      isOwn
-                        ? "rounded-[20px] rounded-br-[5px] bg-muted/60"
-                        : "rounded-[20px] rounded-bl-[5px] border-border/50 bg-card"
-                    }`}
-                    style={{ maxWidth: 260, minWidth: 160 }}
+                    className="w-full flex-row items-center gap-3 px-3.5 py-3 rounded-xl bg-white border border-border/25"
+                    style={{ minWidth: fileBubbleMinWidth }}
                   >
-                    <FileText size={28} color={muted} strokeWidth={1.5} />
-                    <View className="flex-1" style={{ minWidth: 0 }}>
-                      <Text
-                        className="text-[13px] font-semibold leading-tight text-foreground"
-                        numberOfLines={1}
-                      >
-                        {message.mediaOriginalName?.trim() || "Tệp đính kèm"}
+                    <View className="h-11 w-11 shrink-0 rounded-lg items-center justify-center bg-primary/10">
+                      <FileText size={24} color={primary} strokeWidth={2} />
+                    </View>
+                    <View className="min-w-0 flex-1 pr-1">
+                      <Text className="text-foreground text-[15px] font-semibold leading-5" numberOfLines={2}>
+                        {message.mediaOriginalName?.trim() || "File đính kèm"}
                       </Text>
-                      {message.mediaSize != null && message.mediaSize > 0 ? (
-                        <Text className="mt-1 text-[11px] text-muted-foreground">
-                          {formatFileSize(message.mediaSize)}
+                      {fileMetaSubline ? (
+                        <Text className="text-muted-foreground text-[12px] mt-1" numberOfLines={1}>
+                          {fileMetaSubline}
                         </Text>
                       ) : null}
                     </View>
-                    <Pressable
-                      onPress={() => {
-                        const url = normalizeMediaUrl(message.mediaUrl);
-                        if (url) void Linking.openURL(url);
-                      }}
-                      className="rounded-xl border border-border/50 bg-muted/80 p-2"
-                    >
-                      <Download size={16} color={muted} strokeWidth={2} />
-                    </Pressable>
+                    <ChevronRight size={20} color={muted} strokeWidth={2} />
                   </View>
                 )}
 
@@ -713,21 +721,9 @@ export const ChatBubble = ({
                   </View>
                 ) : null}
 
-                {!hasFile && !isEmojiMessage && hasCaption && (
-                  <View className={isVisualMedia ? "px-3 py-2" : ""}>
-                    <Text
-                      className={`text-[15px] leading-[22px] ${isOwn && !isVisualMedia ? "text-white" : "text-foreground"}`}
-                    >
-                      {message.content}
-                    </Text>
-                  </View>
-                )}
-
-                {hasFile && hasCaption && (
-                  <View
-                    className={`mt-1 border border-border/40 px-4 py-2 ${isOwn ? "rounded-[20px] rounded-br-[5px] bg-muted/60" : "rounded-[20px] rounded-bl-[5px] bg-card"}`}
-                  >
-                    <Text className="text-[15px] leading-[22px] text-foreground">
+                {!isEmojiMessage && hasCaption && (
+                  <View className={isVisualMedia || hasFile ? "px-3 py-2" : ""}>
+                    <Text className={`text-[15px] leading-[22px] ${isOwn && !isVisualMedia ? "text-white" : "text-foreground"}`}>
                       {message.content}
                     </Text>
                   </View>
@@ -779,6 +775,31 @@ export const ChatBubble = ({
     </>
   );
 };
+
+/** Phát MP4/HLS trong bubble — `Image` không hiển thị được khung hình từ URL video. */
+function ChatBubbleVideo({ playUri }: { playUri: string }) {
+  if (!playUri) {
+    return (
+      <View className="w-full aspect-video items-center justify-center bg-muted px-4">
+        <Text className="text-muted-foreground text-center text-sm">Không có đường dẫn video</Text>
+      </View>
+    );
+  }
+
+  const player = useVideoPlayer(playUri, (p) => {
+    p.loop = false;
+  });
+
+  return (
+    <VideoView
+      player={player}
+      style={{ width: "100%", minHeight: 200, aspectRatio: 16 / 9 }}
+      contentFit="contain"
+      nativeControls
+      accessibilityLabel="Video trong tin nhắn"
+    />
+  );
+}
 
 function DateSeparator({ date, now }: { date: string; now: Date }) {
   return (

@@ -1,8 +1,8 @@
 import { Pressable, Text, View } from "react-native";
-import { router } from "expo-router";
 import { ChevronLeft, Info, Phone, Video } from "lucide-react-native";
 
 import { Avatar } from "@/components/common/Avatar";
+import { safeRouterBack } from "@/utils/navigation";
 import { useIconColors } from "@/hooks/useIconColors";
 import type { IConversation, TypingUserEntry } from "@/types/chat.types";
 
@@ -41,7 +41,7 @@ export const ChatHeader = ({
 }: ChatHeaderProps) => {
   const isGroup = conversation.type === "group";
   const { foreground, primary } = useIconColors();
-  const handleBack = onBack ?? (() => router.back());
+  const handleBack = onBack ?? (() => safeRouterBack("/(main)/(chat)"));
 
   // Lọc typing users (bỏ chính mình)
   const othersTyping = currentUserId

@@ -162,6 +162,16 @@ export function useChatRealtimeEvents({
       if (tags.length) dispatch(chatApi.util.invalidateTags(tags));
     };
 
+    /**
+     * `useGetGroupMembersQuery` thường `skip` khi modal quản lý nhóm đóng — invalidateTags
+     * không refetch nếu không có subscriber, cache danh sách thành viên vẫn cũ.
+     * (Không prefetch `getGroupRequests` ở đây: API chỉ admin/owner, member thường gọi sẽ 403.)
+     */
+    const prefetchGroupMembers = (groupId: string) => {
+      if (!groupId.trim()) return;
+      void dispatch(chatApi.endpoints.getGroupMembers.initiate(groupId, { forceRefetch: true }));
+    };
+
     const handleNewMessage = (msg: IMessage) => {
       dispatch(messageReceived(msg));
 
@@ -394,6 +404,7 @@ export function useChatRealtimeEvents({
       const gid = groupIdFromPayload(payload);
       if (!gid) return;
       invalidateGroupData(gid, ["members", "requests"]);
+      prefetchGroupMembers(gid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
       emitFrameBanner(gid, "Có thành viên mới tham gia nhóm");
     };
@@ -402,6 +413,7 @@ export function useChatRealtimeEvents({
       const gid = groupIdFromPayload(payload);
       if (!gid) return;
       invalidateGroupData(gid, ["members"]);
+      prefetchGroupMembers(gid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
       const leftAt = typeof payload.leftAt === "string" ? payload.leftAt : undefined;
       emitFrameBanner(gid, "Có thành viên đã rời nhóm", leftAt);
@@ -411,6 +423,7 @@ export function useChatRealtimeEvents({
       const gid = groupIdFromPayload(payload);
       if (!gid) return;
       invalidateGroupData(gid, ["members"]);
+      prefetchGroupMembers(gid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
       emitFrameBanner(gid, "Một thành viên đã bị xóa khỏi nhóm");
     };
@@ -419,6 +432,7 @@ export function useChatRealtimeEvents({
       const gid = groupIdFromPayload(payload);
       if (!gid) return;
       invalidateGroupData(gid, ["members"]);
+      prefetchGroupMembers(gid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
       const role = String(payload.role ?? "");
       const msg = role

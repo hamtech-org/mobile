@@ -13,6 +13,7 @@ import {
 import { useSocket } from "@/hooks/useSocket";
 import type { IMessage, IReplyToDetails, MessageType } from "@/types/chat.types";
 import { formatChatPreviewLine } from "@/utils/messageDisplay";
+import { toast } from "@/utils/appToast";
 
 /**
  * Hook cung cấp tất cả actions liên quan đến chat messaging.
@@ -53,6 +54,8 @@ export const useChat = () => {
       options?: {
         optimisticLocalUri?: string;
         optimisticMediaName?: string;
+        optimisticMediaSize?: number;
+        optimisticMimeType?: string;
         clientReplyToDetails?: IReplyToDetails | null;
       },
     ): Promise<void> => {
@@ -64,6 +67,8 @@ export const useChat = () => {
         replyTo,
         optimisticLocalUri: options?.optimisticLocalUri,
         optimisticMediaName: options?.optimisticMediaName,
+        optimisticMediaSize: options?.optimisticMediaSize,
+        optimisticMimeType: options?.optimisticMimeType,
         clientReplyToDetails: options?.clientReplyToDetails,
       }).unwrap();
     },
@@ -107,11 +112,19 @@ export const useChat = () => {
   // ── Thu hồi tin nhắn ───────────────────────────────────────────────
   const recallMessage = useCallback(
     async (msg: IMessage): Promise<void> => {
-      await recallMessageMutation({
-        messageId: msg.messageId,
-        conversationId: msg.conversationId,
-        createdAt: msg.createdAt,
-      }).unwrap();
+      try {
+        await recallMessageMutation({
+          messageId: msg.messageId,
+          conversationId: msg.conversationId,
+          createdAt: msg.createdAt,
+        }).unwrap();
+      } catch (e: unknown) {
+        const d = typeof e === "object" && e !== null && "data" in e ? (e as { data?: unknown }).data : undefined;
+        const body = d && typeof d === "object" ? (d as { error?: { message?: string }; message?: string }) : undefined;
+        const msgText = String(body?.error?.message ?? body?.message ?? "").trim();
+        toast.error(msgText || "Không thu hồi được tin nhắn");
+        throw e;
+      }
     },
     [recallMessageMutation],
   );
@@ -119,11 +132,19 @@ export const useChat = () => {
   // ── Xóa tin nhắn (ẩn phía mình) ───────────────────────────────────
   const deleteMessage = useCallback(
     async (msg: IMessage): Promise<void> => {
-      await deleteMessageMutation({
-        messageId: msg.messageId,
-        conversationId: msg.conversationId,
-        createdAt: msg.createdAt,
-      }).unwrap();
+      try {
+        await deleteMessageMutation({
+          messageId: msg.messageId,
+          conversationId: msg.conversationId,
+          createdAt: msg.createdAt,
+        }).unwrap();
+      } catch (e: unknown) {
+        const d = typeof e === "object" && e !== null && "data" in e ? (e as { data?: unknown }).data : undefined;
+        const body = d && typeof d === "object" ? (d as { error?: { message?: string }; message?: string }) : undefined;
+        const msgText = String(body?.error?.message ?? body?.message ?? "").trim();
+        toast.error(msgText || "Không xóa được tin nhắn");
+        throw e;
+      }
     },
     [deleteMessageMutation],
   );

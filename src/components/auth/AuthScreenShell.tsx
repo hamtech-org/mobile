@@ -3,9 +3,9 @@ import { useNavigation } from "@react-navigation/native";
 import { ReactNode } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
 
 import { AuthHero } from "./AuthHero";
+import { safeRouterBack } from "@/utils/navigation";
 
 interface AuthScreenShellProps {
   title: string;
@@ -28,7 +28,6 @@ export const AuthScreenShell = ({
   footer,
   children,
 }: AuthScreenShellProps) => {
-  const router = useRouter();
   const navigation = useNavigation();
   const canGoBack = navigation.canGoBack();
   const resolvedShowBack = showBack ?? canGoBack;
@@ -47,7 +46,7 @@ export const AuthScreenShell = ({
         >
           {resolvedShowBack ? (
             <Pressable
-              onPress={() => router.back()}
+              onPress={() => safeRouterBack("/(auth)/login")}
               className="flex-row items-center gap-1 self-start py-2 pr-3 active:opacity-70"
               hitSlop={12}
               accessibilityRole="button"

@@ -18,9 +18,17 @@ export function normalizeMediaUrl(url: string | null | undefined): string | unde
     return `${origin}${url}`;
   }
 
-  // 2. Thay thế localhost bằng host thực tế (10.0.2.2 hoặc IP mạng nội bộ)
-  if (url.includes("localhost") || url.includes("127.0.0.1")) {
-    return url.replace(/localhost|127\.0\.0\.1/g, env.host);
+  // 2. Thay thế localhost / loopback / host Docker Desktop bằng host thực tế (LAN, 10.0.2.2 trên Android emulator)
+  if (
+    url.includes("localhost") ||
+    url.includes("127.0.0.1") ||
+    url.includes("host.docker.internal") ||
+    url.includes("0.0.0.0")
+  ) {
+    return url
+      .replace(/localhost|127\.0\.0\.1/g, env.host)
+      .replace(/host\.docker\.internal/g, env.host)
+      .replace(/0\.0\.0\.0/g, env.host);
   }
 
   return url;

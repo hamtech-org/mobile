@@ -1,6 +1,7 @@
 import { Pressable, Text, View } from "react-native";
-import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+
+import { safeRouterBack } from "@/utils/navigation";
 
 type IoniconName = React.ComponentProps<typeof Ionicons>["name"];
 
@@ -38,7 +39,7 @@ export const ScreenHeader = ({
   rightActions = [],
   titleContent,
 }: ScreenHeaderProps) => {
-  const handleBack = onBack ?? (() => router.back());
+  const handleBack = onBack ?? (() => safeRouterBack("/(main)"));
 
   return (
     <View className="flex-row items-center gap-3 border-b border-border/40 bg-background px-4 py-3">

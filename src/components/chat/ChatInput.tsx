@@ -1,8 +1,9 @@
 import { useCallback, useState } from "react";
-import { Image, Pressable, Text, TextInput, View } from "react-native";
+import { Image, Pressable, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
 import {
   Camera,
+  ChevronRight,
   FileText,
   Image as ImageIcon,
   PlusCircle,
@@ -57,11 +58,13 @@ export const ChatInput = ({
   onClearReply,
   onTyping,
 }: ChatInputProps) => {
+  const { width: windowWidth } = useWindowDimensions();
   const [content, setContent] = useState("");
   const [attachment, setAttachment] = useState<PendingAttachment | null>(null);
   const [showMediaMenu, setShowMediaMenu] = useState(false);
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const { muted, primary, foreground } = useIconColors();
+  const filePreviewMinW = Math.max(248, Math.min(Math.round(windowWidth * 0.82), 360));
   const hasText = content.trim().length > 0;
   const hasSendable = hasText || attachment !== null;
 
@@ -181,8 +184,17 @@ export const ChatInput = ({
 
       {/* Attachment preview — ảnh/video/file trước khi gửi */}
       {attachment && (
-        <View className="border-b border-border/15 bg-muted/25 px-3 pb-1 pt-2">
-          <View className="max-h-[240px] overflow-hidden rounded-2xl border border-border/20 bg-muted/40">
+        <View className="px-3 pt-2 pb-1 bg-muted/25 border-b border-border/15">
+          <View
+            className={[
+              "rounded-2xl overflow-hidden bg-muted/40 border border-border/20",
+              attachment.mimeType.startsWith("image/") || attachment.mimeType.startsWith("video/")
+                ? "max-h-[240px]"
+                : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
             {attachment.mimeType.startsWith("image/") ? (
               <Image
                 source={{ uri: attachment.uri }}
@@ -193,18 +205,34 @@ export const ChatInput = ({
             ) : attachment.mimeType.startsWith("video/") ? (
               <AttachmentVideoPreview key={attachment.uri} uri={attachment.uri} />
             ) : (
-              <View className="flex-row items-center gap-3 px-4 py-6">
-                <FileText size={40} color={primary} strokeWidth={1.5} />
-                <View className="min-w-0 flex-1">
-                  <Text className="text-sm font-semibold text-foreground" numberOfLines={2}>
+              <View
+                className="flex-row items-center gap-3 px-3.5 py-3.5 bg-white border border-border/25 rounded-xl mx-1"
+                style={{ minWidth: filePreviewMinW }}
+              >
+                <View className="h-11 w-11 shrink-0 rounded-lg bg-primary/10 items-center justify-center">
+                  <FileText size={24} color={primary} strokeWidth={2} />
+                </View>
+                <View className="flex-1 min-w-0 pr-1">
+                  <Text className="text-foreground text-[15px] font-semibold leading-5" numberOfLines={2}>
                     {attachment.name}
                   </Text>
-                  {attachment.size != null && attachment.size > 0 ? (
-                    <Text className="mt-1 text-xs text-muted-foreground">
-                      {formatFileSize(attachment.size)}
-                    </Text>
-                  ) : null}
+                  {(() => {
+                    const meta = [
+                      attachment.size != null && attachment.size > 0 ? formatFileSize(attachment.size) : "",
+                      attachment.mimeType?.includes("/")
+                        ? (attachment.mimeType.split("/").pop() ?? "").toUpperCase()
+                        : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" · ");
+                    return meta.length > 0 ? (
+                      <Text className="text-muted-foreground text-[12px] mt-1" numberOfLines={1}>
+                        {meta}
+                      </Text>
+                    ) : null;
+                  })()}
                 </View>
+                <ChevronRight size={20} color={muted} strokeWidth={2} />
               </View>
             )}
           </View>
