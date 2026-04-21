@@ -5,7 +5,10 @@ import { X } from "lucide-react-native";
 import { useCalendarNow } from "@/contexts/CalendarClockContext";
 import { useAppDispatch } from "@/hooks/useAppStore";
 import { useIconColors } from "@/hooks/useIconColors";
-import { clearChatFrameBanner, type ChatFrameBanner as ChatFrameBannerData } from "@/store/slices/chatSlice";
+import {
+  clearChatFrameBanner,
+  type ChatFrameBanner as ChatFrameBannerData,
+} from "@/store/slices/chatSlice";
 import { formatConversationListActivityTime, formatTimestamp } from "@/utils/time";
 
 interface ChatFrameBannerProps {
@@ -36,7 +39,10 @@ export function ChatFrameBanner({ banner }: ChatFrameBannerProps): ReactElement 
         <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
           {timeLabel ? `Cập nhật · ${timeLabel}` : "Cập nhật"}
         </Text>
-        <Text className="mt-1 text-[13px] font-semibold leading-snug text-foreground" numberOfLines={4}>
+        <Text
+          className="mt-1 text-[13px] font-semibold leading-snug text-foreground"
+          numberOfLines={4}
+        >
           {banner.message}
         </Text>
       </View>

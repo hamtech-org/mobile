@@ -95,7 +95,8 @@ export const authApi = createApi({
         method: "POST",
         body,
       }),
-      transformResponse: (response: ApiEnvelope<Omit<AuthTokenResponse, "userId">>) => response.data,
+      transformResponse: (response: ApiEnvelope<Omit<AuthTokenResponse, "userId">>) =>
+        response.data,
     }),
     verifyEmail: builder.mutation<AuthTokenResponse, VerifyEmailRequest>({
       query: (body) => ({

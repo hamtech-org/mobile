@@ -46,7 +46,9 @@ export function parseLocationPayload(content: string): ParsedLocation | null {
     const lng = Number(o.lng ?? o.longitude ?? nested?.lng ?? nested?.longitude);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
     const title =
-      String(o.name ?? o.address ?? o.title ?? nested?.name ?? nested?.address ?? "Vị trí").trim() || "Vị trí";
+      String(
+        o.name ?? o.address ?? o.title ?? nested?.name ?? nested?.address ?? "Vị trí",
+      ).trim() || "Vị trí";
     return { title, lat, lng };
   } catch {
     return null;
@@ -69,12 +71,22 @@ export function formatChatPreviewLine(
   if (msg.isRecalled) return "Tin nhắn đã được thu hồi";
   const raw = (msg.content ?? "").trim();
   if (msg.type === "system") {
-    const sys = formatSystemLastMessagePreview(raw, msg.senderId, currentUserId, msg.senderDisplayName);
+    const sys = formatSystemLastMessagePreview(
+      raw,
+      msg.senderId,
+      currentUserId,
+      msg.senderDisplayName,
+    );
     if (sys) return truncatePreview(sys, PREVIEW_MAX);
     return raw ? truncatePreview(raw, PREVIEW_MAX) : getMessageTypeLabel("system");
   }
   if (raw.startsWith("{")) {
-    const sys = formatSystemLastMessagePreview(raw, msg.senderId, currentUserId, msg.senderDisplayName);
+    const sys = formatSystemLastMessagePreview(
+      raw,
+      msg.senderId,
+      currentUserId,
+      msg.senderDisplayName,
+    );
     if (sys) return truncatePreview(sys, PREVIEW_MAX);
     return getMessageTypeLabel(msg.type) || "Tin nhắn";
   }

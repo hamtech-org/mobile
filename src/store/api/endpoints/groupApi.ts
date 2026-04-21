@@ -6,14 +6,10 @@ function mapApiGroupMember(raw: unknown): IGroupMember | null {
   const o = raw as Record<string, unknown>;
   const userId = String(o.userId ?? "").trim();
   if (!userId) return null;
-  const displayName = String(
-    o.name ?? o.displayName ?? o.nickname ?? userId,
-  ).trim();
+  const displayName = String(o.name ?? o.displayName ?? o.nickname ?? userId).trim();
   const roleRaw = String(o.role ?? "member");
   const role: MemberRole =
-    roleRaw === "owner" || roleRaw === "admin" || roleRaw === "member"
-      ? roleRaw
-      : "member";
+    roleRaw === "owner" || roleRaw === "admin" || roleRaw === "member" ? roleRaw : "member";
   return {
     userId,
     displayName: displayName || userId,
@@ -101,9 +97,7 @@ export const groupApi = chatApi.injectEndpoints({
       transformResponse: (response: ApiEnvelope<unknown[]>) => {
         const raw = response.data;
         if (!Array.isArray(raw)) return [];
-        return raw
-          .map(mapApiGroupMember)
-          .filter((m): m is IGroupMember => m != null);
+        return raw.map(mapApiGroupMember).filter((m): m is IGroupMember => m != null);
       },
       providesTags: (_result, _error, groupId) => [
         { type: "Conversations", id: `MEMBERS-${groupId}` },
@@ -119,16 +113,14 @@ export const groupApi = chatApi.injectEndpoints({
       invalidatesTags: ["Conversations"],
       async onQueryStarted({ groupId, name, avatar }, { dispatch, queryFulfilled }) {
         const patch = dispatch(
-          (chatApi.util as unknown as { updateQueryData: (...args: unknown[]) => unknown }).updateQueryData(
-            "getConversations",
-            undefined,
-            (draft: IConversation[]) => {
-              const c = draft.find((x) => x.conversationId === groupId);
-              if (!c) return;
-              if (name !== undefined) c.name = name;
-              if (avatar !== undefined) c.avatar = avatar;
-            },
-          ) as never,
+          (
+            chatApi.util as unknown as { updateQueryData: (...args: unknown[]) => unknown }
+          ).updateQueryData("getConversations", undefined, (draft: IConversation[]) => {
+            const c = draft.find((x) => x.conversationId === groupId);
+            if (!c) return;
+            if (name !== undefined) c.name = name;
+            if (avatar !== undefined) c.avatar = avatar;
+          }) as never,
         ) as { undo: () => void };
         try {
           await queryFulfilled;
@@ -146,10 +138,7 @@ export const groupApi = chatApi.injectEndpoints({
       invalidatesTags: ["Conversations"],
     }),
 
-    leaveGroup: builder.mutation<
-      ApiEnvelope<null>,
-      { groupId: string; newOwnerUserId?: string }
-    >({
+    leaveGroup: builder.mutation<ApiEnvelope<null>, { groupId: string; newOwnerUserId?: string }>({
       query: ({ groupId, newOwnerUserId }) => ({
         url: `/chat/groups/${groupId}/leave`,
         method: "POST",
@@ -167,10 +156,7 @@ export const groupApi = chatApi.injectEndpoints({
       invalidatesTags: ["Conversations"],
     }),
 
-    removeMember: builder.mutation<
-      ApiEnvelope<null>,
-      { groupId: string; userId: string }
-    >({
+    removeMember: builder.mutation<ApiEnvelope<null>, { groupId: string; userId: string }>({
       query: ({ groupId, userId }) => ({
         url: `/chat/groups/${groupId}/members/${userId}`,
         method: "DELETE",
@@ -178,10 +164,7 @@ export const groupApi = chatApi.injectEndpoints({
       invalidatesTags: ["Conversations"],
     }),
 
-    changeMemberRole: builder.mutation<
-      ApiEnvelope<null>,
-      ChangeMemberRoleRequest
-    >({
+    changeMemberRole: builder.mutation<ApiEnvelope<null>, ChangeMemberRoleRequest>({
       query: ({ groupId, userId, ...body }) => ({
         url: `/chat/groups/${groupId}/members/${userId}/role`,
         method: "PUT",
@@ -211,15 +194,10 @@ export const groupApi = chatApi.injectEndpoints({
         }
         return out;
       },
-      providesTags: (_result, _error, groupId) => [
-        { type: "GroupRequests", id: groupId },
-      ],
+      providesTags: (_result, _error, groupId) => [{ type: "GroupRequests", id: groupId }],
     }),
 
-    approveGroupRequest: builder.mutation<
-      ApiEnvelope<null>,
-      { groupId: string; userId: string }
-    >({
+    approveGroupRequest: builder.mutation<ApiEnvelope<null>, { groupId: string; userId: string }>({
       query: ({ groupId, userId }) => ({
         url: `/chat/groups/${groupId}/requests/${userId}/approve`,
         method: "POST",
@@ -230,10 +208,7 @@ export const groupApi = chatApi.injectEndpoints({
       ],
     }),
 
-    rejectGroupRequest: builder.mutation<
-      ApiEnvelope<null>,
-      { groupId: string; userId: string }
-    >({
+    rejectGroupRequest: builder.mutation<ApiEnvelope<null>, { groupId: string; userId: string }>({
       query: ({ groupId, userId }) => ({
         url: `/chat/groups/${groupId}/requests/${userId}/reject`,
         method: "POST",
@@ -249,15 +224,10 @@ export const groupApi = chatApi.injectEndpoints({
       transformResponse: (response: ApiEnvelope<unknown>) => {
         return normalizeGroupSettings(response.data) ?? DEFAULT_GROUP_SETTINGS;
       },
-      providesTags: (_result, _error, groupId) => [
-        { type: "GroupSettings", id: groupId },
-      ],
+      providesTags: (_result, _error, groupId) => [{ type: "GroupSettings", id: groupId }],
     }),
 
-    updateGroupSettings: builder.mutation<
-      ApiEnvelope<IGroupSettings>,
-      UpdateGroupSettingsRequest
-    >({
+    updateGroupSettings: builder.mutation<ApiEnvelope<IGroupSettings>, UpdateGroupSettingsRequest>({
       query: ({ groupId, ...body }) => ({
         url: `/chat/groups/${groupId}/settings`,
         method: "PATCH",

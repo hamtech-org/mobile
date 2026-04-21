@@ -64,12 +64,18 @@ export const LoginForm = () => {
         clearErrorOnChange={() => setFieldErrors((prev) => ({ ...prev, password: undefined }))}
       />
       <Link href="/(auth)/forgot-password" asChild>
-        <Pressable className="self-end py-1 active:opacity-80" accessibilityRole="link" accessibilityLabel="Quên mật khẩu">
-          <Text className="text-primary text-sm">Quên mật khẩu?</Text>
+        <Pressable
+          className="self-end py-1 active:opacity-80"
+          accessibilityRole="link"
+          accessibilityLabel="Quên mật khẩu"
+        >
+          <Text className="text-sm text-primary">Quên mật khẩu?</Text>
         </Pressable>
       </Link>
-      {errorMessage ? <Text className="text-destructive text-sm">{errorMessage}</Text> : null}
-      {!errorMessage && localSubmitMessage ? <Text className="text-primary text-sm">{localSubmitMessage}</Text> : null}
+      {errorMessage ? <Text className="text-sm text-destructive">{errorMessage}</Text> : null}
+      {!errorMessage && localSubmitMessage ? (
+        <Text className="text-sm text-primary">{localSubmitMessage}</Text>
+      ) : null}
       <Button label="Đăng nhập" onPress={handleSubmit} loading={isLoading} />
     </View>
   );

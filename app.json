@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "hamtech",
-    "slug": "hamtech",
+    "slug": "hamtech-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -40,16 +40,13 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "plugins": [
-      "expo-router",
-      "expo-video"
-    ],
+    "plugins": ["expo-router", "expo-video"],
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "9b0da099-0f00-41f4-85e9-09c060c613c2"
+        "projectId": "72c3cd53-148f-4e69-825c-329e870fbfaf"
       }
     },
-    "owner": "ngonhuthuy1234"
+    "owner": "hamtech-org"
   }
 }

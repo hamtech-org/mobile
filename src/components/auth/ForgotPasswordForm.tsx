@@ -29,15 +29,25 @@ export const ForgotPasswordForm = () => {
     const success = await forgotPassword(parsed.data.email);
     if (success) {
       setSuccessMessage("Đã gửi OTP reset password vào email.");
-      router.push({ pathname: "/(auth)/otp-verification", params: { email: parsed.data.email, mode: "reset" } });
+      router.push({
+        pathname: "/(auth)/otp-verification",
+        params: { email: parsed.data.email, mode: "reset" },
+      });
     }
   };
 
   return (
     <View className="gap-4">
-      <Input label="Email" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" error={emailError} />
-      {errorMessage ? <Text className="text-destructive text-sm">{errorMessage}</Text> : null}
-      {successMessage ? <Text className="text-primary text-sm">{successMessage}</Text> : null}
+      <Input
+        label="Email"
+        value={email}
+        onChangeText={setEmail}
+        autoCapitalize="none"
+        keyboardType="email-address"
+        error={emailError}
+      />
+      {errorMessage ? <Text className="text-sm text-destructive">{errorMessage}</Text> : null}
+      {successMessage ? <Text className="text-sm text-primary">{successMessage}</Text> : null}
       <Button label="Gửi OTP" onPress={handleSubmit} loading={isLoading} />
     </View>
   );

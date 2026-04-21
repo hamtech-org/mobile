@@ -19,7 +19,10 @@ const resetSchema = z.object({
   newPassword: z
     .string()
     .min(8, "Mật khẩu tối thiểu 8 ký tự")
-    .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])/, "Mật khẩu phải có chữ hoa, chữ thường, số và ký tự đặc biệt"),
+    .regex(
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])/,
+      "Mật khẩu phải có chữ hoa, chữ thường, số và ký tự đặc biệt",
+    ),
 });
 
 const RESEND_COOLDOWN_SEC = 30;
@@ -135,11 +138,13 @@ export const OtpVerificationForm = ({ email, mode, notice }: OtpVerificationForm
         }}
         error={Boolean(otpError)}
       />
-      {otpError ? <Text className="text-destructive text-xs">{otpError}</Text> : null}
+      {otpError ? <Text className="text-xs text-destructive">{otpError}</Text> : null}
 
       {mode === "reset" ? (
         <View className="gap-4 border-t border-border/40 pt-5">
-          <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bước 2 — Mật khẩu mới</Text>
+          <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Bước 2 — Mật khẩu mới
+          </Text>
           <Input
             label="Mật khẩu mới"
             value={newPassword}
@@ -151,10 +156,10 @@ export const OtpVerificationForm = ({ email, mode, notice }: OtpVerificationForm
         </View>
       ) : null}
 
-      {errorMessage ? <Text className="text-destructive text-sm">{errorMessage}</Text> : null}
-      {infoMessage ? <Text className="text-muted-foreground text-sm">{infoMessage}</Text> : null}
-      {resendInfo ? <Text className="text-primary text-sm">{resendInfo}</Text> : null}
-      {resendError ? <Text className="text-destructive text-sm">{resendError}</Text> : null}
+      {errorMessage ? <Text className="text-sm text-destructive">{errorMessage}</Text> : null}
+      {infoMessage ? <Text className="text-sm text-muted-foreground">{infoMessage}</Text> : null}
+      {resendInfo ? <Text className="text-sm text-primary">{resendInfo}</Text> : null}
+      {resendError ? <Text className="text-sm text-destructive">{resendError}</Text> : null}
 
       <Button label="Xác thực OTP" onPress={handleVerify} loading={isLoading} />
 
@@ -182,7 +187,11 @@ export const OtpVerificationForm = ({ email, mode, notice }: OtpVerificationForm
       )}
 
       <Link href="/(auth)/login" asChild>
-        <Pressable className="py-2 active:opacity-80" accessibilityRole="link" accessibilityLabel="Quay lại đăng nhập">
+        <Pressable
+          className="py-2 active:opacity-80"
+          accessibilityRole="link"
+          accessibilityLabel="Quay lại đăng nhập"
+        >
           <Text className="text-center text-sm text-primary">Quay lại đăng nhập</Text>
         </Pressable>
       </Link>

@@ -66,7 +66,9 @@ function bannerFromSystemMessage(msg: IMessage): { text: string; atIso: string }
   switch (kind) {
     case "poll_created":
       return {
-        text: question ? `${actorName} đã tạo bình chọn: ${question}` : `${actorName} đã tạo bình chọn mới`,
+        text: question
+          ? `${actorName} đã tạo bình chọn: ${question}`
+          : `${actorName} đã tạo bình chọn mới`,
         atIso,
       };
     case "poll_voted": {
@@ -80,7 +82,10 @@ function bannerFromSystemMessage(msg: IMessage): { text: string; atIso: string }
       const opt = String(poll.optionText ?? "").trim();
       const prev = String(poll.prevOptionText ?? "").trim();
       return {
-        text: prev && opt ? `${actorName} đổi bình chọn (${prev} → ${opt})` : `${actorName} đã đổi lựa chọn bình chọn`,
+        text:
+          prev && opt
+            ? `${actorName} đổi bình chọn (${prev} → ${opt})`
+            : `${actorName} đã đổi lựa chọn bình chọn`,
         atIso,
       };
     }
@@ -89,7 +94,9 @@ function bannerFromSystemMessage(msg: IMessage): { text: string; atIso: string }
     case "poll_option_added": {
       const ot = String(poll.optionText ?? "").trim();
       return {
-        text: ot ? `${actorName} đã thêm lựa chọn: ${ot}` : `${actorName} đã thêm lựa chọn bình chọn`,
+        text: ot
+          ? `${actorName} đã thêm lựa chọn: ${ot}`
+          : `${actorName} đã thêm lựa chọn bình chọn`,
         atIso,
       };
     }
@@ -107,7 +114,11 @@ function bannerFromSystemMessage(msg: IMessage): { text: string; atIso: string }
  * Hook xử lý tất cả socket events cho chat.
  * Thông báo trong khung chat (frame banner + giờ) khi đang mở đúng hội thoại.
  */
-export function useChatRealtimeEvents({ dispatch, socket, activeConversationId }: UseChatRealtimeEventsParams): void {
+export function useChatRealtimeEvents({
+  dispatch,
+  socket,
+  activeConversationId,
+}: UseChatRealtimeEventsParams): void {
   const activeConvRef = useRef<string | null>(activeConversationId);
   const typingIndicatorTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
@@ -136,7 +147,10 @@ export function useChatRealtimeEvents({ dispatch, socket, activeConversationId }
       );
     };
 
-    const invalidateGroupData = (groupId: string, parts: ("polls" | "tasks" | "settings" | "requests" | "members")[]) => {
+    const invalidateGroupData = (
+      groupId: string,
+      parts: ("polls" | "tasks" | "settings" | "requests" | "members")[],
+    ) => {
       const tags: Parameters<typeof chatApi.util.invalidateTags>[0] = [];
       for (const p of parts) {
         if (p === "polls") tags.push({ type: "Polls", id: groupId });
@@ -175,7 +189,9 @@ export function useChatRealtimeEvents({ dispatch, socket, activeConversationId }
 
       dispatch(
         conversationApi.util.updateQueryData("getConversations", undefined, (draft) => {
-          const conv = draft?.find((item: IConversation) => item.conversationId === msg.conversationId);
+          const conv = draft?.find(
+            (item: IConversation) => item.conversationId === msg.conversationId,
+          );
           if (!conv) return;
           conv.lastMessage = {
             messageId: msg.messageId,
@@ -200,7 +216,10 @@ export function useChatRealtimeEvents({ dispatch, socket, activeConversationId }
         } else if (banner && msg.conversationId !== activeConvRef.current) {
           try {
             const raw = String(msg.content ?? "").trim();
-            const parsed = JSON.parse(raw) as { kind?: string; poll?: { pollId?: string; question?: string } };
+            const parsed = JSON.parse(raw) as {
+              kind?: string;
+              poll?: { pollId?: string; question?: string };
+            };
             if (parsed.kind === "poll_created" && parsed.poll?.pollId) {
               const pollId = String(parsed.poll.pollId);
               const dedupeKey = `poll-created-${pollId}`;
@@ -218,7 +237,11 @@ export function useChatRealtimeEvents({ dispatch, socket, activeConversationId }
       }
     };
 
-    const handleEdited = (payload: { messageId: string; conversationId: string; content: string }) => {
+    const handleEdited = (payload: {
+      messageId: string;
+      conversationId: string;
+      content: string;
+    }) => {
       dispatch(messageEdited(payload));
       if (payload.conversationId === activeConvRef.current) {
         const list = store.getState().chat.messages[payload.conversationId];
@@ -230,7 +253,9 @@ export function useChatRealtimeEvents({ dispatch, socket, activeConversationId }
       const nowIso = new Date().toISOString();
       dispatch(
         conversationApi.util.updateQueryData("getConversations", undefined, (draft) => {
-          const conv = draft?.find((item: IConversation) => item.conversationId === payload.conversationId);
+          const conv = draft?.find(
+            (item: IConversation) => item.conversationId === payload.conversationId,
+          );
           if (!conv?.lastMessage || conv.lastMessage.messageId !== payload.messageId) return;
           conv.lastMessage = {
             ...conv.lastMessage,
@@ -260,20 +285,36 @@ export function useChatRealtimeEvents({ dispatch, socket, activeConversationId }
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
     };
 
-    const handlePinUpdated = (payload: { messageId: string; conversationId: string; isPinned: boolean }) => {
+    const handlePinUpdated = (payload: {
+      messageId: string;
+      conversationId: string;
+      isPinned: boolean;
+    }) => {
       dispatch(messagePinUpdated(payload));
       if (payload.conversationId !== activeConvRef.current) return;
       const list = store.getState().chat.messages[payload.conversationId];
       const msg = list?.find((m) => m.messageId === payload.messageId);
       if (!payload.isPinned && msg?.isRecalled) return;
-      emitFrameBanner(payload.conversationId, payload.isPinned ? "Tin nhắn đã được ghim" : "Đã bỏ ghim tin nhắn");
+      emitFrameBanner(
+        payload.conversationId,
+        payload.isPinned ? "Tin nhắn đã được ghim" : "Đã bỏ ghim tin nhắn",
+      );
     };
 
-    const handleReaction = (payload: { messageId: string; conversationId: string; reactions: Record<string, string[]> }) => {
+    const handleReaction = (payload: {
+      messageId: string;
+      conversationId: string;
+      reactions: Record<string, string[]>;
+    }) => {
       dispatch(messageReacted(payload));
     };
 
-    const handleTyping = (payload: { conversationId: string; userId: string; isTyping: boolean; displayName?: string }) => {
+    const handleTyping = (payload: {
+      conversationId: string;
+      userId: string;
+      isTyping: boolean;
+      displayName?: string;
+    }) => {
       if (payload.isTyping) {
         dispatch(
           typingStarted({
@@ -296,8 +337,12 @@ export function useChatRealtimeEvents({ dispatch, socket, activeConversationId }
       const conversationId = String(payload.conversationId ?? "").trim();
       if (!conversationId) return;
 
-      const name = typeof payload.name === "string" && payload.name.trim() ? payload.name.trim() : undefined;
-      const avatar = typeof payload.avatar === "string" && payload.avatar.trim() ? payload.avatar.trim() : undefined;
+      const name =
+        typeof payload.name === "string" && payload.name.trim() ? payload.name.trim() : undefined;
+      const avatar =
+        typeof payload.avatar === "string" && payload.avatar.trim()
+          ? payload.avatar.trim()
+          : undefined;
 
       dispatch(
         conversationApi.util.updateQueryData("getConversations", undefined, (draft) => {
@@ -390,7 +435,9 @@ export function useChatRealtimeEvents({ dispatch, socket, activeConversationId }
       prefetchGroupMembers(gid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
       const role = String(payload.role ?? "");
-      const msg = role ? `Vai trò trong nhóm đã đổi (${roleVi(role)})` : "Vai trò trong nhóm đã được cập nhật";
+      const msg = role
+        ? `Vai trò trong nhóm đã đổi (${roleVi(role)})`
+        : "Vai trò trong nhóm đã được cập nhật";
       emitFrameBanner(gid, msg);
     };
 
@@ -400,7 +447,10 @@ export function useChatRealtimeEvents({ dispatch, socket, activeConversationId }
       invalidateGroupData(gid, ["requests"]);
       const mids = payload.memberIds;
       const isInvite = Array.isArray(mids) && mids.length > 0;
-      emitFrameBanner(gid, isInvite ? "Đã gửi lời mời tham gia nhóm" : "Có yêu cầu tham gia nhóm mới");
+      emitFrameBanner(
+        gid,
+        isInvite ? "Đã gửi lời mời tham gia nhóm" : "Có yêu cầu tham gia nhóm mới",
+      );
     };
 
     const handleGroupJoinRequestUpdated = (payload: Record<string, unknown>) => {

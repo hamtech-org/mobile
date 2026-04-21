@@ -59,15 +59,14 @@ export const ChatHeader = ({
         : `${othersTyping.length} người đang gõ...`;
     subtitleColor = "text-primary";
   } else if (isGroup) {
-    subtitle =
-      memberCount !== undefined ? `${memberCount} thành viên` : "Nhóm";
+    subtitle = memberCount !== undefined ? `${memberCount} thành viên` : "Nhóm";
   } else {
     subtitle = isOnline ? "Đang hoạt động" : "Offline";
     if (isOnline) subtitleColor = "text-green-500";
   }
 
   return (
-    <View className="flex-row items-center bg-background border-b border-border/30 px-2 py-2">
+    <View className="flex-row items-center border-b border-border/30 bg-background px-2 py-2">
       {/* Back */}
       <Pressable onPress={handleBack} className="p-2 active:opacity-60" hitSlop={8}>
         <ChevronLeft size={28} color={foreground} strokeWidth={1.5} />
@@ -86,10 +85,7 @@ export const ChatHeader = ({
           isGroup={isGroup}
         />
         <View className="flex-1">
-          <Text
-            className="text-foreground font-bold text-[18px]"
-            numberOfLines={1}
-          >
+          <Text className="text-[18px] font-bold text-foreground" numberOfLines={1}>
             {conversation.name ?? "Hội thoại"}
           </Text>
           <Text className={`text-[13px] ${subtitleColor}`} numberOfLines={1}>
@@ -100,25 +96,13 @@ export const ChatHeader = ({
 
       {/* Actions */}
       <View className="flex-row items-center">
-        <Pressable
-          onPress={onPressCall}
-          className="p-2 active:opacity-60"
-          hitSlop={6}
-        >
+        <Pressable onPress={onPressCall} className="p-2 active:opacity-60" hitSlop={6}>
           <Phone size={24} color={primary} strokeWidth={1.5} />
         </Pressable>
-        <Pressable
-          onPress={onPressVideoCall}
-          className="p-2 active:opacity-60"
-          hitSlop={6}
-        >
+        <Pressable onPress={onPressVideoCall} className="p-2 active:opacity-60" hitSlop={6}>
           <Video size={25} color={primary} strokeWidth={1.5} />
         </Pressable>
-        <Pressable
-          onPress={onPressInfo}
-          className="p-2 active:opacity-60"
-          hitSlop={6}
-        >
+        <Pressable onPress={onPressInfo} className="p-2 active:opacity-60" hitSlop={6}>
           <Info size={25} color={foreground} strokeWidth={1.5} />
         </Pressable>
       </View>

@@ -48,7 +48,12 @@ export function refreshAuthSession(dispatch: (action: UnknownAction) => unknown)
       }
 
       const envelope = body as RefreshEnvelope;
-      if (!response.ok || !envelope.success || !envelope.data?.accessToken || !envelope.data?.refreshToken) {
+      if (
+        !response.ok ||
+        !envelope.success ||
+        !envelope.data?.accessToken ||
+        !envelope.data?.refreshToken
+      ) {
         return false;
       }
 

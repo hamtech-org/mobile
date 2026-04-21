@@ -78,7 +78,9 @@ export default function ChatDetailScreen() {
   const frameBanner = useAppSelector((state) => state.chat.frameBanner);
   const replyingTo = useAppSelector((state) => state.chat.replyingTo);
   const typingUsers = useAppSelector((state) =>
-    conversationId ? (state.chat.typingUsers[conversationId] ?? EMPTY_TYPING_USERS) : EMPTY_TYPING_USERS,
+    conversationId
+      ? (state.chat.typingUsers[conversationId] ?? EMPTY_TYPING_USERS)
+      : EMPTY_TYPING_USERS,
   );
 
   const listRef = useRef<FlatList<IMessage>>(null);
@@ -86,7 +88,9 @@ export default function ChatDetailScreen() {
   const [activePollId, setActivePollId] = useState<string | null>(null);
   const [votingIndex, setVotingIndex] = useState<number | null>(null);
   const [groupManageOpen, setGroupManageOpen] = useState(false);
-  const [groupModalInitial, setGroupModalInitial] = useState<GroupManagePanel | undefined>(undefined);
+  const [groupModalInitial, setGroupModalInitial] = useState<GroupManagePanel | undefined>(
+    undefined,
+  );
 
   const { allMessages, isLoading, latestMessageId } = useChatMessageData(conversationId);
 
@@ -121,12 +125,19 @@ export default function ChatDetailScreen() {
   const [uploadMedia] = useUploadMediaMutation();
 
   const { data: convList } = useGetConversationsQuery();
-  const conversation = useMemo(() => convList?.find((c) => c.conversationId === conversationId), [convList, conversationId]);
+  const conversation = useMemo(
+    () => convList?.find((c) => c.conversationId === conversationId),
+    [convList, conversationId],
+  );
 
   const isGroup = conversation?.type === "group";
 
-  const { data: tasksEnvelope } = useGetTasksQuery(conversationId!, { skip: !isGroup || !conversationId });
-  const { data: pollsEnvelope } = useGetPollsQuery(conversationId!, { skip: !isGroup || !conversationId });
+  const { data: tasksEnvelope } = useGetTasksQuery(conversationId!, {
+    skip: !isGroup || !conversationId,
+  });
+  const { data: pollsEnvelope } = useGetPollsQuery(conversationId!, {
+    skip: !isGroup || !conversationId,
+  });
 
   const groupTasks = useMemo((): ChatBubbleGroupExtras["groupTasks"] => {
     const raw = tasksEnvelope?.data;
@@ -358,7 +369,9 @@ export default function ChatDetailScreen() {
         }
       />
 
-      {frameBanner && frameBanner.conversationId === conversationId ? <ChatFrameBanner banner={frameBanner} /> : null}
+      {frameBanner && frameBanner.conversationId === conversationId ? (
+        <ChatFrameBanner banner={frameBanner} />
+      ) : null}
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <FlatList
@@ -390,7 +403,13 @@ export default function ChatDetailScreen() {
               groupExtras={groupExtras}
             />
           )}
-          ListEmptyComponent={<EmptyState icon={MessageSquare} title="Chưa có tin nhắn" description="Hãy bắt đầu cuộc trò chuyện!" />}
+          ListEmptyComponent={
+            <EmptyState
+              icon={MessageSquare}
+              title="Chưa có tin nhắn"
+              description="Hãy bắt đầu cuộc trò chuyện!"
+            />
+          }
         />
 
         <View style={{ paddingBottom: insets.bottom }}>

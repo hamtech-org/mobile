@@ -26,7 +26,10 @@ export const pollApi = chatApi.injectEndpoints({
       ],
     }),
 
-    votePoll: builder.mutation<ApiEnvelope<unknown>, { groupId: string; pollId: string; optionIndex: number }>({
+    votePoll: builder.mutation<
+      ApiEnvelope<unknown>,
+      { groupId: string; pollId: string; optionIndex: number }
+    >({
       query: ({ groupId, pollId, optionIndex }) => ({
         url: `/chat/groups/${groupId}/polls/${pollId}/vote`,
         method: "POST",
@@ -35,7 +38,10 @@ export const pollApi = chatApi.injectEndpoints({
       invalidatesTags: (_result, _error, { groupId }) => [{ type: "Polls", id: groupId }],
     }),
 
-    unvotePoll: builder.mutation<ApiEnvelope<unknown>, { groupId: string; pollId: string; optionIndex: number }>({
+    unvotePoll: builder.mutation<
+      ApiEnvelope<unknown>,
+      { groupId: string; pollId: string; optionIndex: number }
+    >({
       query: ({ groupId, pollId, optionIndex }) => ({
         url: `/chat/groups/${groupId}/polls/${pollId}/unvote`,
         method: "POST",
@@ -47,4 +53,9 @@ export const pollApi = chatApi.injectEndpoints({
   overrideExisting: true,
 });
 
-export const { useGetPollsQuery, useCreatePollMutation, useVotePollMutation, useUnvotePollMutation } = pollApi;
+export const {
+  useGetPollsQuery,
+  useCreatePollMutation,
+  useVotePollMutation,
+  useUnvotePollMutation,
+} = pollApi;

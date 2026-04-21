@@ -43,12 +43,12 @@ export const Input = ({
 
   return (
     <View className={`gap-2 ${containerClassName ?? ""}`}>
-      <Text className="text-foreground text-sm font-medium">
+      <Text className="text-sm font-medium text-foreground">
         {label}
         {required ? <Text className="text-destructive"> *</Text> : null}
       </Text>
       <View
-        className={`border flex-row items-center gap-2 ${wrapperSizeClassName} ${error ? "border-destructive" : "border-border"} ${disabled ? "opacity-60" : ""}`}
+        className={`flex-row items-center gap-2 border ${wrapperSizeClassName} ${error ? "border-destructive" : "border-border"} ${disabled ? "opacity-60" : ""}`}
       >
         <TextInput
           className={`flex-1 text-foreground ${inputSizeClassName} ${inputClassName ?? ""}`}
@@ -59,13 +59,23 @@ export const Input = ({
           {...props}
         />
         {shouldTogglePassword ? (
-          <Pressable onPress={() => setIsPasswordVisible((prev) => !prev)} className="p-1 active:opacity-70" hitSlop={8}>
-            <Ionicons name={isPasswordVisible ? "eye-off-outline" : "eye-outline"} size={20} color="hsl(215 16% 47%)" />
+          <Pressable
+            onPress={() => setIsPasswordVisible((prev) => !prev)}
+            className="p-1 active:opacity-70"
+            hitSlop={8}
+          >
+            <Ionicons
+              name={isPasswordVisible ? "eye-off-outline" : "eye-outline"}
+              size={20}
+              color="hsl(215 16% 47%)"
+            />
           </Pressable>
         ) : null}
       </View>
-      {error ? <Text className="text-destructive text-xs">{error}</Text> : null}
-      {!error && helperText ? <Text className="text-muted-foreground text-xs">{helperText}</Text> : null}
+      {error ? <Text className="text-xs text-destructive">{error}</Text> : null}
+      {!error && helperText ? (
+        <Text className="text-xs text-muted-foreground">{helperText}</Text>
+      ) : null}
     </View>
   );
 };

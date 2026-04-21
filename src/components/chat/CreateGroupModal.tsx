@@ -144,7 +144,12 @@ export function CreateGroupModal({ visible, onClose }: CreateGroupModalProps): R
   const busy = creating || uploading;
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="fullScreen"
+      onRequestClose={onClose}
+    >
       <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
         <View style={styles.topBar}>
           <Pressable onPress={onClose} style={styles.backBtn} hitSlop={12}>

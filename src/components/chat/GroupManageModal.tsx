@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useState, type ReactElement, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -171,7 +178,9 @@ export function GroupManageModal({
 
   const [panel, setPanel] = useState<Panel>("home");
   const [editName, setEditName] = useState(conversation.name ?? "");
-  const [selectedInviteFriendIds, setSelectedInviteFriendIds] = useState<Set<string>>(() => new Set());
+  const [selectedInviteFriendIds, setSelectedInviteFriendIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [addFriendFilter, setAddFriendFilter] = useState("");
   const [pickOwnerForLeave, setPickOwnerForLeave] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -193,7 +202,11 @@ export function GroupManageModal({
     }
   }, [visible, conversation.name, initialPanel]);
 
-  const { data: members = [], isFetching, refetch } = useGetGroupMembersQuery(groupId, {
+  const {
+    data: members = [],
+    isFetching,
+    refetch,
+  } = useGetGroupMembersQuery(groupId, {
     skip: !visible,
     refetchOnMountOrArgChange: true,
   });
@@ -210,18 +223,19 @@ export function GroupManageModal({
   const canFetchJoinRequests =
     visible &&
     !!effectiveUserId &&
-    members.some(
-      (m) => m.userId === effectiveUserId && (m.role === "owner" || m.role === "admin"),
-    );
+    members.some((m) => m.userId === effectiveUserId && (m.role === "owner" || m.role === "admin"));
 
   const { data: joinRequests = [], refetch: refetchRequests } = useGetGroupRequestsQuery(groupId, {
     skip: !canFetchJoinRequests,
     refetchOnMountOrArgChange: true,
   });
 
-  const { data: friends = [], isFetching: loadingFriendsForInvite } = useGetFriendsQuery(undefined, {
-    skip: !visible || panel !== "add",
-  });
+  const { data: friends = [], isFetching: loadingFriendsForInvite } = useGetFriendsQuery(
+    undefined,
+    {
+      skip: !visible || panel !== "add",
+    },
+  );
 
   const memberIdSet = useMemo(() => new Set(members.map((m) => m.userId)), [members]);
 
@@ -304,9 +318,7 @@ export function GroupManageModal({
   );
 
   const searchHits = useMemo(() => {
-    const pool = messages.filter(
-      (m) => isMemberSentMessage(m) && !m.isRecalled && !m.isDeleted,
-    );
+    const pool = messages.filter((m) => isMemberSentMessage(m) && !m.isRecalled && !m.isDeleted);
     const q = searchQuery.trim();
     if (!q) return pool.slice(0, 40);
     return pool.filter((m) => messageMatchesQuery(m, q));
@@ -510,37 +522,33 @@ export function GroupManageModal({
   }, [isOwner, othersForOwnerHandoff.length, runLeave]);
 
   const handleDeleteGroup = useCallback(() => {
-    Alert.alert(
-      "Giải tán nhóm",
-      "Mọi thành viên sẽ bị xóa khỏi nhóm.",
-      [
-        { text: "Hủy", style: "cancel" },
-        {
-          text: "Giải tán",
-          style: "destructive",
-          onPress: () => {
-            Alert.alert("Xác nhận lần nữa", "Hành động này không thể hoàn tác.", [
-              { text: "Hủy", style: "cancel" },
-              {
-                text: "Giải tán nhóm",
-                style: "destructive",
-                onPress: () => {
-                  void (async () => {
-                    try {
-                      await deleteGroup(groupId).unwrap();
-                      toast.success("Đã giải tán nhóm");
-                      navigateOut();
-                    } catch {
-                      toast.error("Không thể giải tán nhóm");
-                    }
-                  })();
-                },
+    Alert.alert("Giải tán nhóm", "Mọi thành viên sẽ bị xóa khỏi nhóm.", [
+      { text: "Hủy", style: "cancel" },
+      {
+        text: "Giải tán",
+        style: "destructive",
+        onPress: () => {
+          Alert.alert("Xác nhận lần nữa", "Hành động này không thể hoàn tác.", [
+            { text: "Hủy", style: "cancel" },
+            {
+              text: "Giải tán nhóm",
+              style: "destructive",
+              onPress: () => {
+                void (async () => {
+                  try {
+                    await deleteGroup(groupId).unwrap();
+                    toast.success("Đã giải tán nhóm");
+                    navigateOut();
+                  } catch {
+                    toast.error("Không thể giải tán nhóm");
+                  }
+                })();
               },
-            ]);
-          },
+            },
+          ]);
         },
-      ],
-    );
+      },
+    ]);
   }, [deleteGroup, groupId, navigateOut]);
 
   const toggleMuted = useCallback(
@@ -800,16 +808,26 @@ export function GroupManageModal({
           <ImageIcon size={18} color={Z.text} strokeWidth={1.75} />
           <Text style={styles.mediaTitle}>Ảnh, file, link</Text>
         </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mediaStrip}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.mediaStrip}
+        >
           {mediaMessages.slice(0, 12).map((m) => {
             const uri = m.thumbnailUrl || m.mediaUrl || undefined;
             return (
-              <Pressable key={m.messageId} onPress={() => setPanel("media")} style={styles.thumbBox}>
+              <Pressable
+                key={m.messageId}
+                onPress={() => setPanel("media")}
+                style={styles.thumbBox}
+              >
                 {uri && (m.type === "image" || m.type === "video") ? (
                   <Image source={{ uri }} style={styles.thumbImg} />
                 ) : (
                   <View style={[styles.thumbImg, styles.thumbPlaceholder]}>
-                    <Text style={{ fontSize: 11, color: Z.sub }}>{m.type === "file" ? "FILE" : "•"}</Text>
+                    <Text style={{ fontSize: 11, color: Z.sub }}>
+                      {m.type === "file" ? "FILE" : "•"}
+                    </Text>
                   </View>
                 )}
               </Pressable>
@@ -1045,7 +1063,9 @@ export function GroupManageModal({
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ flexGrow: 1, paddingBottom: 8 }}
           ListEmptyComponent={
-            <Text style={[styles.help, { textAlign: "center", marginTop: 24, paddingHorizontal: 16 }]}>
+            <Text
+              style={[styles.help, { textAlign: "center", marginTop: 24, paddingHorizontal: 16 }]}
+            >
               {friends.length === 0
                 ? "Chưa có bạn bè trong danh sách."
                 : "Không còn bạn nào để mời hoặc không khớp tìm kiếm."}
@@ -1081,8 +1101,16 @@ export function GroupManageModal({
           },
         ]}
       >
-        <Pressable style={styles.primaryBtn} onPress={() => void handleAddMembers()} disabled={busy}>
-          {adding ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>Gửi lời mời</Text>}
+        <Pressable
+          style={styles.primaryBtn}
+          onPress={() => void handleAddMembers()}
+          disabled={busy}
+        >
+          {adding ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.primaryBtnText}>Gửi lời mời</Text>
+          )}
         </Pressable>
       </View>
     </View>
@@ -1110,7 +1138,9 @@ export function GroupManageModal({
               </View>
             ) : (
               <View style={{ paddingHorizontal: 16, paddingBottom: 10, paddingTop: 4 }}>
-                <Text style={styles.help}>Chỉ trưởng nhóm hoặc quản trị mới thấy nút mời người ra.</Text>
+                <Text style={styles.help}>
+                  Chỉ trưởng nhóm hoặc quản trị mới thấy nút mời người ra.
+                </Text>
               </View>
             )
           }
@@ -1123,7 +1153,10 @@ export function GroupManageModal({
                 </Text>
                 <Text style={styles.subSmall}>{roleLabel(m.role)}</Text>
               </View>
-              {canManageMembers && Boolean(effectiveUserId) && m.userId !== effectiveUserId && m.role !== "owner" ? (
+              {canManageMembers &&
+              Boolean(effectiveUserId) &&
+              m.userId !== effectiveUserId &&
+              m.role !== "owner" ? (
                 <View style={{ flexDirection: "row", alignItems: "center", flexShrink: 0, gap: 2 }}>
                   {isOwner ? (
                     <Pressable onPress={() => pickNewRole(m)} style={styles.iconBtn} hitSlop={6}>
@@ -1140,10 +1173,7 @@ export function GroupManageModal({
                       }
                       confirmRemove(m);
                     }}
-                    style={[
-                      styles.kickOutBtn,
-                      kickGloballyDisabled ? { opacity: 0.45 } : null,
-                    ]}
+                    style={[styles.kickOutBtn, kickGloballyDisabled ? { opacity: 0.45 } : null]}
                     hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
                   >
                     <Trash2 size={17} color={Z.red} strokeWidth={2} />
@@ -1164,7 +1194,9 @@ export function GroupManageModal({
         data={joinRequests}
         keyExtractor={(r) => r.userId}
         ListEmptyComponent={
-          <Text style={[styles.help, { textAlign: "center", marginTop: 24 }]}>Không có yêu cầu chờ.</Text>
+          <Text style={[styles.help, { textAlign: "center", marginTop: 24 }]}>
+            Không có yêu cầu chờ.
+          </Text>
         }
         renderItem={({ item: r }) => (
           <View style={styles.memberRow}>
@@ -1225,16 +1257,56 @@ export function GroupManageModal({
     return (
       <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: 32 }}>
         <Text style={styles.sectionCap}>Quyền thành viên</Text>
-        <ToggleRow label="Đổi tên & ảnh nhóm" value={mp.changeNameAvatar} onValueChange={(v) => void patchSettingMember("changeNameAvatar", v)} disabled={savingSettings} />
-        <ToggleRow label="Ghim tin, bình chọn…" value={mp.pinMessages} onValueChange={(v) => void patchSettingMember("pinMessages", v)} disabled={savingSettings} />
-        <ToggleRow label="Ghi chú, nhắc hẹn" value={mp.createNotesReminders} onValueChange={(v) => void patchSettingMember("createNotesReminders", v)} disabled={savingSettings} />
-        <ToggleRow label="Tạo bình chọn" value={mp.createPolls} onValueChange={(v) => void patchSettingMember("createPolls", v)} disabled={savingSettings} />
-        <ToggleRow label="Gửi tin nhắn" value={mp.sendMessages} onValueChange={(v) => void patchSettingMember("sendMessages", v)} disabled={savingSettings} />
+        <ToggleRow
+          label="Đổi tên & ảnh nhóm"
+          value={mp.changeNameAvatar}
+          onValueChange={(v) => void patchSettingMember("changeNameAvatar", v)}
+          disabled={savingSettings}
+        />
+        <ToggleRow
+          label="Ghim tin, bình chọn…"
+          value={mp.pinMessages}
+          onValueChange={(v) => void patchSettingMember("pinMessages", v)}
+          disabled={savingSettings}
+        />
+        <ToggleRow
+          label="Ghi chú, nhắc hẹn"
+          value={mp.createNotesReminders}
+          onValueChange={(v) => void patchSettingMember("createNotesReminders", v)}
+          disabled={savingSettings}
+        />
+        <ToggleRow
+          label="Tạo bình chọn"
+          value={mp.createPolls}
+          onValueChange={(v) => void patchSettingMember("createPolls", v)}
+          disabled={savingSettings}
+        />
+        <ToggleRow
+          label="Gửi tin nhắn"
+          value={mp.sendMessages}
+          onValueChange={(v) => void patchSettingMember("sendMessages", v)}
+          disabled={savingSettings}
+        />
 
         <Text style={[styles.sectionCap, { marginTop: 16 }]}>Quản trị</Text>
-        <ToggleRow label="Duyệt thành viên mới" value={ad.approvalRequired} onValueChange={(v) => void patchSettingAdmin("approvalRequired", v)} disabled={savingSettings} />
-        <ToggleRow label="Nổi bật tin trưởng nhóm" value={ad.highlightLeaderMessages} onValueChange={(v) => void patchSettingAdmin("highlightLeaderMessages", v)} disabled={savingSettings} />
-        <ToggleRow label="Link tham gia nhóm" value={ad.allowJoinLink} onValueChange={(v) => void patchSettingAdmin("allowJoinLink", v)} disabled={savingSettings} />
+        <ToggleRow
+          label="Duyệt thành viên mới"
+          value={ad.approvalRequired}
+          onValueChange={(v) => void patchSettingAdmin("approvalRequired", v)}
+          disabled={savingSettings}
+        />
+        <ToggleRow
+          label="Nổi bật tin trưởng nhóm"
+          value={ad.highlightLeaderMessages}
+          onValueChange={(v) => void patchSettingAdmin("highlightLeaderMessages", v)}
+          disabled={savingSettings}
+        />
+        <ToggleRow
+          label="Link tham gia nhóm"
+          value={ad.allowJoinLink}
+          onValueChange={(v) => void patchSettingAdmin("allowJoinLink", v)}
+          disabled={savingSettings}
+        />
 
         <Pressable
           style={[styles.primaryBtn, { marginHorizontal: 16, marginTop: 16 }]}
@@ -1270,7 +1342,9 @@ export function GroupManageModal({
       <FlatList
         data={searchHits}
         keyExtractor={(m) => m.messageId}
-        ListEmptyComponent={<Text style={[styles.help, { textAlign: "center" }]}>Không có kết quả.</Text>}
+        ListEmptyComponent={
+          <Text style={[styles.help, { textAlign: "center" }]}>Không có kết quả.</Text>
+        }
         renderItem={({ item: m }) => (
           <View style={styles.searchRow}>
             <Text style={styles.menuLabel} numberOfLines={1}>
@@ -1290,7 +1364,11 @@ export function GroupManageModal({
       <FlatList
         data={pinnedList}
         keyExtractor={(m) => m.messageId}
-        ListEmptyComponent={<Text style={[styles.help, { textAlign: "center", marginTop: 24 }]}>Chưa có tin ghim.</Text>}
+        ListEmptyComponent={
+          <Text style={[styles.help, { textAlign: "center", marginTop: 24 }]}>
+            Chưa có tin ghim.
+          </Text>
+        }
         renderItem={({ item: m }) => (
           <View style={styles.searchRow}>
             <Text style={styles.menuLabel} numberOfLines={2}>
@@ -1325,7 +1403,13 @@ export function GroupManageModal({
                 <View
                   style={[
                     styles.thumbPlaceholder,
-                    { width: cell, height: cell, borderRadius: 8, alignItems: "center", justifyContent: "center" },
+                    {
+                      width: cell,
+                      height: cell,
+                      borderRadius: 8,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    },
                   ]}
                 >
                   <Text style={{ color: Z.sub, fontSize: 11 }}>{m.type}</Text>
@@ -1361,7 +1445,11 @@ export function GroupManageModal({
   })();
 
   const renderPolls = () => (
-    <ScrollView style={styles.scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 32 }}>
+    <ScrollView
+      style={styles.scroll}
+      keyboardShouldPersistTaps="handled"
+      contentContainerStyle={{ paddingBottom: 32 }}
+    >
       <Text style={styles.sectionCap}>Danh sách</Text>
       {pollsList.length === 0 ? (
         <Text style={[styles.help, { paddingHorizontal: 16 }]}>Chưa có bình chọn.</Text>
@@ -1393,7 +1481,15 @@ export function GroupManageModal({
         />
         <Text style={[styles.fieldLabel, { marginTop: 12 }]}>Các lựa chọn</Text>
         {newPollOptionRows.map((row, idx) => (
-          <View key={`opt-${idx}`} style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: idx === 0 ? 0 : 8 }}>
+          <View
+            key={`opt-${idx}`}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+              marginTop: idx === 0 ? 0 : 8,
+            }}
+          >
             <TextInput
               value={row}
               onChangeText={(t) => {
@@ -1424,7 +1520,15 @@ export function GroupManageModal({
         ))}
         {newPollOptionRows.length < 12 ? (
           <Pressable
-            style={[styles.menuRow, { marginTop: 10, borderRadius: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: Z.border }]}
+            style={[
+              styles.menuRow,
+              {
+                marginTop: 10,
+                borderRadius: 10,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: Z.border,
+              },
+            ]}
             onPress={() => setNewPollOptionRows((prev) => [...prev, ""])}
             disabled={busy}
           >
@@ -1442,7 +1546,11 @@ export function GroupManageModal({
             thumbColor={pollMultiple ? Z.primary : "#f4f4f5"}
           />
         </View>
-        <Pressable style={styles.primaryBtn} onPress={() => void handleCreatePoll()} disabled={busy}>
+        <Pressable
+          style={styles.primaryBtn}
+          onPress={() => void handleCreatePoll()}
+          disabled={busy}
+        >
           {creatingPoll ? (
             <ActivityIndicator color="#fff" />
           ) : (
@@ -1454,7 +1562,11 @@ export function GroupManageModal({
   );
 
   const renderPersonal = () => (
-    <ScrollView style={styles.scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 32 }}>
+    <ScrollView
+      style={styles.scroll}
+      keyboardShouldPersistTaps="handled"
+      contentContainerStyle={{ paddingBottom: 32 }}
+    >
       <Text style={[styles.help, { paddingHorizontal: 16, paddingTop: 8 }]}>
         Áp dụng cho tài khoản của bạn trong hội thoại này.
       </Text>
@@ -1501,7 +1613,12 @@ export function GroupManageModal({
   );
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={handleBack}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="fullScreen"
+      onRequestClose={handleBack}
+    >
       <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
         <View style={styles.topBar}>
           <Pressable onPress={handleBack} style={styles.backBtn} hitSlop={12}>
@@ -1544,7 +1661,9 @@ export function GroupManageModal({
                   }}
                 >
                   <Avatar uri={item.avatar || undefined} name={item.displayName} size="sm" />
-                  <Text style={[styles.menuLabel, { flex: 1, marginLeft: 12 }]}>{item.displayName}</Text>
+                  <Text style={[styles.menuLabel, { flex: 1, marginLeft: 12 }]}>
+                    {item.displayName}
+                  </Text>
                   <Text style={{ color: Z.primary, fontWeight: "600" }}>Chọn</Text>
                 </Pressable>
               )}
@@ -1643,7 +1762,13 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#fff",
   },
-  nameRow: { flexDirection: "row", alignItems: "center", marginTop: 10, paddingHorizontal: 24, gap: 8 },
+  nameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 10,
+    paddingHorizontal: 24,
+    gap: 8,
+  },
   groupTitle: { fontSize: 20, fontWeight: "700", color: Z.text, flexShrink: 1 },
   quickRow: {
     flexDirection: "row",
@@ -1673,8 +1798,19 @@ const styles = StyleSheet.create({
     borderBottomColor: Z.line,
   },
   descText: { flex: 1, marginLeft: 12, color: Z.sub, fontSize: 15 },
-  mediaSection: { paddingTop: 12, paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Z.line },
-  mediaHeader: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, marginBottom: 8 },
+  mediaSection: {
+    paddingTop: 12,
+    paddingBottom: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Z.line,
+  },
+  mediaHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
   mediaTitle: { fontSize: 15, fontWeight: "600", color: Z.text },
   mediaStrip: { paddingHorizontal: 12, gap: 8, alignItems: "center" },
   thumbBox: { width: 64, height: 64, borderRadius: 8, overflow: "hidden" },
@@ -1795,8 +1931,19 @@ const styles = StyleSheet.create({
   miniBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: Z.subBg },
   miniBtnTextOk: { color: Z.primary, fontWeight: "700", fontSize: 13 },
   miniBtnTextNo: { color: Z.red, fontWeight: "700", fontSize: 13 },
-  sectionCap: { paddingHorizontal: 16, paddingVertical: 8, fontSize: 13, fontWeight: "700", color: Z.sub },
-  searchRow: { paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Z.line },
+  sectionCap: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    fontSize: 13,
+    fontWeight: "700",
+    color: Z.sub,
+  },
+  searchRow: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Z.line,
+  },
   iconBtn: { padding: 8 },
   kickOutBtn: {
     flexDirection: "row",
@@ -1810,6 +1957,17 @@ const styles = StyleSheet.create({
   kickOutBtnText: { fontSize: 14, fontWeight: "700", color: Z.red },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", padding: 20 },
   sheet: { backgroundColor: Z.bg, borderRadius: 16, paddingTop: 12, maxHeight: "80%" },
-  sheetTitle: { fontSize: 16, fontWeight: "700", color: Z.text, paddingHorizontal: 16, marginBottom: 8 },
-  sheetCancel: { paddingVertical: 14, alignItems: "center", borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Z.line },
+  sheetTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: Z.text,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  sheetCancel: {
+    paddingVertical: 14,
+    alignItems: "center",
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Z.line,
+  },
 });

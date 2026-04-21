@@ -42,12 +42,12 @@ export const ScreenHeader = ({
   const handleBack = onBack ?? (() => safeRouterBack("/(main)"));
 
   return (
-    <View className="px-4 py-3 border-b border-border/40 bg-background flex-row items-center gap-3">
+    <View className="flex-row items-center gap-3 border-b border-border/40 bg-background px-4 py-3">
       {/* Nút back — chỉ hiển thị khi có onBack hoặc không phải root screen */}
       {onBack !== undefined ? (
         <Pressable
           onPress={handleBack}
-          className="active:opacity-70 p-1 -ml-1"
+          className="-ml-1 p-1 active:opacity-70"
           hitSlop={8}
           accessibilityLabel="Quay lại"
         >
@@ -59,14 +59,11 @@ export const ScreenHeader = ({
       <View className="flex-1">
         {titleContent ?? (
           <>
-            <Text
-              className="text-foreground text-lg font-bold"
-              numberOfLines={1}
-            >
+            <Text className="text-lg font-bold text-foreground" numberOfLines={1}>
               {title}
             </Text>
             {subtitle ? (
-              <Text className="text-muted-foreground text-xs" numberOfLines={1}>
+              <Text className="text-xs text-muted-foreground" numberOfLines={1}>
                 {subtitle}
               </Text>
             ) : null}
@@ -81,15 +78,11 @@ export const ScreenHeader = ({
             <Pressable
               key={index}
               onPress={action.onPress}
-              className="p-2 active:opacity-70 rounded-full"
+              className="rounded-full p-2 active:opacity-70"
               hitSlop={6}
               accessibilityLabel={action.accessibilityLabel}
             >
-              <Ionicons
-                name={action.icon}
-                size={22}
-                color="hsl(var(--foreground) / 1)"
-              />
+              <Ionicons name={action.icon} size={22} color="hsl(var(--foreground) / 1)" />
             </Pressable>
           ))}
         </View>

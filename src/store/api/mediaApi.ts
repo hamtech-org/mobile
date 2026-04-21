@@ -1,8 +1,5 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
-import {
-  FileSystemUploadType,
-  uploadAsync,
-} from "expo-file-system/legacy";
+import { FileSystemUploadType, uploadAsync } from "expo-file-system/legacy";
 import { router } from "expo-router";
 
 import { env } from "@/config/env";

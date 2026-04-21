@@ -19,7 +19,13 @@ interface SearchBarProps {
  * - Bo tròn pill shape
  * - Placeholder muted color
  */
-export const SearchBar = ({ value, onChangeText, placeholder = "Tìm kiếm...", onClear, autoFocus = false }: SearchBarProps) => {
+export const SearchBar = ({
+  value,
+  onChangeText,
+  placeholder = "Tìm kiếm...",
+  onClear,
+  autoFocus = false,
+}: SearchBarProps) => {
   const { muted } = useIconColors();
   const handleClear = () => {
     onChangeText("");
@@ -27,13 +33,13 @@ export const SearchBar = ({ value, onChangeText, placeholder = "Tìm kiếm...",
   };
 
   return (
-    <View className="flex-row items-center bg-muted rounded-full px-3 py-2 gap-2">
+    <View className="flex-row items-center gap-2 rounded-full bg-muted px-3 py-2">
       {/* Search icon */}
       <Search size={18} color={muted} strokeWidth={1.5} />
 
       {/* Text input */}
       <TextInput
-        className="flex-1 text-foreground text-sm"
+        className="flex-1 text-sm text-foreground"
         placeholder={placeholder}
         placeholderTextColor="hsl(215 16% 47%)"
         value={value}

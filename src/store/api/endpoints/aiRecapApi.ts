@@ -16,5 +16,4 @@ export const aiRecapApi = chatApi.injectEndpoints({
   overrideExisting: false,
 });
 
-export const { useGetLatestAIRecapQuery, useGenerateAIRecapMutation } =
-  aiRecapApi;
+export const { useGetLatestAIRecapQuery, useGenerateAIRecapMutation } = aiRecapApi;

@@ -28,11 +28,9 @@ export const Badge = ({ count, max = 99, variant = "danger" }: BadgeProps) => {
 
   return (
     <View
-      className={`${VARIANT_CLASS[variant]} rounded-full items-center justify-center ${isSmall ? "size-5" : "px-1.5 h-5"}`}
+      className={`${VARIANT_CLASS[variant]} items-center justify-center rounded-full ${isSmall ? "size-5" : "h-5 px-1.5"}`}
     >
-      <Text className="text-white text-[10px] font-bold leading-none">
-        {label}
-      </Text>
+      <Text className="text-[10px] font-bold leading-none text-white">{label}</Text>
     </View>
   );
 };

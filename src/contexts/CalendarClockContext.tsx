@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactElement, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { AppState, type AppStateStatus } from "react-native";
 
 const CalendarClockContext = createContext<Date | null>(null);
@@ -20,10 +28,13 @@ export function CalendarClockProvider({ children }: { children: ReactNode }): Re
       const n = new Date();
       const nextMidnight = new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1, 0, 0, 0, 0);
       const ms = nextMidnight.getTime() - n.getTime();
-      midnightTimer = setTimeout(() => {
-        tick();
-        scheduleMidnight();
-      }, Math.max(ms, 1000));
+      midnightTimer = setTimeout(
+        () => {
+          tick();
+          scheduleMidnight();
+        },
+        Math.max(ms, 1000),
+      );
     };
 
     scheduleMidnight();

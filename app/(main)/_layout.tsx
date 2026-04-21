@@ -46,7 +46,9 @@ export default function MainLayout() {
           name={tab.name}
           options={{
             title: tab.title,
-            tabBarIcon: ({ focused, color, size }) => <tab.Icon size={size - 2} color={color} strokeWidth={focused ? 2.2 : 1.5} />,
+            tabBarIcon: ({ focused, color, size }) => (
+              <tab.Icon size={size - 2} color={color} strokeWidth={focused ? 2.2 : 1.5} />
+            ),
           }}
         />
       ))}

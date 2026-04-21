@@ -12,10 +12,16 @@ export const secureStorage = {
       throw new Error("Invalid token payload for SecureStore.");
     }
 
-    await Promise.all([SecureStore.setItemAsync(ACCESS_TOKEN_KEY, accessToken), SecureStore.setItemAsync(REFRESH_TOKEN_KEY, refreshToken)]);
+    await Promise.all([
+      SecureStore.setItemAsync(ACCESS_TOKEN_KEY, accessToken),
+      SecureStore.setItemAsync(REFRESH_TOKEN_KEY, refreshToken),
+    ]);
   },
   clearTokens: async () => {
-    await Promise.all([SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY), SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY)]);
+    await Promise.all([
+      SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY),
+      SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY),
+    ]);
   },
 };
 

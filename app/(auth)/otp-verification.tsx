@@ -17,7 +17,11 @@ function modeBadge(mode?: string) {
 }
 
 export default function OtpVerificationScreen() {
-  const { email, mode, notice } = useLocalSearchParams<{ email?: string; mode?: string; notice?: string }>();
+  const { email, mode, notice } = useLocalSearchParams<{
+    email?: string;
+    mode?: string;
+    notice?: string;
+  }>();
 
   const description = `Nhập mã 6 số đã gửi tới ${email ?? "email của bạn"}.`;
 

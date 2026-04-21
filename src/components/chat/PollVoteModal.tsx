@@ -50,25 +50,32 @@ export function PollVoteModal({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable className="flex-1 bg-black/50 justify-center px-4" onPress={onClose}>
-        <Pressable className="bg-card rounded-2xl border border-border max-h-[85%] overflow-hidden" onPress={(e) => e.stopPropagation()}>
-          <View className="flex-row items-center justify-between px-4 py-3 border-b border-border/60">
+      <Pressable className="flex-1 justify-center bg-black/50 px-4" onPress={onClose}>
+        <Pressable
+          className="max-h-[85%] overflow-hidden rounded-2xl border border-border bg-card"
+          onPress={(e) => e.stopPropagation()}
+        >
+          <View className="flex-row items-center justify-between border-b border-border/60 px-4 py-3">
             <View className="flex-row items-center gap-2">
-              <View className="w-9 h-9 rounded-xl bg-orange-500/15 items-center justify-center">
+              <View className="h-9 w-9 items-center justify-center rounded-xl bg-orange-500/15">
                 <BarChart2 size={18} color="#f97316" strokeWidth={2} />
               </View>
-              <Text className="text-foreground font-bold text-[17px]">Bình chọn</Text>
+              <Text className="text-[17px] font-bold text-foreground">Bình chọn</Text>
             </View>
-            <Pressable onPress={onClose} className="w-9 h-9 rounded-full bg-muted items-center justify-center">
+            <Pressable
+              onPress={onClose}
+              className="h-9 w-9 items-center justify-center rounded-full bg-muted"
+            >
               <X size={20} color={muted} strokeWidth={2} />
             </Pressable>
           </View>
 
           <ScrollView className="px-4 py-4" keyboardShouldPersistTaps="handled">
-            <View className="rounded-xl bg-muted/40 p-3 mb-3">
-              <Text className="text-foreground font-extrabold text-[15px]">{poll.question}</Text>
-              <Text className="text-muted-foreground text-[12px] mt-1">
-                {poll.isMultipleChoice ? "Chọn nhiều đáp án" : "Chọn một đáp án"} • {total} lượt bình chọn
+            <View className="mb-3 rounded-xl bg-muted/40 p-3">
+              <Text className="text-[15px] font-extrabold text-foreground">{poll.question}</Text>
+              <Text className="mt-1 text-[12px] text-muted-foreground">
+                {poll.isMultipleChoice ? "Chọn nhiều đáp án" : "Chọn một đáp án"} • {total} lượt
+                bình chọn
               </Text>
             </View>
 
@@ -85,23 +92,33 @@ export function PollVoteModal({
                   disabled={disabled || busyHere}
                   onPress={() => onToggleOption(poll.pollId, idx)}
                   className={`mb-2 rounded-xl border px-3 py-3 ${
-                    disabled ? "opacity-60 border-border/40 bg-muted/20" : checked ? "border-primary/50 bg-primary/10" : "border-border/60 bg-background"
+                    disabled
+                      ? "border-border/40 bg-muted/20 opacity-60"
+                      : checked
+                        ? "border-primary/50 bg-primary/10"
+                        : "border-border/60 bg-background"
                   }`}
                 >
                   <View className="flex-row items-start gap-3">
                     <View
-                      className={`mt-0.5 w-5 h-5 rounded-full border items-center justify-center ${
-                        checked ? "bg-primary border-primary" : "border-border"
+                      className={`mt-0.5 h-5 w-5 items-center justify-center rounded-full border ${
+                        checked ? "border-primary bg-primary" : "border-border"
                       }`}
                     >
-                      {busyHere ? <ActivityIndicator size="small" color={primary} /> : checked ? <Check size={12} color="white" strokeWidth={3} /> : null}
+                      {busyHere ? (
+                        <ActivityIndicator size="small" color={primary} />
+                      ) : checked ? (
+                        <Check size={12} color="white" strokeWidth={3} />
+                      ) : null}
                     </View>
-                    <View className="flex-1 min-w-0">
-                      <Text className="text-[13px] font-semibold text-foreground">{option.text}</Text>
-                      <Text className="text-[11px] text-muted-foreground mt-0.5">
+                    <View className="min-w-0 flex-1">
+                      <Text className="text-[13px] font-semibold text-foreground">
+                        {option.text}
+                      </Text>
+                      <Text className="mt-0.5 text-[11px] text-muted-foreground">
                         {votes} lượt ({pct}%)
                       </Text>
-                      <View className="h-2 rounded-full bg-muted mt-2 overflow-hidden">
+                      <View className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
                         <View className="h-full bg-primary" style={{ width: `${pct}%` }} />
                       </View>
                     </View>
@@ -111,12 +128,12 @@ export function PollVoteModal({
             })}
           </ScrollView>
 
-          <View className="flex-row items-center justify-between px-4 py-3 border-t border-border/60">
-            <Text className="text-muted-foreground text-[12px] flex-1 pr-2">
+          <View className="flex-row items-center justify-between border-t border-border/60 px-4 py-3">
+            <Text className="flex-1 pr-2 text-[12px] text-muted-foreground">
               {poll.isClosed ? "Bình chọn đã đóng" : "Bấm để bình chọn / rút phiếu"}
             </Text>
-            <Pressable onPress={onClose} className="px-4 py-2 rounded-xl bg-muted">
-              <Text className="font-bold text-[13px] text-foreground">Đóng</Text>
+            <Pressable onPress={onClose} className="rounded-xl bg-muted px-4 py-2">
+              <Text className="text-[13px] font-bold text-foreground">Đóng</Text>
             </Pressable>
           </View>
         </Pressable>

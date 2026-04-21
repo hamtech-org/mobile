@@ -19,6 +19,7 @@ import { useIconColors } from "@/hooks/useIconColors";
 import { toast } from "@/utils/appToast";
 import type { IMessage } from "@/types/chat.types";
 import { formatFileSize } from "@/utils/file";
+import EmojiPicker, { EmojiType } from "rn-emoji-keyboard";
 import { formatChatPreviewLine } from "@/utils/messageDisplay";
 
 export interface PendingAttachment {
@@ -61,10 +62,16 @@ export const ChatInput = ({
   const [content, setContent] = useState("");
   const [attachment, setAttachment] = useState<PendingAttachment | null>(null);
   const [showMediaMenu, setShowMediaMenu] = useState(false);
+  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const { muted, primary, foreground } = useIconColors();
   const filePreviewMinW = Math.max(248, Math.min(Math.round(windowWidth * 0.82), 360));
   const hasText = content.trim().length > 0;
   const hasSendable = hasText || attachment !== null;
+
+  const handleEmojiSelected = (emojiObject: EmojiType) => {
+    setContent((prev) => prev + emojiObject.emoji);
+    onTyping?.();
+  };
 
   // ── Send handler — clear ngay, gửi nền (không chờ API, không loading ô nhập) ──
   const handleSend = useCallback(() => {
@@ -153,21 +160,21 @@ export const ChatInput = ({
   );
 
   return (
-    <View className="bg-background border-t border-border/20">
+    <View className="border-t border-border/20 bg-background">
       {/* Reply preview bar */}
       {replyingTo && (
-        <View className="flex-row items-center px-4 py-2.5 bg-muted/30 border-b border-border/20">
-          <View className="flex-1 min-w-0 border-l-[3px] border-primary pl-3">
-            <Text className="text-primary text-[11px] font-bold" numberOfLines={1}>
+        <View className="flex-row items-center border-b border-border/20 bg-muted/30 px-4 py-2.5">
+          <View className="min-w-0 flex-1 border-l-[3px] border-primary pl-3">
+            <Text className="text-[11px] font-bold text-primary" numberOfLines={1}>
               Trả lời {replyingTo.senderDisplayName ?? replyingTo.senderId}
             </Text>
-            <Text className="text-muted-foreground text-[12px]" numberOfLines={1}>
+            <Text className="text-[12px] text-muted-foreground" numberOfLines={1}>
               {formatChatPreviewLine(replyingTo, currentUserId)}
             </Text>
           </View>
           <Pressable
             onPress={onClearReply}
-            className="p-1.5 rounded-full active:bg-muted"
+            className="rounded-full p-1.5 active:bg-muted"
             hitSlop={8}
           >
             <X size={16} color={muted} strokeWidth={2} />
@@ -191,15 +198,12 @@ export const ChatInput = ({
             {attachment.mimeType.startsWith("image/") ? (
               <Image
                 source={{ uri: attachment.uri }}
-                className="w-full min-h-[180px] max-h-[220px]"
+                className="max-h-[220px] min-h-[180px] w-full"
                 resizeMode="cover"
                 accessibilityLabel="Xem trước ảnh"
               />
             ) : attachment.mimeType.startsWith("video/") ? (
-              <AttachmentVideoPreview
-                key={attachment.uri}
-                uri={attachment.uri}
-              />
+              <AttachmentVideoPreview key={attachment.uri} uri={attachment.uri} />
             ) : (
               <View
                 className="flex-row items-center gap-3 px-3.5 py-3.5 bg-white border border-border/25 rounded-xl mx-1"
@@ -238,19 +242,22 @@ export const ChatInput = ({
                 setAttachment(null);
                 setShowMediaMenu(true);
               }}
-              className="px-3 py-1.5 rounded-full bg-muted/70 active:opacity-80"
+              className="rounded-full bg-muted/70 px-3 py-1.5 active:opacity-80"
             >
-              <Text className="text-foreground text-xs font-medium">Chọn lại</Text>
+              <Text className="text-xs font-medium text-foreground">Chọn lại</Text>
             </Pressable>
-            <Pressable onPress={() => setAttachment(null)} className="px-3 py-1.5 rounded-full active:bg-destructive/15">
-              <Text className="text-destructive text-xs font-medium">Xóa</Text>
+            <Pressable
+              onPress={() => setAttachment(null)}
+              className="rounded-full px-3 py-1.5 active:bg-destructive/15"
+            >
+              <Text className="text-xs font-medium text-destructive">Xóa</Text>
             </Pressable>
           </View>
         </View>
       )}
 
       {/* Input row */}
-      <View className="flex-row items-end px-2 pt-4 min-h-[56px] gap-1">
+      <View className="min-h-[56px] flex-row items-end gap-1 px-2 pt-4">
         {/* Nút Add — toggle media menu */}
         <View className="h-11 w-11 items-center justify-center">
           <Pressable
@@ -269,11 +276,11 @@ export const ChatInput = ({
 
         {/* Pill Input */}
         <View
-          className="flex-1 bg-muted rounded-[22px] px-4 flex-row items-center"
+          className="flex-1 flex-row items-center rounded-[22px] bg-muted px-4"
           style={{ minHeight: 44, paddingVertical: 4 }}
         >
           <TextInput
-            className="flex-1 text-[16px] text-foreground p-0 m-0"
+            className="m-0 flex-1 p-0 text-[16px] text-foreground"
             placeholder="Aa"
             placeholderTextColor={muted}
             value={content}
@@ -287,11 +294,9 @@ export const ChatInput = ({
               paddingBottom: 4,
             }}
           />
-          {!hasText && !attachment && (
-            <Pressable hitSlop={10}>
-              <Smile size={24} color={muted} strokeWidth={1.5} />
-            </Pressable>
-          )}
+          <Pressable onPress={() => setIsEmojiPickerOpen(true)} hitSlop={10}>
+            <Smile size={24} color={muted} strokeWidth={1.5} />
+          </Pressable>
         </View>
 
         {/* Nút Send hoặc Like */}
@@ -299,7 +304,7 @@ export const ChatInput = ({
           {hasSendable ? (
             <Pressable
               onPress={handleSend}
-              className="size-9 rounded-full bg-primary items-center justify-center active:opacity-80"
+              className="size-9 items-center justify-center rounded-full bg-primary active:opacity-80"
             >
               <SendHorizontal size={18} color="white" strokeWidth={2.0} />
             </Pressable>
@@ -319,7 +324,7 @@ export const ChatInput = ({
 
       {/* Media menu popup */}
       {showMediaMenu && (
-        <View className="flex-row justify-around px-6 py-3 bg-muted/20 border-t border-border/15">
+        <View className="flex-row justify-around border-t border-border/15 bg-muted/20 px-6 py-3">
           <MediaMenuItem
             icon={<ImageIcon size={22} color={primary} strokeWidth={1.5} />}
             label="Ảnh/Video"
@@ -337,6 +342,25 @@ export const ChatInput = ({
           />
         </View>
       )}
+
+      <EmojiPicker
+        open={isEmojiPickerOpen}
+        onClose={() => setIsEmojiPickerOpen(false)}
+        onEmojiSelected={handleEmojiSelected}
+        theme={{
+          backdrop: "#00000088",
+          knob: primary,
+          container: "#1e1e1e", // or use a variable if you have one
+          header: foreground,
+          skinTonesContainer: "#252427",
+          category: {
+            icon: muted,
+            iconActive: primary,
+            container: "#252427",
+            containerActive: "#333333",
+          },
+        }}
+      />
     </View>
   );
 };
@@ -372,10 +396,10 @@ function MediaMenuItem({
   return (
     <Pressable
       onPress={onPress}
-      className="items-center gap-1.5 px-4 py-2 rounded-xl active:bg-muted/50"
+      className="items-center gap-1.5 rounded-xl px-4 py-2 active:bg-muted/50"
     >
       {icon}
-      <Text className="text-foreground text-[12px] font-medium">{label}</Text>
+      <Text className="text-[12px] font-medium text-foreground">{label}</Text>
     </Pressable>
   );
 }

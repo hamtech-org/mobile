@@ -38,7 +38,14 @@ function DriftOrb({
   const t = useSharedValue(0);
 
   useEffect(() => {
-    t.value = withDelay(delayMs, withRepeat(withTiming(1, { duration: durationMs, easing: Easing.inOut(Easing.sin) }), -1, true));
+    t.value = withDelay(
+      delayMs,
+      withRepeat(
+        withTiming(1, { duration: durationMs, easing: Easing.inOut(Easing.sin) }),
+        -1,
+        true,
+      ),
+    );
   }, [delayMs, durationMs, t]);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -79,9 +86,35 @@ export const AuthAmbientBackground = () => {
 
   return (
     <View style={[StyleSheet.absoluteFillObject, { backgroundColor: base }]} pointerEvents="none">
-      <DriftOrb size={280} color={orb} top="-8%" left="-18%" durationMs={26000} rangeX={18} rangeY={14} />
-      <DriftOrb size={220} color={orbSoft} top="38%" right="-22%" durationMs={30000} rangeX={14} rangeY={20} delayMs={800} />
-      <DriftOrb size={200} color={orb} bottom="6%" left="-12%" durationMs={23000} rangeX={16} rangeY={12} delayMs={400} />
+      <DriftOrb
+        size={280}
+        color={orb}
+        top="-8%"
+        left="-18%"
+        durationMs={26000}
+        rangeX={18}
+        rangeY={14}
+      />
+      <DriftOrb
+        size={220}
+        color={orbSoft}
+        top="38%"
+        right="-22%"
+        durationMs={30000}
+        rangeX={14}
+        rangeY={20}
+        delayMs={800}
+      />
+      <DriftOrb
+        size={200}
+        color={orb}
+        bottom="6%"
+        left="-12%"
+        durationMs={23000}
+        rangeX={16}
+        rangeY={12}
+        delayMs={400}
+      />
     </View>
   );
 };
