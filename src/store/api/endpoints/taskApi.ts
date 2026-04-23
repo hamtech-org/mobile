@@ -1,11 +1,24 @@
 import { chatApi, type ApiEnvelope } from "../baseChatApi";
 
+export interface CreateTaskSubtaskInput {
+  assigneeId: string;
+  content: string;
+}
+
 export interface CreateTaskRequest {
   groupId: string;
   title: string;
   description?: string;
   assignees: string[];
+  /** Khi true, máy chủ gán toàn bộ thành viên hiện tại (giống web). */
+  assignToAll?: boolean;
   dueDate?: string;
+  subtasks?: CreateTaskSubtaskInput[];
+}
+
+export interface UpdateTaskRequest extends Partial<Omit<CreateTaskRequest, "groupId">> {
+  groupId: string;
+  taskId: string;
 }
 
 export interface UpdateTaskStatusRequest {
@@ -39,6 +52,23 @@ export const taskApi = chatApi.injectEndpoints({
       invalidatesTags: (_result, _error, { groupId }) => [{ type: "Tasks", id: groupId }],
     }),
 
+    updateTask: builder.mutation<ApiEnvelope<unknown>, UpdateTaskRequest>({
+      query: ({ groupId, taskId, ...body }) => ({
+        url: `/chat/groups/${groupId}/tasks/${taskId}`,
+        method: "PATCH",
+        body,
+      }),
+      invalidatesTags: (_result, _error, { groupId }) => [{ type: "Tasks", id: groupId }],
+    }),
+
+    deleteTask: builder.mutation<ApiEnvelope<unknown>, { groupId: string; taskId: string }>({
+      query: ({ groupId, taskId }) => ({
+        url: `/chat/groups/${groupId}/tasks/${taskId}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: (_result, _error, { groupId }) => [{ type: "Tasks", id: groupId }],
+    }),
+
     joinTask: builder.mutation<ApiEnvelope<unknown>, { groupId: string; taskId: string }>({
       query: ({ groupId, taskId }) => ({
         url: `/chat/groups/${groupId}/tasks/${taskId}/join`,
@@ -55,4 +85,6 @@ export const {
   useCreateTaskMutation,
   useUpdateTaskStatusMutation,
   useJoinTaskMutation,
+  useUpdateTaskMutation,
+  useDeleteTaskMutation,
 } = taskApi;

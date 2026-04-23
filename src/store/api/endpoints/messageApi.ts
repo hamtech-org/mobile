@@ -96,10 +96,12 @@ function buildOptimisticMessage(
     mediaType: !isMedia
       ? null
       : arg.type === "file"
-        ? (arg.optimisticMimeType?.trim() || arg.type)
+        ? arg.optimisticMimeType?.trim() || arg.type
         : arg.type,
     mediaSize:
-      typeof arg.optimisticMediaSize === "number" && Number.isFinite(arg.optimisticMediaSize) && arg.optimisticMediaSize > 0
+      typeof arg.optimisticMediaSize === "number" &&
+      Number.isFinite(arg.optimisticMediaSize) &&
+      arg.optimisticMediaSize > 0
         ? arg.optimisticMediaSize
         : null,
     mediaOriginalName: arg.optimisticMediaName?.trim() || null,
