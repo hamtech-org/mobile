@@ -119,8 +119,14 @@ export const useChat = () => {
           createdAt: msg.createdAt,
         }).unwrap();
       } catch (e: unknown) {
-        const d = typeof e === "object" && e !== null && "data" in e ? (e as { data?: unknown }).data : undefined;
-        const body = d && typeof d === "object" ? (d as { error?: { message?: string }; message?: string }) : undefined;
+        const d =
+          typeof e === "object" && e !== null && "data" in e
+            ? (e as { data?: unknown }).data
+            : undefined;
+        const body =
+          d && typeof d === "object"
+            ? (d as { error?: { message?: string }; message?: string })
+            : undefined;
         const msgText = String(body?.error?.message ?? body?.message ?? "").trim();
         toast.error(msgText || "Không thu hồi được tin nhắn");
         throw e;
@@ -139,8 +145,14 @@ export const useChat = () => {
           createdAt: msg.createdAt,
         }).unwrap();
       } catch (e: unknown) {
-        const d = typeof e === "object" && e !== null && "data" in e ? (e as { data?: unknown }).data : undefined;
-        const body = d && typeof d === "object" ? (d as { error?: { message?: string }; message?: string }) : undefined;
+        const d =
+          typeof e === "object" && e !== null && "data" in e
+            ? (e as { data?: unknown }).data
+            : undefined;
+        const body =
+          d && typeof d === "object"
+            ? (d as { error?: { message?: string }; message?: string })
+            : undefined;
         const msgText = String(body?.error?.message ?? body?.message ?? "").trim();
         toast.error(msgText || "Không xóa được tin nhắn");
         throw e;

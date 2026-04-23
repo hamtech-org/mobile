@@ -6,7 +6,7 @@ export interface PatchConversationPreferencesRequest {
   isMuted?: boolean;
   isPinnedToTop?: boolean;
   notificationsMutedUntil?: string | null;
-  muteFor?: "1h" | "4h" | "8h";
+  muteFor?: "1m" | "5m" | "10m";
 }
 
 export interface CreateConversationRequest {
@@ -59,10 +59,34 @@ export const conversationApi = chatApi.injectEndpoints({
             (draft: IConversation[]) => {
               const c = draft.find((x) => x.conversationId === arg.conversationId);
               if (!c) return;
-              if (arg.isMuted !== undefined) c.isMuted = arg.isMuted;
               if (arg.isPinnedToTop !== undefined) c.isPinnedToTop = arg.isPinnedToTop;
-              if (arg.notificationsMutedUntil !== undefined) {
+
+              if (arg.muteFor) {
+                const addMs =
+                  arg.muteFor === "1m" ? 60_000 : arg.muteFor === "5m" ? 300_000 : 600_000;
+                c.notificationsMutedUntil = new Date(Date.now() + addMs).toISOString();
+                c.isMuted = true;
+              }
+
+              if (arg.isMuted !== undefined) {
+                c.isMuted = arg.isMuted;
+                if (arg.isMuted === true) c.notificationsMutedUntil = null;
+                if (arg.isMuted === false) c.notificationsMutedUntil = null;
+              }
+
+              if (arg.notificationsMutedUntil !== undefined && !arg.muteFor) {
+                const prevUntil = c.notificationsMutedUntil;
+                const prevMs = prevUntil ? new Date(prevUntil).getTime() : NaN;
+                const hadActiveSchedule = Number.isFinite(prevMs) && prevMs > Date.now();
+
                 c.notificationsMutedUntil = arg.notificationsMutedUntil;
+                const v = arg.notificationsMutedUntil;
+                if (v === null && arg.isMuted === undefined) {
+                  if (hadActiveSchedule) c.isMuted = false;
+                } else if (typeof v === "string") {
+                  const ms = new Date(v).getTime();
+                  if (Number.isFinite(ms) && ms > Date.now()) c.isMuted = true;
+                }
               }
             },
           ),

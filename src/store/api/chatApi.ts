@@ -53,6 +53,8 @@ export {
   useCreateTaskMutation,
   useUpdateTaskStatusMutation,
   useJoinTaskMutation,
+  useUpdateTaskMutation,
+  useDeleteTaskMutation,
 } from "./endpoints/taskApi";
 
 export { useGetLatestAIRecapQuery, useGenerateAIRecapMutation } from "./endpoints/aiRecapApi";
@@ -79,4 +81,8 @@ export type {
   UpdateGroupSettingsRequest,
 } from "./endpoints/groupApi";
 export type { CreatePollRequest } from "./endpoints/pollApi";
-export type { CreateTaskRequest, UpdateTaskStatusRequest } from "./endpoints/taskApi";
+export type {
+  CreateTaskRequest,
+  CreateTaskSubtaskInput,
+  UpdateTaskStatusRequest,
+} from "./endpoints/taskApi";
