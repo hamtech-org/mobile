@@ -184,10 +184,10 @@ export const ChatInput = ({
 
       {/* Attachment preview — ảnh/video/file trước khi gửi */}
       {attachment && (
-        <View className="px-3 pt-2 pb-1 bg-muted/25 border-b border-border/15">
+        <View className="border-b border-border/15 bg-muted/25 px-3 pb-1 pt-2">
           <View
             className={[
-              "rounded-2xl overflow-hidden bg-muted/40 border border-border/20",
+              "overflow-hidden rounded-2xl border border-border/20 bg-muted/40",
               attachment.mimeType.startsWith("image/") || attachment.mimeType.startsWith("video/")
                 ? "max-h-[240px]"
                 : "",
@@ -206,19 +206,24 @@ export const ChatInput = ({
               <AttachmentVideoPreview key={attachment.uri} uri={attachment.uri} />
             ) : (
               <View
-                className="flex-row items-center gap-3 px-3.5 py-3.5 bg-white border border-border/25 rounded-xl mx-1"
+                className="mx-1 flex-row items-center gap-3 rounded-xl border border-border/25 bg-white px-3.5 py-3.5"
                 style={{ minWidth: filePreviewMinW }}
               >
-                <View className="h-11 w-11 shrink-0 rounded-lg bg-primary/10 items-center justify-center">
+                <View className="h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/10">
                   <FileText size={24} color={primary} strokeWidth={2} />
                 </View>
-                <View className="flex-1 min-w-0 pr-1">
-                  <Text className="text-foreground text-[15px] font-semibold leading-5" numberOfLines={2}>
+                <View className="min-w-0 flex-1 pr-1">
+                  <Text
+                    className="text-[15px] font-semibold leading-5 text-foreground"
+                    numberOfLines={2}
+                  >
                     {attachment.name}
                   </Text>
                   {(() => {
                     const meta = [
-                      attachment.size != null && attachment.size > 0 ? formatFileSize(attachment.size) : "",
+                      attachment.size != null && attachment.size > 0
+                        ? formatFileSize(attachment.size)
+                        : "",
                       attachment.mimeType?.includes("/")
                         ? (attachment.mimeType.split("/").pop() ?? "").toUpperCase()
                         : "",
@@ -226,7 +231,7 @@ export const ChatInput = ({
                       .filter(Boolean)
                       .join(" · ");
                     return meta.length > 0 ? (
-                      <Text className="text-muted-foreground text-[12px] mt-1" numberOfLines={1}>
+                      <Text className="mt-1 text-[12px] text-muted-foreground" numberOfLines={1}>
                         {meta}
                       </Text>
                     ) : null;

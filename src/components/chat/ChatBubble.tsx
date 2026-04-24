@@ -18,11 +18,9 @@ import {
   CheckCheck,
   ChevronRight,
   ClipboardList,
-  Download,
   FileText,
   MapPin,
   Phone,
-  Play,
   Users,
   Video,
 } from "lucide-react-native";
@@ -78,7 +76,7 @@ interface ChatBubbleProps {
 
 // ── Call Log Message ────────────────────────────────────────────────────
 
-function CallLogMessage({ message }: { message: IMessage }) {
+function CallLogMessage({ message, isOwn }: { message: IMessage; isOwn: boolean }) {
   const { primary } = useIconColors();
   let kind = "completed";
   let callType = "audio";
@@ -109,8 +107,12 @@ function CallLogMessage({ message }: { message: IMessage }) {
   const iconColor = kind === "missed" ? "#ef4444" : primary;
 
   return (
-    <View className="my-3 items-center px-6">
-      <View className="min-w-[220px] items-center rounded-2xl border border-border/30 bg-muted/40 px-5 py-3">
+    <View className={`my-3 px-4 ${isOwn ? "items-end" : "items-start"}`}>
+      <View
+        className={`min-w-[220px] max-w-[85%] items-center rounded-2xl border border-border/30 bg-muted/40 px-5 py-3 ${
+          isOwn ? "self-end" : "self-start"
+        }`}
+      >
         <View className="mb-1 flex-row items-center gap-2">
           <IconComponent size={16} color={iconColor} strokeWidth={1.5} />
           <Text className="text-sm font-bold text-foreground">{title}</Text>
@@ -389,50 +391,6 @@ function ReactionsRow({
   );
 }
 
-// ── Inline Video Player ──────────────────────────────────────────────────
-
-function ActiveVideoPlayer({ videoUri }: { videoUri: string }) {
-  const player = useVideoPlayer(videoUri, (p) => {
-    p.loop = false;
-    p.play(); // Tự động phát khi người dùng bấm vào Thumbnail
-  });
-  return (
-    <VideoView
-      player={player}
-      style={{ width: "100%", height: "100%" }}
-      contentFit="cover"
-      nativeControls
-      allowsFullscreen
-    />
-  );
-}
-
-function InlineVideoPlayer({ videoUri, posterUri }: { videoUri: string; posterUri: string }) {
-  const [isLoaded, setIsLoaded] = useState(false);
-
-  // Layout 1: Chỉ tải hình ảnh (Tối ưu Memory - Không Crash App khi Chat có 30 videos)
-  if (!isLoaded) {
-    return (
-      <Pressable
-        className="aspect-video w-full items-center justify-center overflow-hidden rounded-2xl border border-border/20 bg-black/80"
-        onPress={() => setIsLoaded(true)}
-      >
-        <Image source={{ uri: posterUri }} className="absolute h-full w-full" resizeMode="cover" />
-        <View className="rounded-full bg-black/50 p-3">
-          <Play size={24} color="white" strokeWidth={2} fill="white" />
-        </View>
-      </Pressable>
-    );
-  }
-
-  // Layout 2: Click vào -> Khởi tạo VideoView & Native Controls để xem
-  return (
-    <View className="aspect-video w-full overflow-hidden rounded-2xl border border-border/20 bg-black">
-      <ActiveVideoPlayer videoUri={videoUri} />
-    </View>
-  );
-}
-
 function parseTitleBodyJson(content: string): { title: string; body?: string } | null {
   const t = content.trim();
   if (!t.startsWith("{")) return null;
@@ -489,7 +447,7 @@ export const ChatBubble = ({
     return (
       <>
         {showDateSeparator && <DateSeparator date={message.createdAt} now={calendarNow} />}
-        <CallLogMessage message={message} />
+        <CallLogMessage message={message} isOwn={isOwn} />
       </>
     );
   }
@@ -519,7 +477,9 @@ export const ChatBubble = ({
 
   const fileMetaSubline = [
     message.mediaSize != null && message.mediaSize > 0 ? formatFileSize(message.mediaSize) : "",
-    message.mediaType?.includes("/") ? (message.mediaType.split("/").pop() ?? "").toUpperCase() : "",
+    message.mediaType?.includes("/")
+      ? (message.mediaType.split("/").pop() ?? "").toUpperCase()
+      : "",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -585,9 +545,9 @@ export const ChatBubble = ({
               <View
                 className={[
                   "max-w-full",
-                  isVisualMedia ? "rounded-2xl overflow-hidden" : "",
+                  isVisualMedia ? "overflow-hidden rounded-2xl" : "",
                   !isVisualMedia
-                    ? `${hasFile ? "px-2 py-2" : "px-4 py-2.5"} ${isOwn ? "bg-primary rounded-[20px] rounded-br-[5px]" : "bg-card rounded-[20px] rounded-bl-[5px]"}`
+                    ? `${hasFile ? "px-2 py-2" : "px-4 py-2.5"} ${isOwn ? "rounded-[20px] rounded-br-[5px] bg-primary" : "rounded-[20px] rounded-bl-[5px] bg-card"}`
                     : "",
                 ]
                   .filter(Boolean)
@@ -625,9 +585,9 @@ export const ChatBubble = ({
                 )}
 
                 {hasVideo && (
-                  <View className="w-full rounded-2xl overflow-hidden bg-black">
+                  <View className="w-full overflow-hidden rounded-2xl bg-black">
                     <ChatBubbleVideo
-                      key={`${message.messageId}-${isLocalMedia ? rawMedia : normalizeMediaUrl(message.mediaUrl) ?? ""}`}
+                      key={`${message.messageId}-${isLocalMedia ? rawMedia : (normalizeMediaUrl(message.mediaUrl) ?? "")}`}
                       playUri={
                         isLocalMedia
                           ? (rawMedia ?? "").trim()
@@ -639,18 +599,21 @@ export const ChatBubble = ({
 
                 {hasFile && (
                   <View
-                    className="w-full flex-row items-center gap-3 px-3.5 py-3 rounded-xl bg-white border border-border/25"
+                    className="w-full flex-row items-center gap-3 rounded-xl border border-border/25 bg-white px-3.5 py-3"
                     style={{ minWidth: fileBubbleMinWidth }}
                   >
-                    <View className="h-11 w-11 shrink-0 rounded-lg items-center justify-center bg-primary/10">
+                    <View className="h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/10">
                       <FileText size={24} color={primary} strokeWidth={2} />
                     </View>
                     <View className="min-w-0 flex-1 pr-1">
-                      <Text className="text-foreground text-[15px] font-semibold leading-5" numberOfLines={2}>
+                      <Text
+                        className="text-[15px] font-semibold leading-5 text-foreground"
+                        numberOfLines={2}
+                      >
                         {message.mediaOriginalName?.trim() || "File đính kèm"}
                       </Text>
                       {fileMetaSubline ? (
-                        <Text className="text-muted-foreground text-[12px] mt-1" numberOfLines={1}>
+                        <Text className="mt-1 text-[12px] text-muted-foreground" numberOfLines={1}>
                           {fileMetaSubline}
                         </Text>
                       ) : null}
@@ -723,7 +686,9 @@ export const ChatBubble = ({
 
                 {!isEmojiMessage && hasCaption && (
                   <View className={isVisualMedia || hasFile ? "px-3 py-2" : ""}>
-                    <Text className={`text-[15px] leading-[22px] ${isOwn && !isVisualMedia ? "text-white" : "text-foreground"}`}>
+                    <Text
+                      className={`text-[15px] leading-[22px] ${isOwn && !isVisualMedia ? "text-white" : "text-foreground"}`}
+                    >
                       {message.content}
                     </Text>
                   </View>
@@ -777,15 +742,7 @@ export const ChatBubble = ({
 };
 
 /** Phát MP4/HLS trong bubble — `Image` không hiển thị được khung hình từ URL video. */
-function ChatBubbleVideo({ playUri }: { playUri: string }) {
-  if (!playUri) {
-    return (
-      <View className="w-full aspect-video items-center justify-center bg-muted px-4">
-        <Text className="text-muted-foreground text-center text-sm">Không có đường dẫn video</Text>
-      </View>
-    );
-  }
-
+function ChatBubbleVideoPlayer({ playUri }: { playUri: string }) {
   const player = useVideoPlayer(playUri, (p) => {
     p.loop = false;
   });
@@ -799,6 +756,17 @@ function ChatBubbleVideo({ playUri }: { playUri: string }) {
       accessibilityLabel="Video trong tin nhắn"
     />
   );
+}
+
+function ChatBubbleVideo({ playUri }: { playUri: string }) {
+  if (!playUri) {
+    return (
+      <View className="aspect-video w-full items-center justify-center bg-muted px-4">
+        <Text className="text-center text-sm text-muted-foreground">Không có đường dẫn video</Text>
+      </View>
+    );
+  }
+  return <ChatBubbleVideoPlayer playUri={playUri} />;
 }
 
 function DateSeparator({ date, now }: { date: string; now: Date }) {

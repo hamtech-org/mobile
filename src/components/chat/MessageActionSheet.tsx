@@ -47,7 +47,7 @@ export const MessageActionSheet = ({
 }: MessageActionSheetProps) => {
   const bottomSheetRef = useRef<BottomSheet>(null);
   const snapPoints = useMemo(() => ["35%"], []);
-  const { foreground, muted, primary } = useIconColors();
+  const { foreground, muted } = useIconColors();
 
   const handleAction = useCallback(
     (action: (msg: IMessage) => void) => {
