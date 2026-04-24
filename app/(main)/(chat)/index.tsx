@@ -1,14 +1,18 @@
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import { router } from "expo-router";
 import { Alert, FlatList, Pressable, Text, View, RefreshControl } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { CloudOff, MessageSquare, Search, SquarePen, Users } from "lucide-react-native";
+import { CloudOff, MessageCircle, MessageSquare, Pin, Search, Users } from "lucide-react-native";
 
 import { Loading } from "@/components/common/Loading";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SearchBar } from "@/components/common/SearchBar";
 import { ConversationItem } from "@/components/chat/ConversationItem";
-import { CreateGroupModal } from "@/components/chat";
+import {
+  CreateGroupModal,
+  MutedConversationsFooter,
+  MuteNotificationsModal,
+} from "@/components/chat";
 import {
   useGetConversationsQuery,
   usePatchConversationPreferencesMutation,
@@ -16,19 +20,34 @@ import {
 import { useIconColors } from "@/hooks/useIconColors";
 import type { IConversation } from "@/types/chat.types";
 import { toast } from "@/utils/appToast";
+import {
+  buildPatchForMutePayload,
+  describeMuteSuccess,
+  type MuteNotificationsApplyPayload,
+} from "@/utils/muteNotifications";
+import { MAX_PINNED_CHATS_TO_TOP } from "@/constants/chatPin";
+import { sortConversationsForSidebar } from "@/utils/conversationListSort";
+import { formatUnreadBadge } from "@/utils/chatBadge";
 
-/**
- * ChatListScreen — Danh sách hội thoại.
- * - Hỗ trợ tìm kiếm local.
- * - Pull-to-refresh để cập nhật danh sách.
- * - Hiển thị unread badge và media preview.
- */
+type ChatListRow =
+  | {
+      kind: "header";
+      key: string;
+      title: string;
+      count?: number;
+      variant: "pinned" | "chats";
+    }
+  | { kind: "conversation"; key: string; conversation: IConversation };
+
 export default function ChatListScreen() {
   const { data, isLoading, isError, refetch, isFetching } = useGetConversationsQuery();
   const [patchPrefs] = usePatchConversationPreferencesMutation();
   const [searchText, setSearchText] = useState("");
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
-  const { primary } = useIconColors();
+  const [muteTarget, setMuteTarget] = useState<IConversation | null>(null);
+  const [muteSubmitting, setMuteSubmitting] = useState(false);
+  const [mutedExpanded, setMutedExpanded] = useState(false);
+  const { primary, muted: iconMuted } = useIconColors();
 
   const onRefresh = useCallback(() => {
     void refetch();
@@ -42,47 +61,140 @@ export default function ChatListScreen() {
         {
           text: pinned ? "Bỏ ghim" : "Ghim lên đầu",
           onPress: () => {
+            if (!pinned) {
+              const list = data ?? [];
+              const pinnedCount = list.filter((c) => c.isPinnedToTop).length;
+              if (!item.isPinnedToTop && pinnedCount >= MAX_PINNED_CHATS_TO_TOP) {
+                toast.error(
+                  `Chỉ ghim được tối đa ${MAX_PINNED_CHATS_TO_TOP} hội thoại lên đầu danh sách.`,
+                );
+                return;
+              }
+            }
             void patchPrefs({ conversationId: item.conversationId, isPinnedToTop: !pinned })
               .unwrap()
               .then(() => toast.success(pinned ? "Đã bỏ ghim hội thoại" : "Đã ghim hội thoại"))
-              .catch(() => toast.error("Không cập nhật được ghim hội thoại"));
+              .catch((e: unknown) => {
+                const msg =
+                  (e as { data?: { error?: { message?: string } } })?.data?.error?.message ?? "";
+                if (msg.includes("Chỉ ghim được tối đa")) {
+                  toast.error(msg);
+                } else {
+                  toast.error("Không cập nhật được ghim hội thoại");
+                }
+              });
           },
         },
-        {
-          text: muted ? "Bật thông báo" : "Tắt thông báo",
-          onPress: () => {
-            void patchPrefs({ conversationId: item.conversationId, isMuted: !muted })
-              .unwrap()
-              .then(() => toast.success(muted ? "Đã bật thông báo" : "Đã tắt thông báo"))
-              .catch(() => toast.error("Không cập nhật được thông báo"));
-          },
-        },
+        muted
+          ? {
+              text: "Bật thông báo",
+              onPress: () => {
+                void patchPrefs({
+                  conversationId: item.conversationId,
+                  isMuted: false,
+                  notificationsMutedUntil: null,
+                })
+                  .unwrap()
+                  .then(() => toast.success("Đã bật thông báo"))
+                  .catch(() => toast.error("Không cập nhật được thông báo"));
+              },
+            }
+          : {
+              text: "Tắt thông báo…",
+              onPress: () => setMuteTarget(item),
+            },
         { text: "Hủy", style: "cancel" },
       ]);
     },
-    [patchPrefs],
+    [data, patchPrefs],
   );
 
-  // Sắp xếp hội thoại mới nhất lên đầu + lọc theo search
-  const filtered = useMemo(() => {
-    let list = [...(data ?? [])];
+  const { listRows, mutedConversations, totalUnread, mutedUnreadTotal, listableCount } =
+    useMemo(() => {
+      const raw = data ?? [];
+      const listable = raw.filter((c) => !(c.type === "group" && c.isDeleted));
+      const sorted = sortConversationsForSidebar(listable);
+      const q = searchText.trim().toLowerCase();
 
-    // Sort by last message / update time
-    list.sort((a, b) => {
-      const pinA = a.isPinnedToTop ? 1 : 0;
-      const pinB = b.isPinnedToTop ? 1 : 0;
-      if (pinB !== pinA) return pinB - pinA;
-      const timeA = new Date(a.updatedAt || a.lastMessage?.createdAt || 0).getTime();
-      const timeB = new Date(b.updatedAt || b.lastMessage?.createdAt || 0).getTime();
-      return timeB - timeA;
-    });
+      const totalUnread = listable.reduce((s, c) => s + (c.unreadCount ?? 0), 0);
 
-    if (!searchText.trim()) return list;
-    const q = searchText.toLowerCase();
-    return list.filter(
-      (c) => c.name?.toLowerCase().includes(q) || c.lastMessage?.content?.toLowerCase().includes(q),
-    );
-  }, [data, searchText]);
+      const pinned = sorted.filter((c) => c.isPinnedToTop).slice(0, MAX_PINNED_CHATS_TO_TOP);
+      const normal = sorted.filter((c) => !c.isPinnedToTop && !c.isMuted);
+      const muted = sorted.filter((c) => !c.isPinnedToTop && c.isMuted);
+      const mutedUnreadTotal = muted.reduce((s, c) => s + (c.unreadCount ?? 0), 0);
+
+      const rows: ChatListRow[] = [];
+
+      if (q) {
+        const hit = sorted.filter((c) => {
+          const name = (c.name ?? "").toLowerCase();
+          const preview = (c.lastMessage?.content ?? "").toLowerCase();
+          return name.includes(q) || preview.includes(q);
+        });
+        for (const c of sortConversationsForSidebar(hit)) {
+          rows.push({ kind: "conversation", key: `c:${c.conversationId}`, conversation: c });
+        }
+        return {
+          listRows: rows,
+          mutedConversations: muted,
+          totalUnread,
+          mutedUnreadTotal,
+          listableCount: listable.length,
+        };
+      }
+
+      if (listable.length === 0) {
+        return {
+          listRows: [],
+          mutedConversations: muted,
+          totalUnread: 0,
+          mutedUnreadTotal: 0,
+          listableCount: 0,
+        };
+      }
+
+      if (pinned.length > 0) {
+        rows.push({
+          kind: "header",
+          key: "h:pinned",
+          title: "Ghim",
+          count: pinned.length,
+          variant: "pinned",
+        });
+        for (const c of pinned) {
+          rows.push({ kind: "conversation", key: `c:${c.conversationId}`, conversation: c });
+        }
+      }
+      rows.push({
+        kind: "header",
+        key: "h:chats",
+        title: "Tin nhắn",
+        count: normal.length,
+        variant: "chats",
+      });
+      for (const c of normal) {
+        rows.push({ kind: "conversation", key: `c:${c.conversationId}`, conversation: c });
+      }
+
+      return {
+        listRows: rows,
+        mutedConversations: muted,
+        totalUnread,
+        mutedUnreadTotal,
+        listableCount: listable.length,
+      };
+    }, [data, searchText]);
+
+  const conversationRowCount = useMemo(
+    () => listRows.filter((r) => r.kind === "conversation").length,
+    [listRows],
+  );
+
+  const showMutedFooter = !searchText.trim() && mutedConversations.length > 0;
+
+  useEffect(() => {
+    if (mutedConversations.length === 0) setMutedExpanded(false);
+  }, [mutedConversations.length]);
 
   if (isLoading && !isFetching) {
     return <Loading fullScreen message="Đang tải tin nhắn..." />;
@@ -90,52 +202,42 @@ export default function ChatListScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
-      {/* Header — "Tin nhắn" bold + action icons */}
       <View className="flex-row items-center justify-between px-4 pb-2 pt-3">
-        <Text className="text-2xl font-bold tracking-tight text-foreground">Tin nhắn</Text>
-        <View className="flex-row gap-1">
-          <Pressable
-            className="size-10 items-center justify-center rounded-full active:bg-muted/50"
-            hitSlop={6}
-          >
-            <Search size={22} color={primary} strokeWidth={1.5} />
-          </Pressable>
-          <Pressable
-            className="size-10 items-center justify-center rounded-full active:bg-muted/50"
-            hitSlop={6}
-            onPress={() =>
-              Alert.alert("Tạo mới", undefined, [
-                { text: "Tạo nhóm", onPress: () => setCreateGroupOpen(true) },
-                { text: "Hủy", style: "cancel" },
-              ])
-            }
-          >
-            <Users size={22} color={primary} strokeWidth={1.5} />
-          </Pressable>
-          <Pressable
-            className="size-10 items-center justify-center rounded-full active:bg-muted/50"
-            hitSlop={6}
-            onPress={() =>
-              Alert.alert("Soạn tin", "Chọn nhóm hoặc mở cuộc trò chuyện từ danh sách.", [
-                { text: "OK" },
-              ])
-            }
-          >
-            <SquarePen size={22} color={primary} strokeWidth={1.5} />
-          </Pressable>
+        <View className="min-w-0 flex-1 flex-row flex-wrap items-center gap-2">
+          <Text className="text-2xl font-bold tracking-tight text-foreground">Tin nhắn</Text>
+          {totalUnread > 0 ? (
+            <View className="min-h-[22px] min-w-[22px] items-center justify-center rounded-full bg-red-500 px-1.5">
+              <Text className="text-[11px] font-bold leading-none text-white">
+                {formatUnreadBadge(totalUnread)}
+              </Text>
+            </View>
+          ) : null}
         </View>
+        <Pressable
+          className="size-10 items-center justify-center rounded-full active:bg-muted/50"
+          hitSlop={6}
+          onPress={() =>
+            Alert.alert("Tạo mới", undefined, [
+              { text: "Tạo nhóm", onPress: () => setCreateGroupOpen(true) },
+              { text: "Hủy", style: "cancel" },
+            ])
+          }
+        >
+          <Users size={22} color={primary} strokeWidth={1.5} />
+        </Pressable>
       </View>
 
-      {/* Search bar */}
       <View className="px-4 pb-3">
         <SearchBar
           value={searchText}
-          onChangeText={setSearchText}
+          onChangeText={(t) => {
+            setSearchText(t);
+            if (t.trim()) setMutedExpanded(false);
+          }}
           placeholder="Tìm kiếm tin nhắn, bạn bè..."
         />
       </View>
 
-      {/* Main List */}
       <View className="flex-1">
         {isError && !data ? (
           <EmptyState
@@ -146,40 +248,123 @@ export default function ChatListScreen() {
           />
         ) : (
           <FlatList
-            data={filtered}
-            keyExtractor={(item) => item.conversationId}
+            data={listRows}
+            keyExtractor={(item) => item.key}
             contentContainerStyle={{
               paddingVertical: 4,
-              flexGrow: filtered.length === 0 ? 1 : undefined,
+              flexGrow:
+                listableCount === 0 || (conversationRowCount === 0 && searchText.trim())
+                  ? 1
+                  : undefined,
             }}
             refreshControl={
               <RefreshControl refreshing={isFetching} onRefresh={onRefresh} tintColor={primary} />
             }
-            renderItem={({ item }) => (
-              <ConversationItem
-                conversation={item}
-                onPress={() => router.push(`/(main)/(chat)/${item.conversationId}`)}
-                onLongPressMenu={openConversationQuickMenu}
-              />
-            )}
+            renderItem={({ item, index }) => {
+              const prev = index > 0 ? listRows[index - 1] : null;
+              const showSep = prev?.kind === "conversation" && item.kind === "conversation";
+              if (item.kind === "header") {
+                const Icon = item.variant === "pinned" ? Pin : MessageCircle;
+                const countLabel =
+                  item.variant === "pinned"
+                    ? `${item.count ?? 0}/${MAX_PINNED_CHATS_TO_TOP}`
+                    : String(item.count ?? 0);
+                return (
+                  <View className="px-4 pb-1 pt-2">
+                    <View className="flex-row items-center justify-between">
+                      <View className="min-w-0 flex-1 flex-row items-center gap-2">
+                        <Icon size={14} color={iconMuted} strokeWidth={2} />
+                        <Text
+                          className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground"
+                          numberOfLines={1}
+                        >
+                          {item.title}
+                        </Text>
+                      </View>
+                      <View
+                        className={
+                          item.variant === "pinned"
+                            ? "rounded-full bg-primary/15 px-2.5 py-0.5"
+                            : "rounded-full bg-muted px-2.5 py-0.5"
+                        }
+                      >
+                        <Text
+                          className={`text-[11px] font-bold tabular-nums ${
+                            item.variant === "pinned" ? "text-primary" : "text-muted-foreground"
+                          }`}
+                        >
+                          {countLabel}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                );
+              }
+              return (
+                <View>
+                  {showSep ? <View className="ml-[76px] h-px bg-border/30" /> : null}
+                  <ConversationItem
+                    conversation={item.conversation}
+                    onPress={() =>
+                      router.push(`/(main)/(chat)/${item.conversation.conversationId}`)
+                    }
+                    onLongPressMenu={openConversationQuickMenu}
+                  />
+                </View>
+              );
+            }}
             ListEmptyComponent={
-              <EmptyState
-                icon={searchText ? Search : MessageSquare}
-                title={searchText ? "Không tìm thấy" : "Chưa có tin nhắn"}
-                description={
-                  searchText
-                    ? `Không có hội thoại nào khớp với "${searchText}"`
-                    : "Bắt đầu nhắn tin với bạn bè ngay!"
-                }
-              />
+              listableCount === 0 || (searchText.trim() && conversationRowCount === 0) ? (
+                <EmptyState
+                  icon={searchText.trim() ? Search : MessageSquare}
+                  title={searchText.trim() ? "Không tìm thấy" : "Chưa có tin nhắn"}
+                  description={
+                    searchText.trim()
+                      ? `Không có hội thoại nào khớp với "${searchText.trim()}"`
+                      : "Bắt đầu nhắn tin với bạn bè ngay!"
+                  }
+                />
+              ) : null
+            }
+            ListFooterComponent={
+              showMutedFooter ? (
+                <MutedConversationsFooter
+                  conversations={mutedConversations}
+                  expanded={mutedExpanded}
+                  onToggleExpanded={() => setMutedExpanded((v) => !v)}
+                  mutedUnreadTotal={mutedUnreadTotal}
+                  onOpenConversation={(id) => router.push(`/(main)/(chat)/${id}`)}
+                  onLongPressMenu={openConversationQuickMenu}
+                />
+              ) : null
             }
             showsVerticalScrollIndicator={false}
-            ItemSeparatorComponent={() => <View className="ml-[76px] h-px bg-border/30" />}
           />
         )}
       </View>
 
       <CreateGroupModal visible={createGroupOpen} onClose={() => setCreateGroupOpen(false)} />
+
+      <MuteNotificationsModal
+        visible={muteTarget !== null}
+        mode="create"
+        isSubmitting={muteSubmitting}
+        onClose={() => !muteSubmitting && setMuteTarget(null)}
+        onConfirm={async (p: MuteNotificationsApplyPayload) => {
+          if (!muteTarget) return;
+          setMuteSubmitting(true);
+          try {
+            await patchPrefs(buildPatchForMutePayload(muteTarget.conversationId, p)).unwrap();
+            toast.success(describeMuteSuccess(p));
+            setMuteTarget(null);
+          } catch {
+            toast.error("Không thể cập nhật thông báo");
+            throw new Error("mute_failed");
+          } finally {
+            setMuteSubmitting(false);
+          }
+        }}
+      />
     </SafeAreaView>
   );
 }

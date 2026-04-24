@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import type { Socket } from "socket.io-client";
 
 import { chatApi } from "@/store/api/chatApi";
+import { groupApi } from "@/store/api/endpoints/groupApi";
 import { conversationApi } from "@/store/api/endpoints/conversationApi";
 import {
   messageReceived,
@@ -15,7 +16,7 @@ import {
   typingStopped,
 } from "@/store/slices/chatSlice";
 import { store, type AppDispatch } from "@/store/store";
-import type { IConversation, IMessage } from "@/types/chat.types";
+import type { IConversation, IGroupSettings, IMessage } from "@/types/chat.types";
 import { toast } from "@/utils/appToast";
 import { formatChatPreviewLine, getMessageTypeLabel } from "@/utils/messageDisplay";
 
@@ -62,8 +63,22 @@ function bannerFromSystemMessage(msg: IMessage): { text: string; atIso: string }
   const poll = (parsed.poll ?? {}) as Record<string, unknown>;
   const question = String(poll.question ?? "").trim();
   const atIso = normalizeIso(String(parsed.createdAt ?? msg.createdAt ?? ""));
+  const task = (parsed.task ?? {}) as Record<string, unknown>;
+  const taskTitle = String(task.title ?? "").trim();
 
   switch (kind) {
+    case "task_assigned":
+      return {
+        text: taskTitle ? `Có công việc mới: ${taskTitle}` : "Có công việc mới",
+        atIso,
+      };
+    case "task_joined":
+      return {
+        text: taskTitle
+          ? `${actorName || "Thành viên"} đã tham gia công việc: ${taskTitle}`
+          : `${actorName || "Thành viên"} đã tham gia công việc`,
+        atIso,
+      };
     case "poll_created":
       return {
         text: question
@@ -169,7 +184,7 @@ export function useChatRealtimeEvents({
      */
     const prefetchGroupMembers = (groupId: string) => {
       if (!groupId.trim()) return;
-      void dispatch(chatApi.endpoints.getGroupMembers.initiate(groupId, { forceRefetch: true }));
+      void dispatch(groupApi.endpoints.getGroupMembers.initiate(groupId, { forceRefetch: true }));
     };
 
     const handleNewMessage = (msg: IMessage) => {
@@ -219,6 +234,8 @@ export function useChatRealtimeEvents({
             const parsed = JSON.parse(raw) as {
               kind?: string;
               poll?: { pollId?: string; question?: string };
+              task?: { title?: string };
+              actor?: { name?: string };
             };
             if (parsed.kind === "poll_created" && parsed.poll?.pollId) {
               const pollId = String(parsed.poll.pollId);
@@ -228,6 +245,28 @@ export function useChatRealtimeEvents({
                 setTimeout(() => pollToastDedupe.delete(dedupeKey), 8000);
                 const question = String(parsed.poll.question ?? "").trim();
                 toast.info(question ? `Có bình chọn mới: ${question}` : "Có bình chọn mới", 7000);
+              }
+            } else if (parsed.kind === "task_assigned") {
+              const title = String(parsed.task?.title ?? "").trim();
+              const dedupeKey = `task-assigned-${msg.messageId}`;
+              if (!pollToastDedupe.has(dedupeKey)) {
+                pollToastDedupe.add(dedupeKey);
+                setTimeout(() => pollToastDedupe.delete(dedupeKey), 7000);
+                toast.info(title ? `Có công việc mới: ${title}` : "Có công việc mới", 6500);
+              }
+            } else if (parsed.kind === "task_joined") {
+              const title = String(parsed.task?.title ?? "").trim();
+              const actor = String(parsed.actor?.name ?? "Thành viên").trim();
+              const dedupeKey = `task-joined-${msg.messageId}`;
+              if (!pollToastDedupe.has(dedupeKey)) {
+                pollToastDedupe.add(dedupeKey);
+                setTimeout(() => pollToastDedupe.delete(dedupeKey), 6000);
+                toast.info(
+                  title
+                    ? `${actor} đã tham gia công việc: ${title}`
+                    : `${actor} đã tham gia công việc`,
+                  5500,
+                );
               }
             }
           } catch {
@@ -368,6 +407,19 @@ export function useChatRealtimeEvents({
     const handleGroupSettingsUpdated = (payload: Record<string, unknown>) => {
       const gid = groupIdFromPayload(payload);
       if (!gid) return;
+      const gs = payload.groupSettings;
+      if (gs && typeof gs === "object") {
+        store.dispatch(
+          conversationApi.util.updateQueryData(
+            "getConversations",
+            undefined,
+            (draft: IConversation[]) => {
+              const conv = draft.find((x) => x.conversationId === gid);
+              if (conv) conv.groupSettings = gs as IGroupSettings;
+            },
+          ),
+        );
+      }
       invalidateGroupData(gid, ["settings"]);
       emitFrameBanner(gid, "Cài đặt nhóm đã được cập nhật");
     };

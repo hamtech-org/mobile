@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
 import {
+  AlarmClockOff,
   Ban,
   AlertCircle,
   BarChart2,
@@ -18,11 +19,10 @@ import {
   CheckCheck,
   ChevronRight,
   ClipboardList,
-  Download,
   FileText,
   MapPin,
+  Pencil,
   Phone,
-  Play,
   Users,
   Video,
 } from "lucide-react-native";
@@ -37,13 +37,12 @@ import {
   mapsUrlForLatLng,
   parseLocationPayload,
 } from "@/utils/messageDisplay";
-import { buildSystemBubbleView, isCenterPositionMessage } from "@/utils/systemMessage";
 import {
-  formatConversationListActivityTime,
-  formatDateLabel,
-  formatTimestamp,
-  isSameDay,
-} from "@/utils/time";
+  buildSystemBubbleView,
+  isCenterPositionMessage,
+  type SystemTextRowIcon,
+} from "@/utils/systemMessage";
+import { formatDateLabel, formatTimestamp, isSameDay } from "@/utils/time";
 import { toast } from "@/utils/appToast";
 import { normalizeMediaUrl } from "@/utils/url";
 
@@ -51,8 +50,15 @@ import { normalizeMediaUrl } from "@/utils/url";
 export interface ChatBubbleGroupExtras {
   conversationId: string;
   currentUserId: string;
-  groupTasks: { taskId?: string; participants?: string[]; assignees?: string[] }[];
-  joinTask: (taskId: string) => Promise<void>;
+  groupTasks: {
+    taskId?: string;
+    participants?: string[];
+    assignees?: string[];
+    assignToAll?: boolean;
+    broadcast?: boolean;
+  }[];
+  /** Optional backend call. For local-only demo, this can be a no-op. */
+  joinTask?: (taskId: string) => Promise<void>;
   onTaskJoined?: (taskId: string) => void;
   onOpenPollVote: (pollId: string) => void;
 }
@@ -123,22 +129,53 @@ function CallLogMessage({ message }: { message: IMessage }) {
   );
 }
 
-/** Dải giờ trong cùng khung thông báo (viền + nền) với nội dung bên dưới. */
-function SystemNotifyTimeHeader({ createdAt, now }: { createdAt?: string | null; now: Date }) {
+/** Pill giờ phía trên thẻ — giống web `ChatMessageList` (vd. "01:19 Hôm nay"). */
+function SystemNotifyTimePill({
+  createdAt,
+  now,
+  prevMessage,
+}: {
+  createdAt?: string | null;
+  now: Date;
+  prevMessage?: IMessage;
+}) {
   const iso = createdAt?.trim();
   if (!iso) return null;
-  const label = formatConversationListActivityTime(iso, now) || formatTimestamp(iso);
+  const currDate = iso.slice(0, 10);
+  const prevDate = prevMessage?.createdAt?.trim().slice(0, 10);
+  const showDate = !prevMessage || prevDate !== currDate;
+  const timeLabel = formatTimestamp(iso);
+  const todayStr = now.toISOString().slice(0, 10);
+  const isToday = currDate === todayStr;
+  const dateLabel = showDate ? (isToday ? "Hôm nay" : formatDateLabel(iso, now)) : "";
+  const label = (showDate ? `${timeLabel} ${dateLabel}`.trim() : timeLabel).trim();
   if (!label) return null;
   return (
-    <View className="border-b border-border/40 bg-muted/90 px-3 py-1.5">
-      <Text
-        className="text-center text-[11px] font-semibold text-muted-foreground"
-        numberOfLines={1}
-      >
+    <View className="mb-2 self-center rounded-full bg-black/10 px-3 py-1 dark:bg-white/10">
+      <Text className="text-[11px] font-semibold text-muted-foreground" numberOfLines={1}>
         {label}
       </Text>
     </View>
   );
+}
+
+function SystemRowLeadingIcon({ kind }: { kind: SystemTextRowIcon }) {
+  switch (kind) {
+    case "pencil":
+      return <Pencil size={16} color="#60a5fa" strokeWidth={2} />;
+    case "checkCheck":
+      return <CheckCheck size={16} color="#16a34a" strokeWidth={2} />;
+    case "alarmOff":
+      return <AlarmClockOff size={16} color="#737373" strokeWidth={1.75} />;
+    case "barChartBlue":
+      return <BarChart2 size={16} color="#2563eb" strokeWidth={2} />;
+    case "barChartOrange":
+      return <BarChart2 size={16} color="#f97316" strokeWidth={2} />;
+    case "barChartMuted":
+      return <BarChart2 size={16} color="#737373" strokeWidth={2} />;
+    default:
+      return <Pencil size={16} color="#60a5fa" strokeWidth={2} />;
+  }
 }
 
 // ── System center (JSON + card) ───────────────────────────────────────────
@@ -149,14 +186,33 @@ function SystemCenterBlock({
   viewerUserId,
   groupExtras,
   calendarNow,
+  prevMessage,
 }: {
   message: IMessage;
   isOwn: boolean;
   viewerUserId?: string | null;
   groupExtras?: ChatBubbleGroupExtras;
   calendarNow: Date;
+  prevMessage?: IMessage;
 }) {
   const { muted } = useIconColors();
+  // Re-render periodically so deadline highlight updates in realtime.
+  const [, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowTick(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+  const [expandedTaskIds, setExpandedTaskIds] = useState<Set<string>>(() => new Set());
+  const toggleExpanded = (taskId?: string | null) => {
+    const id = String(taskId ?? "").trim();
+    if (!id) return;
+    setExpandedTaskIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
   const view = useMemo(
     () =>
       buildSystemBubbleView(message, {
@@ -169,15 +225,21 @@ function SystemCenterBlock({
   const [joinBusy, setJoinBusy] = useState(false);
 
   if (view.variant === "text") {
+    const rowIcon: SystemTextRowIcon = view.rowIcon ?? "pencil";
     return (
-      <View className="my-2 items-center px-6">
-        <View className="w-full max-w-[85%] overflow-hidden rounded-2xl border border-border/40 bg-muted/60">
-          <SystemNotifyTimeHeader createdAt={message.createdAt} now={calendarNow} />
-          <View className="px-4 py-2.5">
-            <Text className="text-center text-[12px] leading-[18px] text-muted-foreground">
-              {view.text}
-            </Text>
+      <View className="my-3 w-full items-center px-4">
+        <SystemNotifyTimePill
+          createdAt={message.createdAt}
+          now={calendarNow}
+          prevMessage={prevMessage}
+        />
+        <View className="w-full max-w-[92%] flex-row items-center gap-2 rounded-2xl border border-black/[0.06] bg-card px-3 py-2.5 shadow-sm dark:border-white/10">
+          <View className="shrink-0 pt-0.5">
+            <SystemRowLeadingIcon kind={rowIcon} />
           </View>
+          <Text className="min-w-0 flex-1 text-left text-[12px] font-medium leading-[18px] text-[#666666] dark:text-zinc-300">
+            {view.text}
+          </Text>
         </View>
       </View>
     );
@@ -186,12 +248,16 @@ function SystemCenterBlock({
   if (view.variant === "poll_created_row") {
     const showVoteCta = Boolean(view.pollId && groupExtras?.onOpenPollVote);
     return (
-      <View className="my-2 items-center px-4">
-        <View className="w-full max-w-[92%] overflow-hidden rounded-2xl border border-border/40 bg-muted/60">
-          <SystemNotifyTimeHeader createdAt={message.createdAt} now={calendarNow} />
-          <View className="flex-row flex-wrap items-center justify-center gap-2 px-4 py-3">
+      <View className="my-3 w-full items-center px-4">
+        <SystemNotifyTimePill
+          createdAt={message.createdAt}
+          now={calendarNow}
+          prevMessage={prevMessage}
+        />
+        <View className="w-full max-w-[92%] overflow-hidden rounded-2xl border border-black/[0.06] bg-card px-3 py-2.5 shadow-sm dark:border-white/10">
+          <View className="flex-row flex-wrap items-center justify-center gap-2">
             <BarChart2 size={16} color="#f97316" strokeWidth={2} />
-            <Text className="min-w-[120px] flex-1 text-center text-[12px] leading-[18px] text-muted-foreground">
+            <Text className="min-w-[120px] flex-1 text-center text-[12px] font-medium leading-[18px] text-[#666666] dark:text-zinc-300">
               {view.actorLabel} đã tạo một bình chọn{view.question ? `: ${view.question}` : ""}
             </Text>
             {showVoteCta ? (
@@ -213,14 +279,18 @@ function SystemCenterBlock({
   const participantsCount = participants.length;
   const joined = groupExtras ? participants.includes(groupExtras.currentUserId) : false;
   const assignees = Array.isArray(t?.assignees) ? (t.assignees as string[]) : [];
-  const canJoinThisTask = groupExtras ? assignees.includes(groupExtras.currentUserId) : false;
+  const assignToAll =
+    Boolean((t as any)?.assignToAll) || Boolean((t as any)?.broadcast) || assignees.length === 0;
+  const canJoinThisTask =
+    Boolean(groupExtras) && (assignToAll || assignees.includes(groupExtras!.currentUserId));
 
   const onJoin = async (): Promise<void> => {
     if (!groupExtras) return;
+    // Local-first UX: update immediately, backend is optional.
+    groupExtras.onTaskJoined?.(view.taskId);
     setJoinBusy(true);
     try {
-      await groupExtras.joinTask(view.taskId);
-      groupExtras.onTaskJoined?.(view.taskId);
+      await groupExtras.joinTask?.(view.taskId);
       toast.success("Bạn đã tham gia công việc");
     } catch (e: unknown) {
       const err = e as { status?: number; data?: { status?: number } };
@@ -233,10 +303,14 @@ function SystemCenterBlock({
   };
 
   return (
-    <View className="my-2 items-center px-4">
-      <View className="w-full max-w-[92%] overflow-hidden rounded-2xl border border-border/40 bg-muted/60">
-        <SystemNotifyTimeHeader createdAt={message.createdAt} now={calendarNow} />
-        <View className="px-3 py-3">
+    <View className="my-3 w-full items-center px-4">
+      <SystemNotifyTimePill
+        createdAt={message.createdAt}
+        now={calendarNow}
+        prevMessage={prevMessage}
+      />
+      <View className="w-full max-w-[92%] overflow-hidden rounded-2xl border border-black/[0.06] bg-card px-3 py-3 shadow-sm dark:border-white/10">
+        <View>
           {groupExtras ? (
             <View className="mb-2 flex-row flex-wrap items-center justify-center gap-2">
               <Text className="text-[12px] font-semibold text-muted-foreground">
@@ -249,7 +323,7 @@ function SystemCenterBlock({
                   joined
                     ? "rounded-full bg-muted px-3 py-1"
                     : !canJoinThisTask
-                      ? "rounded-full bg-primary/40 px-3 py-1"
+                      ? "rounded-full bg-muted px-3 py-1"
                       : "rounded-full bg-primary px-3 py-1"
                 }
               >
@@ -278,9 +352,32 @@ function SystemCenterBlock({
                 : view.actorLabel}{" "}
               đã giao việc
             </Text>
-            <Text className="text-center text-[13px] font-extrabold text-foreground">
-              {view.title}
-            </Text>
+            {(() => {
+              const expanded = expandedTaskIds.has(String(view.taskId ?? ""));
+              const long = (view.title?.length ?? 0) > 60;
+              return (
+                <>
+                  <Pressable onPress={() => long && toggleExpanded(view.taskId)} className="px-2">
+                    <Text
+                      className="text-center text-[13px] font-extrabold text-foreground"
+                      numberOfLines={expanded || !long ? undefined : 2}
+                    >
+                      {view.title}
+                    </Text>
+                  </Pressable>
+                  {long ? (
+                    <Pressable
+                      onPress={() => toggleExpanded(view.taskId)}
+                      className="mt-1 self-center rounded-full bg-primary/10 px-3 py-1"
+                    >
+                      <Text className="text-[11px] font-bold text-primary">
+                        {expanded ? "Thu gọn" : "Xem thêm"}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </>
+              );
+            })()}
             <View className="mt-2 gap-1">
               <View className="flex-row flex-wrap items-center justify-center gap-2">
                 <Users size={14} color={muted} strokeWidth={2} />
@@ -288,21 +385,67 @@ function SystemCenterBlock({
                   <Text className="font-semibold">Giao cho:</Text> {view.assigneeLabel}
                 </Text>
               </View>
-              {view.dueDate ? (
-                <View className="flex-row flex-wrap items-center justify-center gap-2">
-                  <CalendarClock size={14} color={muted} strokeWidth={2} />
-                  <Text className="text-[12px] text-muted-foreground">
-                    <Text className="font-semibold">Deadline:</Text>{" "}
-                    {new Date(view.dueDate).toLocaleString("vi-VN")}
-                  </Text>
-                </View>
-              ) : null}
-              {view.note ? (
-                <Text className="text-center text-[12px] text-muted-foreground">
-                  <Text className="font-semibold">Ghi chú:</Text> {view.note}
-                </Text>
-              ) : null}
+              {view.dueDate
+                ? (() => {
+                    const dueMs = new Date(view.dueDate).getTime();
+                    const ok = Number.isFinite(dueMs);
+                    return (
+                      <View className="items-center justify-center gap-1">
+                        <View className="flex-row flex-wrap items-center justify-center gap-2">
+                          <CalendarClock size={14} color={muted} strokeWidth={2} />
+                          <Text className="text-[12px] text-muted-foreground">
+                            <Text className="font-semibold">Deadline:</Text>{" "}
+                            {new Date(view.dueDate).toLocaleString("vi-VN")}
+                          </Text>
+                        </View>
+                        {!ok ? (
+                          <Text className="text-[12px] font-semibold text-muted-foreground">
+                            Deadline không hợp lệ
+                          </Text>
+                        ) : null}
+                      </View>
+                    );
+                  })()
+                : null}
+              {view.note
+                ? (() => {
+                    const expanded = expandedTaskIds.has(String(view.taskId ?? ""));
+                    const long = (view.note?.length ?? 0) > 90;
+                    return (
+                      <View className="items-center px-2">
+                        <Pressable onPress={() => long && toggleExpanded(view.taskId)}>
+                          <Text
+                            className="text-center text-[12px] text-muted-foreground"
+                            numberOfLines={expanded || !long ? undefined : 2}
+                          >
+                            <Text className="font-semibold">Ghi chú:</Text> {view.note}
+                          </Text>
+                        </Pressable>
+                        {long ? (
+                          <Pressable
+                            onPress={() => toggleExpanded(view.taskId)}
+                            className="mt-1 self-center rounded-full bg-primary/10 px-3 py-1"
+                          >
+                            <Text className="text-[11px] font-bold text-primary">
+                              {expanded ? "Thu gọn" : "Xem thêm"}
+                            </Text>
+                          </Pressable>
+                        ) : null}
+                      </View>
+                    );
+                  })()
+                : null}
             </View>
+            <Pressable
+              onPress={() => toggleExpanded(view.taskId)}
+              className="mt-3 self-center rounded-full bg-black/5 px-3 py-1"
+            >
+              <Text className="text-[11px] font-bold text-muted-foreground">
+                {expandedTaskIds.has(String(view.taskId ?? ""))
+                  ? "Thu gọn chi tiết"
+                  : "Xem chi tiết"}
+              </Text>
+            </Pressable>
           </View>
         </View>
       </View>
@@ -389,50 +532,6 @@ function ReactionsRow({
   );
 }
 
-// ── Inline Video Player ──────────────────────────────────────────────────
-
-function ActiveVideoPlayer({ videoUri }: { videoUri: string }) {
-  const player = useVideoPlayer(videoUri, (p) => {
-    p.loop = false;
-    p.play(); // Tự động phát khi người dùng bấm vào Thumbnail
-  });
-  return (
-    <VideoView
-      player={player}
-      style={{ width: "100%", height: "100%" }}
-      contentFit="cover"
-      nativeControls
-      allowsFullscreen
-    />
-  );
-}
-
-function InlineVideoPlayer({ videoUri, posterUri }: { videoUri: string; posterUri: string }) {
-  const [isLoaded, setIsLoaded] = useState(false);
-
-  // Layout 1: Chỉ tải hình ảnh (Tối ưu Memory - Không Crash App khi Chat có 30 videos)
-  if (!isLoaded) {
-    return (
-      <Pressable
-        className="aspect-video w-full items-center justify-center overflow-hidden rounded-2xl border border-border/20 bg-black/80"
-        onPress={() => setIsLoaded(true)}
-      >
-        <Image source={{ uri: posterUri }} className="absolute h-full w-full" resizeMode="cover" />
-        <View className="rounded-full bg-black/50 p-3">
-          <Play size={24} color="white" strokeWidth={2} fill="white" />
-        </View>
-      </Pressable>
-    );
-  }
-
-  // Layout 2: Click vào -> Khởi tạo VideoView & Native Controls để xem
-  return (
-    <View className="aspect-video w-full overflow-hidden rounded-2xl border border-border/20 bg-black">
-      <ActiveVideoPlayer videoUri={videoUri} />
-    </View>
-  );
-}
-
 function parseTitleBodyJson(content: string): { title: string; body?: string } | null {
   const t = content.trim();
   if (!t.startsWith("{")) return null;
@@ -468,6 +567,29 @@ export const ChatBubble = ({
   const isRecalled = Boolean(message.isRecalled);
   const isDeleted = Boolean(message.isDeleted);
 
+  /** Luôn qua format preview — không render JSON thô trong bubble chữ. */
+  const captionPlainText = useMemo(
+    () =>
+      formatChatPreviewLine(
+        {
+          type: message.type,
+          content: message.content ?? "",
+          senderId: message.senderId,
+          senderDisplayName: message.senderDisplayName,
+          isRecalled: Boolean(message.isRecalled),
+        },
+        viewerUserId ?? "",
+      ),
+    [
+      message.type,
+      message.content,
+      message.senderId,
+      message.senderDisplayName,
+      message.isRecalled,
+      viewerUserId,
+    ],
+  );
+
   const showDateSeparator = !prevMessage || !isSameDay(prevMessage.createdAt, message.createdAt);
 
   if (message.type === "system" || isCenterPositionMessage(message)) {
@@ -480,6 +602,7 @@ export const ChatBubble = ({
           viewerUserId={viewerUserId}
           groupExtras={isGroup ? groupExtras : undefined}
           calendarNow={calendarNow}
+          prevMessage={prevMessage}
         />
       </>
     );
@@ -519,7 +642,9 @@ export const ChatBubble = ({
 
   const fileMetaSubline = [
     message.mediaSize != null && message.mediaSize > 0 ? formatFileSize(message.mediaSize) : "",
-    message.mediaType?.includes("/") ? (message.mediaType.split("/").pop() ?? "").toUpperCase() : "",
+    message.mediaType?.includes("/")
+      ? (message.mediaType.split("/").pop() ?? "").toUpperCase()
+      : "",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -538,6 +663,7 @@ export const ChatBubble = ({
 
   const isEmojiMessage = message.type === "emoji";
   const fallbackLabel = getMessageTypeLabel(message.type);
+
   const hasRenderableSpecial =
     isVisualMedia ||
     hasFile ||
@@ -585,9 +711,9 @@ export const ChatBubble = ({
               <View
                 className={[
                   "max-w-full",
-                  isVisualMedia ? "rounded-2xl overflow-hidden" : "",
+                  isVisualMedia ? "overflow-hidden rounded-2xl" : "",
                   !isVisualMedia
-                    ? `${hasFile ? "px-2 py-2" : "px-4 py-2.5"} ${isOwn ? "bg-primary rounded-[20px] rounded-br-[5px]" : "bg-card rounded-[20px] rounded-bl-[5px]"}`
+                    ? `${hasFile ? "px-2 py-2" : "px-4 py-2.5"} ${isOwn ? "rounded-[20px] rounded-br-[5px] bg-primary" : "rounded-[20px] rounded-bl-[5px] bg-card"}`
                     : "",
                 ]
                   .filter(Boolean)
@@ -625,9 +751,9 @@ export const ChatBubble = ({
                 )}
 
                 {hasVideo && (
-                  <View className="w-full rounded-2xl overflow-hidden bg-black">
+                  <View className="w-full overflow-hidden rounded-2xl bg-black">
                     <ChatBubbleVideo
-                      key={`${message.messageId}-${isLocalMedia ? rawMedia : normalizeMediaUrl(message.mediaUrl) ?? ""}`}
+                      key={`${message.messageId}-${isLocalMedia ? rawMedia : (normalizeMediaUrl(message.mediaUrl) ?? "")}`}
                       playUri={
                         isLocalMedia
                           ? (rawMedia ?? "").trim()
@@ -639,18 +765,21 @@ export const ChatBubble = ({
 
                 {hasFile && (
                   <View
-                    className="w-full flex-row items-center gap-3 px-3.5 py-3 rounded-xl bg-white border border-border/25"
+                    className="w-full flex-row items-center gap-3 rounded-xl border border-border/25 bg-white px-3.5 py-3"
                     style={{ minWidth: fileBubbleMinWidth }}
                   >
-                    <View className="h-11 w-11 shrink-0 rounded-lg items-center justify-center bg-primary/10">
+                    <View className="h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/10">
                       <FileText size={24} color={primary} strokeWidth={2} />
                     </View>
                     <View className="min-w-0 flex-1 pr-1">
-                      <Text className="text-foreground text-[15px] font-semibold leading-5" numberOfLines={2}>
+                      <Text
+                        className="text-[15px] font-semibold leading-5 text-foreground"
+                        numberOfLines={2}
+                      >
                         {message.mediaOriginalName?.trim() || "File đính kèm"}
                       </Text>
                       {fileMetaSubline ? (
-                        <Text className="text-muted-foreground text-[12px] mt-1" numberOfLines={1}>
+                        <Text className="mt-1 text-[12px] text-muted-foreground" numberOfLines={1}>
                           {fileMetaSubline}
                         </Text>
                       ) : null}
@@ -716,15 +845,17 @@ export const ChatBubble = ({
                     <Text
                       className={`text-[34px] leading-[42px] ${isOwn ? "text-white" : "text-foreground"}`}
                     >
-                      {message.content}
+                      {captionPlainText}
                     </Text>
                   </View>
                 ) : null}
 
                 {!isEmojiMessage && hasCaption && (
                   <View className={isVisualMedia || hasFile ? "px-3 py-2" : ""}>
-                    <Text className={`text-[15px] leading-[22px] ${isOwn && !isVisualMedia ? "text-white" : "text-foreground"}`}>
-                      {message.content}
+                    <Text
+                      className={`text-[15px] leading-[22px] ${isOwn && !isVisualMedia ? "text-white" : "text-foreground"}`}
+                    >
+                      {captionPlainText}
                     </Text>
                   </View>
                 )}
@@ -778,14 +909,19 @@ export const ChatBubble = ({
 
 /** Phát MP4/HLS trong bubble — `Image` không hiển thị được khung hình từ URL video. */
 function ChatBubbleVideo({ playUri }: { playUri: string }) {
-  if (!playUri) {
-    return (
-      <View className="w-full aspect-video items-center justify-center bg-muted px-4">
-        <Text className="text-muted-foreground text-center text-sm">Không có đường dẫn video</Text>
-      </View>
-    );
-  }
+  if (!playUri) return <ChatBubbleVideoFallback />;
+  return <ChatBubbleVideoPlayer playUri={playUri} />;
+}
 
+function ChatBubbleVideoFallback() {
+  return (
+    <View className="aspect-video w-full items-center justify-center bg-muted px-4">
+      <Text className="text-center text-sm text-muted-foreground">Không có đường dẫn video</Text>
+    </View>
+  );
+}
+
+function ChatBubbleVideoPlayer({ playUri }: { playUri: string }) {
   const player = useVideoPlayer(playUri, (p) => {
     p.loop = false;
   });
