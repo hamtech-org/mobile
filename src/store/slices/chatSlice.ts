@@ -1,5 +1,5 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
-import type { IConversation, IMessage, MessageStatus, TypingUserEntry } from "@/types/chat.types";
+import type { IMessage, MessageStatus, TypingUserEntry } from "@/types/chat.types";
 
 /** Thông báo ngắn trong khung chat (ghim, đổi tên nhóm, …) kèm mốc giờ. */
 export interface ChatFrameBanner {

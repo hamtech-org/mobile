@@ -3,6 +3,10 @@ import type { Socket } from "socket.io-client";
 
 import { useAppSelector } from "@/hooks/useAppStore";
 import {
+  attachCallGroupSocketToRedux,
+  detachCallGroupSocketFromRedux,
+} from "@/services/callGroupReduxSync";
+import {
   disconnectSocketClient,
   getSocketClient,
   normalizeSocketAuthToken,
@@ -31,9 +35,27 @@ export const SocketProvider = ({ children }: PropsWithChildren) => {
     if (socket.connected) {
       socket.disconnect();
     }
+
+    detachCallGroupSocketFromRedux();
     socket.connect();
 
+    const handleConnect = () => {
+      attachCallGroupSocketToRedux(socket);
+    };
+    const handleDisconnect = () => {
+      detachCallGroupSocketFromRedux();
+    };
+
+    socket.on("connect", handleConnect);
+    socket.on("disconnect", handleDisconnect);
+    if (socket.connected) {
+      handleConnect();
+    }
+
     return () => {
+      socket.off("connect", handleConnect);
+      socket.off("disconnect", handleDisconnect);
+      detachCallGroupSocketFromRedux();
       disconnectSocketClient();
     };
   }, [isAuthenticated, accessToken, socket]);

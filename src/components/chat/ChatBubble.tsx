@@ -84,7 +84,7 @@ interface ChatBubbleProps {
 
 // ── Call Log Message ────────────────────────────────────────────────────
 
-function CallLogMessage({ message }: { message: IMessage }) {
+function CallLogMessage({ message, isOwn }: { message: IMessage; isOwn: boolean }) {
   const { primary } = useIconColors();
   let kind = "completed";
   let callType = "audio";
@@ -115,8 +115,12 @@ function CallLogMessage({ message }: { message: IMessage }) {
   const iconColor = kind === "missed" ? "#ef4444" : primary;
 
   return (
-    <View className="my-3 items-center px-6">
-      <View className="min-w-[220px] items-center rounded-2xl border border-border/30 bg-muted/40 px-5 py-3">
+    <View className={`my-3 px-4 ${isOwn ? "items-end" : "items-start"}`}>
+      <View
+        className={`min-w-[220px] max-w-[85%] items-center rounded-2xl border border-border/30 bg-muted/40 px-5 py-3 ${
+          isOwn ? "self-end" : "self-start"
+        }`}
+      >
         <View className="mb-1 flex-row items-center gap-2">
           <IconComponent size={16} color={iconColor} strokeWidth={1.5} />
           <Text className="text-sm font-bold text-foreground">{title}</Text>
@@ -612,7 +616,7 @@ export const ChatBubble = ({
     return (
       <>
         {showDateSeparator && <DateSeparator date={message.createdAt} now={calendarNow} />}
-        <CallLogMessage message={message} />
+        <CallLogMessage message={message} isOwn={isOwn} />
       </>
     );
   }
@@ -909,18 +913,15 @@ export const ChatBubble = ({
 
 /** Phát MP4/HLS trong bubble — `Image` không hiển thị được khung hình từ URL video. */
 function ChatBubbleVideo({ playUri }: { playUri: string }) {
-  if (!playUri) return <ChatBubbleVideoFallback />;
+  if (!playUri) {
+    return (
+      <View className="aspect-video w-full items-center justify-center bg-muted px-4">
+        <Text className="text-center text-sm text-muted-foreground">Không có đường dẫn video</Text>
+      </View>
+    );
+  }
   return <ChatBubbleVideoPlayer playUri={playUri} />;
 }
-
-function ChatBubbleVideoFallback() {
-  return (
-    <View className="aspect-video w-full items-center justify-center bg-muted px-4">
-      <Text className="text-center text-sm text-muted-foreground">Không có đường dẫn video</Text>
-    </View>
-  );
-}
-
 function ChatBubbleVideoPlayer({ playUri }: { playUri: string }) {
   const player = useVideoPlayer(playUri, (p) => {
     p.loop = false;

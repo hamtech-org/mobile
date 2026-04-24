@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "hamtech",
-    "slug": "hamtech-mobile",
+    "slug": "hamtech",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -16,6 +16,8 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
+        "NSMicrophoneUsageDescription": "Ứng dụng cần micro để tham gia cuộc gọi thoại và video.",
+        "NSCameraUsageDescription": "Ứng dụng cần camera cho cuộc gọi video.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true,
           "NSExceptionDomains": {
@@ -28,8 +30,14 @@
     },
     "android": {
       "package": "com.hamtech.mobile",
-      "usesCleartextTraffic": true,
       "softwareKeyboardLayoutMode": "resize",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -43,12 +51,21 @@
     "plugins": [
       "expo-router",
       "expo-video",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
       "@react-native-community/datetimepicker"
     ],
     "extra": {
       "router": {},
+      "agoraAppId": "",
       "eas": {
-        "projectId": "72c3cd53-148f-4e69-825c-329e870fbfaf"
+        "projectId": "36ec0bfe-a304-4c96-9f9b-349d132a7f15"
       }
     },
     "owner": "hamtech-org"

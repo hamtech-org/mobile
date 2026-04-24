@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocalSearchParams } from "expo-router";
-import { FlatList, View, Keyboard } from "react-native";
+import { Alert, FlatList, Keyboard, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 
@@ -33,6 +33,7 @@ import {
   useUnvotePollMutation,
   useVotePollMutation,
 } from "@/store/api/chatApi";
+import { useCallContext } from "@/contexts/CallContext";
 import { useAppDispatch, useAppSelector } from "@/hooks/useAppStore";
 import { useChat } from "@/hooks/useChat";
 import { useChatMessageData } from "@/hooks/useChatMessageData";
@@ -89,6 +90,8 @@ export default function ChatDetailScreen() {
   const currentUserId = useAppSelector((state) => state.auth.user?.userId);
   const currentUserName = useAppSelector((state) => state.auth.user?.displayName ?? null);
   const frameBanner = useAppSelector((state) => state.chat.frameBanner);
+  const activeGroupCall = useAppSelector((state) => state.call.activeGroupCall);
+  const callStatus = useAppSelector((state) => state.call.status);
   const replyingTo = useAppSelector((state) => state.chat.replyingTo);
   const typingUsers = useAppSelector((state) =>
     conversationId
@@ -125,6 +128,8 @@ export default function ChatDetailScreen() {
   useEffect(() => {
     dispatch(clearChatFrameBanner());
   }, [conversationId, dispatch]);
+
+  const { initiateCall, initiateGroupCall, joinActiveGroupCall } = useCallContext();
 
   const {
     sendMessage,
@@ -455,6 +460,34 @@ export default function ChatDetailScreen() {
     [allMessages, conversation, myRoleInGroup, togglePinMessage],
   );
 
+  const handlePressAudioCall = useCallback(() => {
+    if (!conversationId) return;
+    if (conversation?.type === "group") {
+      initiateGroupCall("audio", conversationId);
+    } else if (conversation?.otherUserId) {
+      initiateCall(conversation.otherUserId, "audio", conversationId);
+    } else {
+      Alert.alert("Lỗi", "Không xác định được người nhận cuộc gọi.");
+    }
+  }, [conversation, conversationId, initiateCall, initiateGroupCall]);
+
+  const handlePressVideoCall = useCallback(() => {
+    if (!conversationId) return;
+    if (conversation?.type === "group") {
+      initiateGroupCall("video", conversationId);
+    } else if (conversation?.otherUserId) {
+      initiateCall(conversation.otherUserId, "video", conversationId);
+    } else {
+      Alert.alert("Lỗi", "Không xác định được người nhận cuộc gọi.");
+    }
+  }, [conversation, conversationId, initiateCall, initiateGroupCall]);
+
+  const showJoinGroupBanner =
+    Boolean(isGroup) &&
+    Boolean(conversationId) &&
+    activeGroupCall?.conversationId === conversationId &&
+    (callStatus === "idle" || callStatus === "ended");
+
   if (isLoading) {
     return <Loading fullScreen message="Đang tải tin nhắn..." />;
   }
@@ -476,6 +509,10 @@ export default function ChatDetailScreen() {
                 }
               : () => setPersonalSettingsOpen(true)
           }
+          onPressCall={handlePressAudioCall}
+          onPressVideoCall={showJoinGroupBanner ? joinActiveGroupCall : handlePressVideoCall}
+          videoCtaVariant={showJoinGroupBanner ? "join" : "icon"}
+          videoCtaLabel={showJoinGroupBanner ? "Tham gia" : undefined}
         />
       )}
 

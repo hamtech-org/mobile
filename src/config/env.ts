@@ -1,21 +1,75 @@
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 
+type ExtraConfig = {
+  apiBaseUrl?: string;
+  socketUrl?: string;
+  agoraAppId?: string;
+};
+
+const extra = (Constants.expoConfig?.extra ?? {}) as ExtraConfig;
+
 const resolveDevServerHost = (): string | null => {
   const hostUri = Constants.expoConfig?.hostUri;
   if (!hostUri) {
     return null;
   }
-
   return hostUri.split(":")[0] ?? null;
 };
 
-const resolvedHost = resolveDevServerHost();
+/** Bỏ hậu tố /api/v1 để suy ra origin socket khi chỉ cấu hình API. */
+function socketOriginFromApiBase(apiBaseUrl: string): string {
+  try {
+    const u = new URL(apiBaseUrl);
+    const path = u.pathname.replace(/\/api\/v1\/?$/i, "");
+    u.pathname = path === "" ? "/" : path;
+    const origin = u.origin;
+    if (u.pathname === "/" || u.pathname === "") {
+      return origin;
+    }
+    return `${origin}${u.pathname.replace(/\/$/, "")}`;
+  } catch {
+    return apiBaseUrl.replace(/\/api\/v1\/?$/i, "").replace(/\/$/, "") || apiBaseUrl;
+  }
+}
+
 const localhostFallback = Platform.OS === "android" ? "10.0.2.2" : "localhost";
+const resolvedHost = resolveDevServerHost();
 const defaultHost = resolvedHost ?? localhostFallback;
 
+const explicitApi =
+  (typeof extra.apiBaseUrl === "string" && extra.apiBaseUrl.trim()) ||
+  (typeof process.env.EXPO_PUBLIC_API_BASE_URL === "string" &&
+    process.env.EXPO_PUBLIC_API_BASE_URL.trim()) ||
+  (typeof process.env.EXPO_PUBLIC_API_URL === "string" && process.env.EXPO_PUBLIC_API_URL.trim()) ||
+  "";
+
+const explicitSocket =
+  (typeof extra.socketUrl === "string" && extra.socketUrl.trim()) ||
+  (typeof process.env.EXPO_PUBLIC_SOCKET_URL === "string" &&
+    process.env.EXPO_PUBLIC_SOCKET_URL.trim()) ||
+  "";
+
+const useDevAuto = __DEV__ || Boolean(Constants.expoConfig?.hostUri);
+
+const devApiBase = `http://${defaultHost}:3000/api/v1`;
+const devSocket = `http://${defaultHost}:3000`;
+
+const apiBaseUrl = explicitApi || devApiBase;
+const socketUrl =
+  explicitSocket || (explicitApi ? socketOriginFromApiBase(explicitApi) : devSocket);
+
+const agoraFromEnv =
+  (typeof process.env.EXPO_PUBLIC_AGORA_APP_ID === "string" &&
+    process.env.EXPO_PUBLIC_AGORA_APP_ID.trim()) ||
+  "";
+const agoraAppId =
+  (typeof extra.agoraAppId === "string" && extra.agoraAppId.trim()) || agoraFromEnv;
+
 export const env = {
-  apiBaseUrl: process.env.EXPO_PUBLIC_API_URL ?? `http://${defaultHost}:3000/api/v1`,
-  socketUrl: process.env.EXPO_PUBLIC_SOCKET_URL ?? `http://${defaultHost}:3000`,
+  apiBaseUrl,
+  socketUrl,
   host: defaultHost,
+  agoraAppId,
+  hasReleaseBackendUrl: useDevAuto || Boolean(explicitApi),
 };

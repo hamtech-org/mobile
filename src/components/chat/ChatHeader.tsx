@@ -22,6 +22,8 @@ interface ChatHeaderProps {
   onPressSearch?: () => void;
   onPressCall?: () => void;
   onPressVideoCall?: () => void;
+  videoCtaVariant?: "icon" | "join";
+  videoCtaLabel?: string;
 }
 
 /**
@@ -41,6 +43,8 @@ export const ChatHeader = ({
   onPressSearch,
   onPressCall,
   onPressVideoCall,
+  videoCtaVariant = "icon",
+  videoCtaLabel,
 }: ChatHeaderProps) => {
   const isGroup = conversation.type === "group";
   const { foreground, primary } = useIconColors();
@@ -107,12 +111,25 @@ export const ChatHeader = ({
         >
           <Search size={24} color={primary} strokeWidth={1.75} />
         </Pressable>
-        <Pressable onPress={onPressCall} className="p-2 active:opacity-60" hitSlop={6}>
-          <Phone size={24} color={primary} strokeWidth={1.5} />
-        </Pressable>
-        <Pressable onPress={onPressVideoCall} className="p-2 active:opacity-60" hitSlop={6}>
-          <Video size={25} color={primary} strokeWidth={1.5} />
-        </Pressable>
+        {!isGroup ? (
+          <Pressable onPress={onPressCall} className="p-2 active:opacity-60" hitSlop={6}>
+            <Phone size={24} color={primary} strokeWidth={1.5} />
+          </Pressable>
+        ) : null}
+        {videoCtaVariant === "join" ? (
+          <Pressable
+            onPress={onPressVideoCall}
+            className="ml-1 flex-row items-center gap-2 rounded-full bg-green-600 px-3 py-2 active:opacity-80"
+            hitSlop={6}
+          >
+            <Video size={20} color="#fff" strokeWidth={1.7} />
+            <Text className="font-semibold text-white">{videoCtaLabel ?? "Tham gia"}</Text>
+          </Pressable>
+        ) : (
+          <Pressable onPress={onPressVideoCall} className="p-2 active:opacity-60" hitSlop={6}>
+            <Video size={25} color={primary} strokeWidth={1.5} />
+          </Pressable>
+        )}
         <Pressable onPress={onPressInfo} className="p-2 active:opacity-60" hitSlop={6}>
           <Info size={25} color={foreground} strokeWidth={1.5} />
         </Pressable>

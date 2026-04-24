@@ -5,6 +5,7 @@ import { chatApi } from "./api/chatApi";
 import { mediaApi } from "./api/mediaApi";
 import { userApi } from "./api/userApi";
 import { authReducer } from "./slices/authSlice";
+import { callReducer } from "./slices/callSlice";
 import { chatReducer } from "./slices/chatSlice";
 import { contactReducer } from "./slices/contactSlice";
 import { newsfeedReducer } from "./slices/newsfeedSlice";
@@ -14,6 +15,7 @@ import { uiReducer } from "./slices/uiSlice";
 export const store = configureStore({
   reducer: {
     auth: authReducer,
+    call: callReducer,
     chat: chatReducer,
     contact: contactReducer,
     newsfeed: newsfeedReducer,
