@@ -1,5 +1,5 @@
 import { Pressable, Text, View } from "react-native";
-import { ChevronLeft, Info, Phone, Video } from "lucide-react-native";
+import { ChevronLeft, Info, Phone, Search, Video } from "lucide-react-native";
 
 import { Avatar } from "@/components/common/Avatar";
 import { safeRouterBack } from "@/utils/navigation";
@@ -18,6 +18,8 @@ interface ChatHeaderProps {
   currentUserId?: string;
   onBack?: () => void;
   onPressInfo?: () => void;
+  /** Tìm trong hội thoại (giống web — cạnh nút gọi). */
+  onPressSearch?: () => void;
   onPressCall?: () => void;
   onPressVideoCall?: () => void;
   videoCtaVariant?: "icon" | "join";
@@ -38,6 +40,7 @@ export const ChatHeader = ({
   currentUserId,
   onBack,
   onPressInfo,
+  onPressSearch,
   onPressCall,
   onPressVideoCall,
   videoCtaVariant = "icon",
@@ -98,8 +101,16 @@ export const ChatHeader = ({
         </View>
       </Pressable>
 
-      {/* Actions */}
+      {/* Actions — thứ tự giống web: tìm cạnh gọi, rồi video, rồi thông tin */}
       <View className="flex-row items-center">
+        <Pressable
+          onPress={onPressSearch}
+          disabled={!onPressSearch}
+          className={`p-2 active:opacity-60 ${!onPressSearch ? "opacity-35" : ""}`}
+          hitSlop={6}
+        >
+          <Search size={24} color={primary} strokeWidth={1.75} />
+        </Pressable>
         {!isGroup ? (
           <Pressable onPress={onPressCall} className="p-2 active:opacity-60" hitSlop={6}>
             <Phone size={24} color={primary} strokeWidth={1.5} />

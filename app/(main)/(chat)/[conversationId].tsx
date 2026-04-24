@@ -9,6 +9,8 @@ import {
   ChatFrameBanner,
   ChatHeader,
   ChatInput,
+  ChatInConversationSearchModal,
+  ConversationPersonalSettingsModal,
   MessageActionSheet,
   PollVoteModal,
   TypingIndicator,
@@ -24,6 +26,7 @@ import { Loading } from "@/components/common/Loading";
 import { useUploadMediaMutation } from "@/store/api/mediaApi";
 import {
   useGetConversationsQuery,
+  useGetGroupMembersQuery,
   useGetPollsQuery,
   useGetTasksQuery,
   useJoinTaskMutation,
@@ -35,11 +38,19 @@ import { useAppDispatch, useAppSelector } from "@/hooks/useAppStore";
 import { useChat } from "@/hooks/useChat";
 import { useChatMessageData } from "@/hooks/useChatMessageData";
 import { useConversationLifecycle } from "@/hooks/useConversationLifecycle";
-import { setReplyingTo, clearReplyingTo, clearChatFrameBanner } from "@/store/slices/chatSlice";
+import { useSocket } from "@/hooks/useSocket";
+import {
+  setReplyingTo,
+  clearReplyingTo,
+  clearChatFrameBanner,
+  messageReceived,
+} from "@/store/slices/chatSlice";
 import type { IMessage, TypingUserEntry } from "@/types/chat.types";
 import { prepareLocalFileForUpload } from "@/utils/uploadAttachment";
 import { toast } from "@/utils/appToast";
 import { formatChatPreviewLine } from "@/utils/messageDisplay";
+import { canUserPinMessageInGroup } from "@/utils/groupConversationPermissions";
+import { MAX_PINNED_PER_CONVERSATION } from "@/constants/chatPin";
 
 const EMPTY_TYPING_USERS: TypingUserEntry[] = [];
 
@@ -74,8 +85,10 @@ export default function ChatDetailScreen() {
   const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
   const dispatch = useAppDispatch();
   const insets = useSafeAreaInsets();
+  const socket = useSocket();
 
   const currentUserId = useAppSelector((state) => state.auth.user?.userId);
+  const currentUserName = useAppSelector((state) => state.auth.user?.displayName ?? null);
   const frameBanner = useAppSelector((state) => state.chat.frameBanner);
   const activeGroupCall = useAppSelector((state) => state.call.activeGroupCall);
   const callStatus = useAppSelector((state) => state.call.status);
@@ -94,6 +107,8 @@ export default function ChatDetailScreen() {
   const [groupModalInitial, setGroupModalInitial] = useState<GroupManagePanel | undefined>(
     undefined,
   );
+  const [personalSettingsOpen, setPersonalSettingsOpen] = useState(false);
+  const [inChatSearchOpen, setInChatSearchOpen] = useState(false);
 
   const { allMessages, isLoading, latestMessageId } = useChatMessageData(conversationId);
 
@@ -137,6 +152,15 @@ export default function ChatDetailScreen() {
 
   const isGroup = conversation?.type === "group";
 
+  const { data: groupMembersForPerm = [] } = useGetGroupMembersQuery(conversationId!, {
+    skip: !isGroup || !conversationId,
+  });
+
+  const myRoleInGroup = useMemo(() => {
+    if (!currentUserId || !groupMembersForPerm.length) return undefined;
+    return groupMembersForPerm.find((m) => m.userId === currentUserId)?.role;
+  }, [groupMembersForPerm, currentUserId]);
+
   const { data: tasksEnvelope } = useGetTasksQuery(conversationId!, {
     skip: !isGroup || !conversationId,
   });
@@ -144,10 +168,29 @@ export default function ChatDetailScreen() {
     skip: !isGroup || !conversationId,
   });
 
-  const groupTasks = useMemo((): ChatBubbleGroupExtras["groupTasks"] => {
+  const groupTasksFromApi = useMemo((): ChatBubbleGroupExtras["groupTasks"] => {
     const raw = tasksEnvelope?.data;
     return Array.isArray(raw) ? (raw as ChatBubbleGroupExtras["groupTasks"]) : [];
   }, [tasksEnvelope]);
+
+  /** Override participants locally để UI update ngay sau join. */
+  const [localParticipantsByTaskId, setLocalParticipantsByTaskId] = useState<
+    Record<string, string[]>
+  >({});
+
+  const groupTasks = useMemo((): ChatBubbleGroupExtras["groupTasks"] => {
+    if (groupTasksFromApi.length === 0) return groupTasksFromApi;
+    const hasAnyOverride = Object.keys(localParticipantsByTaskId).length > 0;
+    if (!hasAnyOverride) return groupTasksFromApi;
+
+    return groupTasksFromApi.map((t) => {
+      const id = String((t as { taskId?: string }).taskId ?? "");
+      if (!id) return t;
+      const override = localParticipantsByTaskId[id];
+      if (!override) return t;
+      return { ...(t as object), participants: override } as (typeof groupTasksFromApi)[number];
+    });
+  }, [groupTasksFromApi, localParticipantsByTaskId]);
 
   const pollsList = useMemo(() => {
     const raw = pollsEnvelope?.data;
@@ -170,6 +213,70 @@ export default function ChatDetailScreen() {
       await joinTaskMut({ groupId: conversationId, taskId }).unwrap();
     },
     [conversationId, joinTaskMut],
+  );
+
+  const onTaskJoined = useCallback(
+    (taskId: string) => {
+      if (!conversationId || !currentUserId) return;
+      const id = String(taskId);
+      if (!id) return;
+
+      const rawTask = groupTasksFromApi.find(
+        (t) => String((t as { taskId?: string }).taskId) === id,
+      ) as { title?: string; participants?: string[] } | undefined;
+      const existing = localParticipantsByTaskId[id] ?? rawTask?.participants ?? [];
+      const joinedNow = !existing.includes(currentUserId);
+      if (!joinedNow) return;
+
+      const next = Array.from(new Set([...existing, currentUserId]));
+      setLocalParticipantsByTaskId((prev) => ({ ...prev, [id]: next }));
+
+      const msgId = `system-task-join:${conversationId}:${id}:${currentUserId}`;
+      const payload = {
+        kind: "task_joined",
+        createdAt: new Date().toISOString(),
+        actor: {
+          userId: currentUserId,
+          id: currentUserId,
+          name: currentUserName ?? "Bạn",
+        },
+        task: {
+          taskId: id,
+          title: rawTask?.title ?? "",
+        },
+      };
+
+      const systemMsg: IMessage = {
+        messageId: msgId,
+        conversationId,
+        senderId: currentUserId,
+        senderDisplayName: currentUserName,
+        position: "center",
+        type: "system",
+        content: JSON.stringify(payload),
+        mediaUrl: null,
+        thumbnailUrl: null,
+        replyTo: null,
+        isPinned: false,
+        isEdited: false,
+        isRecalled: false,
+        reactions: {},
+        status: "sent",
+        createdAt: payload.createdAt,
+      };
+
+      dispatch(messageReceived(systemMsg));
+      socket?.emit("message:new", systemMsg);
+    },
+    [
+      conversationId,
+      currentUserId,
+      currentUserName,
+      dispatch,
+      groupTasksFromApi,
+      localParticipantsByTaskId,
+      socket,
+    ],
   );
 
   const handleTogglePollVote = useCallback(
@@ -202,9 +309,10 @@ export default function ChatDetailScreen() {
       currentUserId,
       groupTasks,
       joinTask,
+      onTaskJoined,
       onOpenPollVote: (pollId) => setActivePollId(pollId),
     };
-  }, [isGroup, conversationId, currentUserId, groupTasks, joinTask]);
+  }, [isGroup, conversationId, currentUserId, groupTasks, joinTask, onTaskJoined]);
 
   const handleSendMessage = useCallback(
     (content: string) => {
@@ -293,7 +401,7 @@ export default function ChatDetailScreen() {
   );
 
   const handleLongPressMessage = useCallback((msg: IMessage) => {
-    Keyboard.dismiss();
+    Keyboard?.dismiss?.();
     setTimeout(() => setSelectedMessage(msg), 120);
   }, []);
 
@@ -321,12 +429,35 @@ export default function ChatDetailScreen() {
   const handleTogglePinForSheet = useCallback(
     async (msg: IMessage) => {
       try {
+        if (
+          conversation?.type === "group" &&
+          !canUserPinMessageInGroup({
+            conversation,
+            userRole: myRoleInGroup,
+          })
+        ) {
+          toast.error(
+            msg.isPinned
+              ? "Nhóm không cho phép thành viên bỏ/ghim tin nhắn."
+              : "Nhóm không cho phép thành viên ghim tin nhắn.",
+          );
+          return;
+        }
+        if (!msg.isPinned) {
+          const pinCount = allMessages.filter(
+            (m) => m.isPinned && !m.isRecalled && !m.isDeleted,
+          ).length;
+          if (pinCount >= MAX_PINNED_PER_CONVERSATION) {
+            toast.error(`Đã đủ ${MAX_PINNED_PER_CONVERSATION} tin ghim trong cuộc trò chuyện này.`);
+            return;
+          }
+        }
         await togglePinMessage(msg);
       } catch {
         toast.error("Không cập nhật ghim được. Thử lại.");
       }
     },
-    [togglePinMessage],
+    [allMessages, conversation, myRoleInGroup, togglePinMessage],
   );
 
   const handlePressAudioCall = useCallback(() => {
@@ -369,13 +500,14 @@ export default function ChatDetailScreen() {
           currentUserId={currentUserId}
           typingUsers={typingUsers}
           memberCount={conversation.memberCount}
+          onPressSearch={() => setInChatSearchOpen(true)}
           onPressInfo={
             isGroup
               ? () => {
                   setGroupModalInitial(undefined);
                   setGroupManageOpen(true);
                 }
-              : undefined
+              : () => setPersonalSettingsOpen(true)
           }
           onPressCall={handlePressAudioCall}
           onPressVideoCall={showJoinGroupBanner ? joinActiveGroupCall : handlePressVideoCall}
@@ -394,6 +526,14 @@ export default function ChatDetailScreen() {
           conversation={conversation}
           currentUserId={currentUserId}
           initialPanel={groupModalInitial}
+        />
+      ) : null}
+
+      {conversation && !isGroup ? (
+        <ConversationPersonalSettingsModal
+          visible={personalSettingsOpen}
+          conversation={conversation}
+          onClose={() => setPersonalSettingsOpen(false)}
         />
       ) : null}
 
@@ -488,6 +628,14 @@ export default function ChatDetailScreen() {
         onDelete={deleteMessage}
         onTogglePin={handleTogglePinForSheet}
         onReact={reactMessage}
+      />
+
+      <ChatInConversationSearchModal
+        visible={inChatSearchOpen}
+        onClose={() => setInChatSearchOpen(false)}
+        messages={allMessages}
+        currentUserId={currentUserId}
+        onSelectMessage={handleJumpToMessage}
       />
     </SafeAreaView>
   );

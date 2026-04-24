@@ -57,11 +57,19 @@ export interface IConversation {
   memberCount: number;
   unreadCount: number;
   updatedAt?: string;
+  /** META: thời tin cuối — ưu tiên sort sidebar (đồng bộ web). */
+  lastMessageAt?: string;
   otherUserId?: string;
   /** Theo MEMBER# của user đang đăng nhập (danh sách hội thoại). */
   isMuted?: boolean;
   isPinnedToTop?: boolean;
   notificationsMutedUntil?: string | null;
+  /** META: số tin ghim trong chat (đồng bộ web). */
+  pinnedMessageCount?: number;
+  /** Nhóm: từ API + socket `group:settings_updated` (đồng bộ web). */
+  groupSettings?: IGroupSettings;
+  /** Nhóm đã giải tán — ẩn khỏi list khi API trả về. */
+  isDeleted?: boolean;
 }
 
 export interface IReplyToDetails {

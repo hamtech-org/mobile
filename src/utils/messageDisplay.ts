@@ -1,5 +1,5 @@
 import type { IMessage, MessageType } from "@/types/chat.types";
-import { formatSystemLastMessagePreview } from "@/utils/systemMessage";
+import { formatSystemLastMessagePreview, preprocessSystemPlainText } from "@/utils/systemMessage";
 
 /** Nhãn ngắn cho reply preview / placeholder theo loại tin. */
 export function getMessageTypeLabel(type: MessageType | string | undefined): string {
@@ -78,7 +78,16 @@ export function formatChatPreviewLine(
       msg.senderDisplayName,
     );
     if (sys) return truncatePreview(sys, PREVIEW_MAX);
-    return raw ? truncatePreview(raw, PREVIEW_MAX) : getMessageTypeLabel("system");
+    const plain = preprocessSystemPlainText(
+      {
+        content: raw,
+        senderId: msg.senderId,
+        senderDisplayName: msg.senderDisplayName,
+        type: "system",
+      } as IMessage,
+      { isOwn: msg.senderId === currentUserId, currentUserId },
+    );
+    return plain ? truncatePreview(plain, PREVIEW_MAX) : getMessageTypeLabel("system");
   }
   if (raw.startsWith("{")) {
     const sys = formatSystemLastMessagePreview(
@@ -88,7 +97,8 @@ export function formatChatPreviewLine(
       msg.senderDisplayName,
     );
     if (sys) return truncatePreview(sys, PREVIEW_MAX);
-    return getMessageTypeLabel(msg.type) || "Tin nhắn";
+    /** JSON không parse được hoặc lạ — không hiển thị chuỗi JSON thô (đồng bộ web). */
+    return "Thông báo nhóm";
   }
   if (!raw) return getMessageTypeLabel(msg.type) || "Tin nhắn";
   return truncatePreview(raw, PREVIEW_MAX);
