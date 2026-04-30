@@ -60,3 +60,33 @@ export function formatConversationListActivityTime(iso: string, now: Date = new 
 
   return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()} ${clock}`;
 }
+
+/**
+ * Hiển thị thời gian tương đối cho Mạng xã hội (Bài viết, Bình luận).
+ * Ví dụ: "Vừa xong", "5 phút trước", "2 giờ trước", "3 ngày trước", "20 tháng 10"
+ */
+export function formatRelativeTime(isoString: string, now: Date = new Date()): string {
+  const d = new Date(isoString);
+  if (Number.isNaN(d.getTime())) return "";
+
+  const diffMs = now.getTime() - d.getTime();
+  if (diffMs < 0) return "Vừa xong";
+
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 60) return "Vừa xong";
+
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} phút trước`;
+
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour} giờ trước`;
+
+  const diffDay = Math.floor(diffHour / 24);
+  if (diffDay < 7) return `${diffDay} ngày trước`;
+
+  if (d.getFullYear() === now.getFullYear()) {
+    return `${pad2(d.getDate())} tháng ${pad2(d.getMonth() + 1)}`;
+  }
+
+  return `${pad2(d.getDate())} tháng ${pad2(d.getMonth() + 1)}, ${d.getFullYear()}`;
+}

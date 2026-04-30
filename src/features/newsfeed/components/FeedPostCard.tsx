@@ -11,6 +11,7 @@ import {
   useReactToPostMutation,
 } from "@/store/api/newsfeedApi";
 import type { IComment } from "@/types/newsfeed.types";
+import { formatRelativeTime } from "@/utils/time";
 
 interface Props {
   post: IPost;
@@ -29,6 +30,8 @@ export const FeedPostCard = ({ post }: Props) => {
   const [hasMoreComments, setHasMoreComments] = useState(false);
   const [isLoadingComments, setIsLoadingComments] = useState(false);
   const [isLoadingMoreComments, setIsLoadingMoreComments] = useState(false);
+  const [isLiked, setIsLiked] = useState(false);
+  const [displayCommentsCount, setDisplayCommentsCount] = useState(post.commentsCount ?? 0);
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const commentAuthorName = currentUser?.displayName?.trim() || "Bạn";
   const commentAuthorAvatar = currentUser?.avatar || "";
@@ -50,17 +53,9 @@ export const FeedPostCard = ({ post }: Props) => {
         cursor: cursor ?? null,
       }).unwrap();
       if (append) {
-        setComments((prev) =>
-          [...prev, ...page.items].sort(
-            (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-          ),
-        );
+        setComments((prev) => [...prev, ...page.items]);
       } else {
-        setComments(
-          [...page.items].sort(
-            (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-          ),
-        );
+        setComments(page.items);
       }
       setNextCursor(page.nextCursor);
       setHasMoreComments(page.hasMore);
@@ -89,11 +84,8 @@ export const FeedPostCard = ({ post }: Props) => {
     if (!content) return;
     try {
       const created = await addComment({ postId: post.postId, content }).unwrap();
-      setComments((prev) =>
-        [...prev, created].sort(
-          (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-        ),
-      );
+      setComments((prev) => [...prev, created]);
+      setDisplayCommentsCount((prev) => prev + 1);
       setCommentText("");
     } catch {
       // no-op
@@ -114,7 +106,7 @@ export const FeedPostCard = ({ post }: Props) => {
           <View className="flex-1">
             <Text className="text-base font-bold">{displayName}</Text>
             <Text className="mt-1 text-xs text-muted-foreground">
-              {new Date(post.createdAt).toLocaleDateString()}
+              {formatRelativeTime(post.createdAt)}
             </Text>
           </View>
         </View>
@@ -138,19 +130,22 @@ export const FeedPostCard = ({ post }: Props) => {
             className="flex-row items-center gap-1"
             onPress={() => {
               void reactToPost({ postId: post.postId, type: "like" });
+              setIsLiked((prev) => !prev);
             }}
           >
-            <Ionicons name="heart-outline" size={16} color="#ef4444" />
+            <Ionicons
+              name={isLiked ? "heart" : "heart-outline"}
+              size={16}
+              color={isLiked ? "#ef4444" : "#64748b"}
+            />
             <Text className="text-sm font-bold text-foreground">{likes}</Text>
           </Pressable>
           <Pressable className="flex-row items-center gap-1" onPress={toggleCommentPanel}>
-            <Ionicons name="chatbubble-outline" size={16} color="#2563eb" />
-            <Text className="text-sm font-bold text-foreground">
-              {comments.length > 0 ? comments.length : post.commentsCount}
-            </Text>
+            <Ionicons name="chatbubble-outline" size={16} color="#64748b" />
+            <Text className="text-sm font-bold text-foreground">{displayCommentsCount}</Text>
           </Pressable>
           <Pressable className="flex-row items-center gap-1">
-            <Ionicons name="share-social-outline" size={16} color="#16a34a" />
+            <Ionicons name="share-social-outline" size={16} color="#64748b" />
             <Text className="text-sm font-bold text-foreground">{post.sharesCount ?? 0}</Text>
           </Pressable>
         </View>
@@ -199,7 +194,7 @@ export const FeedPostCard = ({ post }: Props) => {
                     </View>
                     <View className="mt-1 flex-row items-center gap-3 px-1">
                       <Text className="text-[11px] text-muted-foreground">
-                        {new Date(comment.createdAt).toLocaleDateString()}
+                        {formatRelativeTime(comment.createdAt)}
                       </Text>
                       <Pressable>
                         <Text className="text-[11px] font-semibold text-muted-foreground">
