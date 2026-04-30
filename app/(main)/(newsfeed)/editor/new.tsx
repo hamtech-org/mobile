@@ -84,7 +84,7 @@ export default function NewPostEditorScreen() {
     };
 
     const created = await createPost(payload).unwrap();
-    router.replace(`/(main)/(newsfeed)/${created.postId}`);
+    router.replace("/(main)/(newsfeed)");
   };
 
   const busy = creating || uploading;

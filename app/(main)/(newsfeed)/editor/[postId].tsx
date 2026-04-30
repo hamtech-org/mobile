@@ -102,7 +102,7 @@ export default function EditPostEditorScreen() {
       },
     }).unwrap();
 
-    router.replace(`/(main)/(newsfeed)/${postId}`);
+    router.replace("/(main)/(newsfeed)");
   };
 
   const busy = isLoading || updating || uploading;

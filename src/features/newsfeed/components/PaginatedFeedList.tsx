@@ -9,7 +9,6 @@ interface Props {
   isLoadingInitial?: boolean;
   headerComponent?: React.ReactElement;
   onEndReached: () => void;
-  onPressPost: (postId: string) => void;
 }
 
 export const PaginatedFeedList = ({
@@ -19,12 +18,11 @@ export const PaginatedFeedList = ({
   isLoadingInitial = false,
   headerComponent,
   onEndReached,
-  onPressPost,
 }: Props) => (
   <FlatList
     data={posts}
     keyExtractor={(item) => item.postId}
-    renderItem={({ item }) => <FeedPostCard post={item} onPress={() => onPressPost(item.postId)} />}
+    renderItem={({ item }) => <FeedPostCard post={item} />}
     ListHeaderComponent={headerComponent ?? null}
     ListEmptyComponent={
       isLoadingInitial ? (

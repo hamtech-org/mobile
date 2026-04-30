@@ -52,7 +52,6 @@ export default function NewsfeedScreen() {
           </View>
         }
         onEndReached={loadMore}
-        onPressPost={(postId) => router.push(`/(main)/(newsfeed)/${postId}`)}
       />
     </SafeAreaView>
   );
