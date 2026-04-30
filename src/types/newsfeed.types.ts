@@ -37,12 +37,19 @@ export interface IComment {
   content: string;
   parentId: string | null;
   reactionsCount: Record<string, number>;
+  author?: IAuthorInfo;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface IFeedPage {
   items: IPost[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
+export interface ICommentsPage {
+  items: IComment[];
   nextCursor: string | null;
   hasMore: boolean;
 }
