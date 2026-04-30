@@ -125,9 +125,9 @@ export const FeedPostCard = ({ post }: Props) => {
       ) : null}
 
       <View className="mt-3 flex-row items-center justify-between">
-        <View className="flex-row items-center gap-4">
+        <View className="flex-row items-center gap-2">
           <Pressable
-            className="flex-row items-center gap-1"
+            className="flex-row items-center gap-1.5 rounded-full px-3 py-1.5 transition-all hover:bg-muted/40 active:bg-muted/60"
             onPress={() => {
               void reactToPost({ postId: post.postId, type: "like" });
               setIsLiked((prev) => !prev);
@@ -135,17 +135,20 @@ export const FeedPostCard = ({ post }: Props) => {
           >
             <Ionicons
               name={isLiked ? "heart" : "heart-outline"}
-              size={16}
+              size={18}
               color={isLiked ? "#ef4444" : "#64748b"}
             />
             <Text className="text-sm font-bold text-foreground">{likes}</Text>
           </Pressable>
-          <Pressable className="flex-row items-center gap-1" onPress={toggleCommentPanel}>
-            <Ionicons name="chatbubble-outline" size={16} color="#64748b" />
+          <Pressable
+            className="flex-row items-center gap-1.5 rounded-full px-3 py-1.5 transition-all hover:bg-muted/40 active:bg-muted/60"
+            onPress={toggleCommentPanel}
+          >
+            <Ionicons name="chatbubble-outline" size={17} color="#64748b" />
             <Text className="text-sm font-bold text-foreground">{displayCommentsCount}</Text>
           </Pressable>
-          <Pressable className="flex-row items-center gap-1">
-            <Ionicons name="share-social-outline" size={16} color="#64748b" />
+          <Pressable className="flex-row items-center gap-1.5 rounded-full px-3 py-1.5 transition-all hover:bg-muted/40 active:bg-muted/60">
+            <Ionicons name="share-social-outline" size={18} color="#64748b" />
             <Text className="text-sm font-bold text-foreground">{post.sharesCount ?? 0}</Text>
           </Pressable>
         </View>
