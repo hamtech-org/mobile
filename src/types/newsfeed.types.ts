@@ -40,3 +40,9 @@ export interface IComment {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface IFeedPage {
+  items: IPost[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}

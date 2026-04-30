@@ -2,6 +2,7 @@ import { createApi } from "@reduxjs/toolkit/query/react";
 import { baseQueryWithReauth } from "@/store/api/baseQueryWithReauth";
 import type {
   IComment,
+  IFeedPage,
   IPost,
   PostPublicationStatus,
   PostVisibility,
@@ -33,15 +34,29 @@ export interface UpdatePostBody {
   mediaUrls?: string[];
 }
 
+export interface FeedQueryParams {
+  limit?: number;
+  cursor?: string | null;
+}
+
 export const newsfeedApi = createApi({
   reducerPath: "newsfeedApi",
   baseQuery: baseQueryWithReauth,
   tagTypes: ["Feed", "Posts", "PostDetail", "Comments"],
   endpoints: (builder) => ({
-    getFeed: builder.query<IPost[], void>({
-      query: () => "/newsfeed/feed",
-      transformResponse: (response: ApiEnvelope<IPost[]>) =>
-        Array.isArray(response?.data) ? response.data : [],
+    getFeed: builder.query<IFeedPage, FeedQueryParams | void>({
+      query: (params) => ({
+        url: "/newsfeed/feed",
+        params: {
+          limit: params?.limit,
+          cursor: params?.cursor ?? undefined,
+        },
+      }),
+      transformResponse: (response: ApiEnvelope<IFeedPage>) => ({
+        items: Array.isArray(response?.data?.items) ? response.data.items : [],
+        nextCursor: response?.data?.nextCursor ?? null,
+        hasMore: Boolean(response?.data?.hasMore),
+      }),
       providesTags: ["Feed"],
     }),
 
@@ -115,6 +130,7 @@ export const newsfeedApi = createApi({
 
 export const {
   useGetFeedQuery,
+  useLazyGetFeedQuery,
   useGetPostByIdQuery,
   useCreatePostMutation,
   useUpdatePostMutation,
