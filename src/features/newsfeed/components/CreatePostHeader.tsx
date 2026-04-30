@@ -9,7 +9,7 @@ interface Props {
 }
 
 export const CreatePostHeader = ({ name, avatar, initial, onPressCreate }: Props) => (
-  <View className="px-4 pb-2">
+  <View className="pb-2">
     <View className="rounded-3xl border border-border/40 bg-card px-3 py-3">
       <View className="flex-row items-center gap-3">
         <View className="size-10 items-center justify-center overflow-hidden rounded-full bg-muted/40">
@@ -19,8 +19,13 @@ export const CreatePostHeader = ({ name, avatar, initial, onPressCreate }: Props
             <Text className="text-sm font-bold text-muted-foreground">{initial}</Text>
           )}
         </View>
-        <Pressable onPress={onPressCreate} className="flex-1 rounded-full bg-muted/50 px-4 py-2.5">
-          <Text className="text-sm text-muted-foreground">{name} ơi, bạn đang nghĩ gì thế?</Text>
+        <Pressable
+          onPress={onPressCreate}
+          className="min-w-0 flex-1 rounded-full bg-muted/50 px-4 py-2.5"
+        >
+          <Text className="text-sm text-muted-foreground" numberOfLines={1} ellipsizeMode="tail">
+            {name} ơi, bạn đang nghĩ gì thế?
+          </Text>
         </Pressable>
         <Ionicons name="videocam" size={20} color="#e11d48" />
         <Ionicons name="image" size={20} color="#16a34a" />

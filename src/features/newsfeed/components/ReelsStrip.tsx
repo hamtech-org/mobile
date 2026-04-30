@@ -11,7 +11,7 @@ export const ReelsStrip = ({ reels }: Props) => (
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}
+      contentContainerStyle={{ gap: 10 }}
     >
       <Pressable className="w-[126px] overflow-hidden rounded-2xl bg-card">
         <View className="h-[160px] items-center justify-center bg-muted/70">
