@@ -1,6 +1,6 @@
 import { Image, Pressable, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
 import type { IPost } from "@/types/newsfeed.types";
 import type { RootState } from "@/store/store";
@@ -30,7 +30,9 @@ export const FeedPostCard = ({ post }: Props) => {
   const [hasMoreComments, setHasMoreComments] = useState(false);
   const [isLoadingComments, setIsLoadingComments] = useState(false);
   const [isLoadingMoreComments, setIsLoadingMoreComments] = useState(false);
-  const [isLiked, setIsLiked] = useState(false);
+  const [isLiked, setIsLiked] = useState(post.currentUserReaction === "like");
+  const initialLikes = Object.values(post.reactionsCount ?? {}).reduce((a, b) => a + b, 0);
+  const [displayLikesCount, setDisplayLikesCount] = useState(initialLikes);
   const [displayCommentsCount, setDisplayCommentsCount] = useState(post.commentsCount ?? 0);
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const commentAuthorName = currentUser?.displayName?.trim() || "Bạn";
@@ -39,6 +41,11 @@ export const FeedPostCard = ({ post }: Props) => {
   const [getCommentsPage] = useLazyGetCommentsQuery();
   const [addComment, { isLoading: isAddingComment }] = useAddCommentMutation();
   const [reactToPost] = useReactToPostMutation();
+
+  useEffect(() => {
+    setIsLiked(post.currentUserReaction === "like");
+    setDisplayLikesCount(Object.values(post.reactionsCount ?? {}).reduce((a, b) => a + b, 0));
+  }, [post]);
 
   const loadCommentPage = async (cursor?: string | null, append: boolean = false) => {
     if (append) {
@@ -130,7 +137,9 @@ export const FeedPostCard = ({ post }: Props) => {
             className="flex-row items-center gap-1.5 rounded-full px-3 py-1.5 transition-all hover:bg-muted/40 active:bg-muted/60"
             onPress={() => {
               void reactToPost({ postId: post.postId, type: "like" });
-              setIsLiked((prev) => !prev);
+              const nextLiked = !isLiked;
+              setIsLiked(nextLiked);
+              setDisplayLikesCount((count) => (nextLiked ? count + 1 : Math.max(0, count - 1)));
             }}
           >
             <Ionicons
@@ -138,7 +147,7 @@ export const FeedPostCard = ({ post }: Props) => {
               size={18}
               color={isLiked ? "#ef4444" : "#64748b"}
             />
-            <Text className="text-sm font-bold text-foreground">{likes}</Text>
+            <Text className="text-sm font-bold text-foreground">{displayLikesCount}</Text>
           </Pressable>
           <Pressable
             className="flex-row items-center gap-1.5 rounded-full px-3 py-1.5 transition-all hover:bg-muted/40 active:bg-muted/60"

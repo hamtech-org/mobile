@@ -26,6 +26,7 @@ export interface IPost {
   viewsCount: number;
   isModerated: boolean;
   moderationStatus: ModerationStatus;
+  currentUserReaction?: string | null;
   createdAt: string;
   updatedAt: string;
 }

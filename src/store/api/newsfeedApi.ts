@@ -202,7 +202,36 @@ export const newsfeedApi = createApi({
         body: { type },
       }),
       transformResponse: () => null,
-      invalidatesTags: ["Posts"],
+      async onQueryStarted({ postId, type }, { dispatch, queryFulfilled }) {
+        const feedPatch = dispatch(
+          newsfeedApi.util.updateQueryData("getFeed", undefined, (draft) => {
+            const post = draft.items.find((p) => p.postId === postId);
+            if (post) {
+              const oldType = post.currentUserReaction;
+              if (oldType === type) {
+                // Unlike
+                post.currentUserReaction = null;
+                if (post.reactionsCount[type] > 0) {
+                  post.reactionsCount[type] -= 1;
+                }
+              } else {
+                // Change reaction or new reaction
+                if (oldType && post.reactionsCount[oldType] > 0) {
+                  post.reactionsCount[oldType] -= 1;
+                }
+                post.currentUserReaction = type;
+                post.reactionsCount[type] = (post.reactionsCount[type] ?? 0) + 1;
+              }
+            }
+          }),
+        );
+        try {
+          await queryFulfilled;
+        } catch {
+          feedPatch.undo();
+        }
+      },
+      invalidatesTags: ["Feed", "Posts"],
     }),
   }),
 });
