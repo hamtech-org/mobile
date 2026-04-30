@@ -4,6 +4,7 @@ export interface AuthUser {
   userId: string;
   email: string;
   displayName: string;
+  avatar?: string | null;
 }
 
 interface AuthState {
