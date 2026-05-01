@@ -267,7 +267,28 @@ export default function NewPostEditorScreen() {
                   className="relative w-full overflow-hidden rounded-2xl"
                   style={{ aspectRatio: 4 / 3 }}
                 >
-                  {isVideoUrl(previewUris[0]) ? (
+                  {mediaItems[0]?.kind === "local" ? (
+                    mediaItems[0].assetType === "video" ? (
+                      <View className="relative h-full w-full">
+                        <Image
+                          source={{ uri: previewUris[0] }}
+                          className="h-full w-full"
+                          resizeMode="cover"
+                        />
+                        <View className="absolute inset-0 items-center justify-center">
+                          <View className="rounded-full bg-black/60 p-2">
+                            <Play size={20} color="#fff" />
+                          </View>
+                        </View>
+                      </View>
+                    ) : (
+                      <Image
+                        source={{ uri: previewUris[0] }}
+                        className="h-full w-full"
+                        resizeMode="cover"
+                      />
+                    )
+                  ) : isVideoUrl(previewUris[0]) ? (
                     <View className="relative h-full w-full">
                       <Image
                         source={{ uri: previewUris[0] }}
@@ -302,44 +323,49 @@ export default function NewPostEditorScreen() {
               ) : (
                 /* Grid gallery */
                 <View className="flex-row flex-wrap justify-between gap-y-2">
-                  {previewUris.slice(0, 4).map((uri, index) => (
-                    <View
-                      key={`preview-${index}`}
-                      className="relative overflow-hidden rounded-xl"
-                      style={{ width: "48.5%", aspectRatio: 1 }}
-                    >
-                      {isVideoUrl(uri) ? (
-                        <View className="relative h-full w-full">
-                          <Image source={{ uri }} className="h-full w-full" resizeMode="cover" />
-                          <View className="absolute inset-0 items-center justify-center">
-                            <View className="rounded-full bg-black/60 p-1.5">
-                              <Play size={14} color="#fff" />
+                  {mediaItems.slice(0, 4).map((item, index) => {
+                    const uri = item.kind === "local" ? item.localUri : item.url;
+                    const isVideo =
+                      item.kind === "local" ? item.assetType === "video" : isVideoUrl(uri);
+                    return (
+                      <View
+                        key={`preview-${index}`}
+                        className="relative overflow-hidden rounded-xl"
+                        style={{ width: "48.5%", aspectRatio: 1 }}
+                      >
+                        {isVideo ? (
+                          <View className="relative h-full w-full">
+                            <Image source={{ uri }} className="h-full w-full" resizeMode="cover" />
+                            <View className="absolute inset-0 items-center justify-center">
+                              <View className="rounded-full bg-black/60 p-1.5">
+                                <Play size={14} color="#fff" />
+                              </View>
                             </View>
                           </View>
-                        </View>
-                      ) : (
-                        <Image source={{ uri }} className="h-full w-full" resizeMode="cover" />
-                      )}
-                      {index === 3 && previewUris.length > 4 && (
-                        <View className="absolute inset-0 items-center justify-center bg-black/50">
-                          <Text className="text-xl font-bold text-white">
-                            +{previewUris.length - 4}
-                          </Text>
-                        </View>
-                      )}
-                      {mediaItems[index]?.kind === "local" && (
-                        <View className="absolute bottom-1 left-1 rounded bg-orange-500/90 px-1.5 py-0.5">
-                          <Text className="text-[8px] font-bold text-white">Chưa lưu</Text>
-                        </View>
-                      )}
-                      <Pressable
-                        className="absolute right-1 top-1 rounded-full bg-black/60 p-1.5"
-                        onPress={() => handleRemoveMedia(index)}
-                      >
-                        <X size={12} color="#fff" />
-                      </Pressable>
-                    </View>
-                  ))}
+                        ) : (
+                          <Image source={{ uri }} className="h-full w-full" resizeMode="cover" />
+                        )}
+                        {index === 3 && previewUris.length > 4 && (
+                          <View className="absolute inset-0 items-center justify-center bg-black/50">
+                            <Text className="text-xl font-bold text-white">
+                              +{previewUris.length - 4}
+                            </Text>
+                          </View>
+                        )}
+                        {mediaItems[index]?.kind === "local" && (
+                          <View className="absolute bottom-1 left-1 rounded bg-orange-500/90 px-1.5 py-0.5">
+                            <Text className="text-[8px] font-bold text-white">Chưa lưu</Text>
+                          </View>
+                        )}
+                        <Pressable
+                          className="absolute right-1 top-1 rounded-full bg-black/60 p-1.5"
+                          onPress={() => handleRemoveMedia(index)}
+                        >
+                          <X size={12} color="#fff" />
+                        </Pressable>
+                      </View>
+                    );
+                  })}
                 </View>
               )}
 
@@ -431,13 +457,26 @@ export default function NewPostEditorScreen() {
               <View className="flex-row flex-wrap justify-between gap-y-2">
                 {mediaItems.map((item, index) => {
                   const uri = item.kind === "local" ? item.localUri : item.url;
+                  const isVideo =
+                    item.kind === "local" ? item.assetType === "video" : isVideoUrl(uri);
                   return (
                     <View
                       key={`manage-${index}`}
                       className="relative overflow-hidden rounded-xl"
                       style={{ width: "48.5%", aspectRatio: 1 }}
                     >
-                      <Image source={{ uri }} className="h-full w-full" resizeMode="cover" />
+                      {isVideo ? (
+                        <View className="relative h-full w-full">
+                          <Image source={{ uri }} className="h-full w-full" resizeMode="cover" />
+                          <View className="absolute inset-0 items-center justify-center">
+                            <View className="rounded-full bg-black/60 p-2">
+                              <Play size={20} color="#fff" />
+                            </View>
+                          </View>
+                        </View>
+                      ) : (
+                        <Image source={{ uri }} className="h-full w-full" resizeMode="cover" />
+                      )}
                       <Pressable
                         onPress={() => handleRemoveMedia(index)}
                         className="absolute right-1.5 top-1.5 rounded-lg bg-red-600/80 p-1.5"
