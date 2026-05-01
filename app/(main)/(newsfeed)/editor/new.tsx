@@ -18,6 +18,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useCreatePostMutation } from "@/store/api/newsfeedApi";
 import { useUploadMediaMutation } from "@/store/api/mediaApi";
 import { prepareLocalFileForUpload } from "@/utils/uploadAttachment";
+import { Video, ResizeMode } from "expo-av";
 import type { PostPublicationStatus, PostVisibility } from "@/types/newsfeed.types";
 import TentapPostEditor from "@/components/newsfeed/TentapPostEditor";
 import { useSelector } from "react-redux";
@@ -32,7 +33,6 @@ import {
   Users,
   Lock,
   X,
-  Play,
   Pencil,
 } from "lucide-react-native";
 import { extractHashtags } from "@/utils/extractHashtags";
@@ -154,8 +154,8 @@ export default function NewPostEditorScreen() {
     };
 
     const res = await createPost(payload).unwrap();
-    if (res.data && status === "published") {
-      DeviceEventEmitter.emit("post:created", res.data);
+    if (res && status === "published") {
+      DeviceEventEmitter.emit("post:created", res);
     }
     router.replace("/(main)/(newsfeed)");
   };
@@ -269,17 +269,13 @@ export default function NewPostEditorScreen() {
                 >
                   {mediaItems[0]?.kind === "local" ? (
                     mediaItems[0].assetType === "video" ? (
-                      <View className="relative h-full w-full">
-                        <Image
+                      <View className="relative h-full w-full bg-black">
+                        <Video
                           source={{ uri: previewUris[0] }}
-                          className="h-full w-full"
-                          resizeMode="cover"
+                          style={{ width: "100%", height: "100%" }}
+                          useNativeControls
+                          resizeMode={ResizeMode.COVER}
                         />
-                        <View className="absolute inset-0 items-center justify-center">
-                          <View className="rounded-full bg-black/60 p-2">
-                            <Play size={20} color="#fff" />
-                          </View>
-                        </View>
                       </View>
                     ) : (
                       <Image
@@ -289,17 +285,13 @@ export default function NewPostEditorScreen() {
                       />
                     )
                   ) : isVideoUrl(previewUris[0]) ? (
-                    <View className="relative h-full w-full">
-                      <Image
+                    <View className="relative h-full w-full bg-black">
+                      <Video
                         source={{ uri: previewUris[0] }}
-                        className="h-full w-full"
-                        resizeMode="cover"
+                        style={{ width: "100%", height: "100%" }}
+                        useNativeControls
+                        resizeMode={ResizeMode.COVER}
                       />
-                      <View className="absolute inset-0 items-center justify-center">
-                        <View className="rounded-full bg-black/60 p-2">
-                          <Play size={20} color="#fff" />
-                        </View>
-                      </View>
                     </View>
                   ) : (
                     <Image
@@ -334,13 +326,13 @@ export default function NewPostEditorScreen() {
                         style={{ width: "48.5%", aspectRatio: 1 }}
                       >
                         {isVideo ? (
-                          <View className="relative h-full w-full">
-                            <Image source={{ uri }} className="h-full w-full" resizeMode="cover" />
-                            <View className="absolute inset-0 items-center justify-center">
-                              <View className="rounded-full bg-black/60 p-1.5">
-                                <Play size={14} color="#fff" />
-                              </View>
-                            </View>
+                          <View className="relative h-full w-full bg-black">
+                            <Video
+                              source={{ uri }}
+                              style={{ width: "100%", height: "100%" }}
+                              useNativeControls
+                              resizeMode={ResizeMode.COVER}
+                            />
                           </View>
                         ) : (
                           <Image source={{ uri }} className="h-full w-full" resizeMode="cover" />
@@ -466,13 +458,13 @@ export default function NewPostEditorScreen() {
                       style={{ width: "48.5%", aspectRatio: 1 }}
                     >
                       {isVideo ? (
-                        <View className="relative h-full w-full">
-                          <Image source={{ uri }} className="h-full w-full" resizeMode="cover" />
-                          <View className="absolute inset-0 items-center justify-center">
-                            <View className="rounded-full bg-black/60 p-2">
-                              <Play size={20} color="#fff" />
-                            </View>
-                          </View>
+                        <View className="relative h-full w-full bg-black">
+                          <Video
+                            source={{ uri }}
+                            style={{ width: "100%", height: "100%" }}
+                            useNativeControls
+                            resizeMode={ResizeMode.COVER}
+                          />
                         </View>
                       ) : (
                         <Image source={{ uri }} className="h-full w-full" resizeMode="cover" />
