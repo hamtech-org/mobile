@@ -12,6 +12,7 @@ export interface MediaUploadResult {
   url: string;
   thumbnailUrl: string | null;
   type: MediaUploadType;
+  scope: string;
   size: number;
   mimeType: string;
 }
@@ -47,9 +48,10 @@ export const mediaApi = createApi({
       {
         file: { uri: string; name: string; type: string };
         mediaType: MediaUploadType;
+        deliveryScope?: string;
       }
     >({
-      async queryFn({ file, mediaType }, api) {
+      async queryFn({ file, mediaType, deliveryScope = "chat" }, api) {
         type AuthRef = { auth?: { accessToken?: string | null } };
         const base = env.apiBaseUrl.replace(/\/$/, "");
         const url = `${base}/media/upload`;
@@ -63,7 +65,7 @@ export const mediaApi = createApi({
             uploadType: FileSystemUploadType.MULTIPART,
             fieldName: "file",
             mimeType,
-            parameters: { mediaType },
+            parameters: { mediaType, deliveryScope },
             headers: bearer ? { Authorization: `Bearer ${bearer}` } : {},
           });
 

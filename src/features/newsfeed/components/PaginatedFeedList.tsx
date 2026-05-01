@@ -26,7 +26,7 @@ export const PaginatedFeedList = ({
     ListHeaderComponent={headerComponent ?? null}
     ListEmptyComponent={
       isLoadingInitial ? (
-        <View className="gap-3 px-4 py-3">
+        <View className="gap-3 py-3">
           {Array.from({ length: 2 }).map((_, index) => (
             <View
               key={`post-skeleton-${index}`}
@@ -53,7 +53,7 @@ export const PaginatedFeedList = ({
     onEndReached={onEndReached}
     ListFooterComponent={
       isFetchingNext ? (
-        <View className="px-4 py-3">
+        <View className="py-3">
           <View className="rounded-2xl border border-border/40 bg-card p-4">
             <View className="mb-3 flex-row items-center gap-3">
               <View className="size-9 rounded-full bg-muted/70" />

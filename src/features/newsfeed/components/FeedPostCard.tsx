@@ -5,6 +5,8 @@ import { useSelector } from "react-redux";
 import type { IPost } from "@/types/newsfeed.types";
 import type { RootState } from "@/store/store";
 import { extractTextFromTiptapJson } from "@/utils/tiptapText";
+import { HashtagText } from "./HashtagText";
+import { MediaGallery } from "./MediaGallery";
 import {
   useAddCommentMutation,
   useLazyGetCommentsQuery,
@@ -18,6 +20,8 @@ interface Props {
 }
 
 export const FeedPostCard = ({ post }: Props) => {
+  // Cache extracted text to avoid parsing JSON twice
+  const extractedText = extractTextFromTiptapJson(post.content);
   const postImage = post.mediaUrls?.[0] ?? null;
   const likes = Object.values(post.reactionsCount ?? {}).reduce((a, b) => a + b, 0);
   const displayName = post.author?.displayName ?? post.authorId;
@@ -91,8 +95,10 @@ export const FeedPostCard = ({ post }: Props) => {
     if (!content) return;
     try {
       const created = await addComment({ postId: post.postId, content }).unwrap();
-      setComments((prev) => [...prev, created]);
-      setDisplayCommentsCount((prev) => prev + 1);
+      if (created.data) {
+        setComments((prev) => [...prev, created.data]);
+        setDisplayCommentsCount((prev) => prev + 1);
+      }
       setCommentText("");
     } catch {
       // no-op
@@ -119,17 +125,11 @@ export const FeedPostCard = ({ post }: Props) => {
         </View>
         <View />
       </View>
+      <View className="mt-3">
+        <HashtagText text={extractedText.slice(0, 180) + (extractedText.length > 180 ? "…" : "")} />
+      </View>
 
-      <Text className="mt-3 text-sm text-foreground/90">
-        {extractTextFromTiptapJson(post.content).slice(0, 180)}
-        {extractTextFromTiptapJson(post.content).length > 180 ? "…" : ""}
-      </Text>
-
-      {postImage ? (
-        <View className="mt-3 overflow-hidden rounded-2xl">
-          <Image source={{ uri: postImage }} className="h-52 w-full" resizeMode="cover" />
-        </View>
-      ) : null}
+      <MediaGallery mediaUrls={post.mediaUrls} />
 
       <View className="mt-3 flex-row items-center justify-between">
         <View className="flex-row items-center gap-2">
@@ -177,7 +177,9 @@ export const FeedPostCard = ({ post }: Props) => {
               </View>
             </View>
           ) : comments.length === 0 ? (
-            <Text className="text-xs text-muted-foreground">Chưa có bình luận nào.</Text>
+            <Text className="py-2 text-center text-xs text-muted-foreground">
+              Chưa có bình luận nào.
+            </Text>
           ) : (
             <View className="gap-2">
               {comments.map((comment) => (
@@ -202,7 +204,7 @@ export const FeedPostCard = ({ post }: Props) => {
                       <Text className="text-xs font-semibold text-foreground/80">
                         {comment.author?.displayName ?? comment.authorId}
                       </Text>
-                      <Text className="text-sm text-foreground">{comment.content}</Text>
+                      <HashtagText text={comment.content} />
                     </View>
                     <View className="mt-1 flex-row items-center gap-3 px-1">
                       <Text className="text-[11px] text-muted-foreground">
