@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DeviceEventEmitter } from "react-native";
 import { useLazyGetFeedQuery } from "@/store/api/newsfeedApi";
 import type { IPost } from "@/types/newsfeed.types";
 import { FEED_PAGE_SIZE } from "@/features/newsfeed/constants/newsfeed.constants";
@@ -56,9 +57,33 @@ export const useNewsfeedPagination = () => {
   );
 
   useEffect(() => {
-    if (didBootstrapFeedRef.current) return;
-    didBootstrapFeedRef.current = true;
-    void fetchFeedPage(null, true);
+    if (!didBootstrapFeedRef.current) {
+      didBootstrapFeedRef.current = true;
+      void fetchFeedPage(null, true);
+    }
+
+    const createSubscription = DeviceEventEmitter.addListener("post:created", (newPost: IPost) => {
+      setPosts((prev) => [newPost, ...prev]);
+    });
+
+    const deleteSubscription = DeviceEventEmitter.addListener("post:deleted", (postId: string) => {
+      setPosts((prev) => prev.filter((p) => p.postId !== postId));
+    });
+
+    const updateSubscription = DeviceEventEmitter.addListener(
+      "post:updated",
+      (updatedPost: Partial<IPost>) => {
+        setPosts((prev) =>
+          prev.map((p) => (p.postId === updatedPost.postId ? { ...p, ...updatedPost } : p)),
+        );
+      },
+    );
+
+    return () => {
+      createSubscription.remove();
+      deleteSubscription.remove();
+      updateSubscription.remove();
+    };
   }, [fetchFeedPage]);
 
   const loadMore = useCallback(() => {

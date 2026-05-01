@@ -29,7 +29,7 @@ export const extractTextFromTiptapJson = (content: string): string => {
       .join("")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
-    return extracted ? extracted : content;
+    return extracted;
   } catch {
     return content;
   }
