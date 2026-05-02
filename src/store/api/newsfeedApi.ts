@@ -103,6 +103,20 @@ export const newsfeedApi = createApi({
         method: "DELETE",
       }),
       transformResponse: () => null,
+      async onQueryStarted(postId, { dispatch, queryFulfilled }) {
+        const feedPatch = dispatch(
+          newsfeedApi.util.updateQueryData("getFeed", undefined, (draft) => {
+            if (draft?.items) {
+              draft.items = draft.items.filter((p) => p.postId !== postId);
+            }
+          }),
+        );
+        try {
+          await queryFulfilled;
+        } catch {
+          feedPatch.undo();
+        }
+      },
       invalidatesTags: (_res, _err, postId) => ["Feed", { type: "PostDetail", id: postId }],
     }),
 

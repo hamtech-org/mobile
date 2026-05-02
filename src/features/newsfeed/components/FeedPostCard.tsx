@@ -1,5 +1,6 @@
-import { Image, Pressable, Text, TextInput, View } from "react-native";
+import { Image, Pressable, Text, TextInput, View, Modal, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
 import type { IPost } from "@/types/newsfeed.types";
@@ -11,6 +12,7 @@ import {
   useAddCommentMutation,
   useLazyGetCommentsQuery,
   useReactToPostMutation,
+  useDeletePostMutation,
 } from "@/store/api/newsfeedApi";
 import type { IComment } from "@/types/newsfeed.types";
 import { formatRelativeTime } from "@/utils/time";
@@ -39,12 +41,17 @@ export const FeedPostCard = ({ post }: Props) => {
   const [displayLikesCount, setDisplayLikesCount] = useState(initialLikes);
   const [displayCommentsCount, setDisplayCommentsCount] = useState(post.commentsCount ?? 0);
   const currentUser = useSelector((state: RootState) => state.auth.user);
+  const isOwner = currentUser?.userId === post.authorId;
   const commentAuthorName = currentUser?.displayName?.trim() || "Bạn";
   const commentAuthorAvatar = currentUser?.avatar || "";
   const commentAuthorInitial = commentAuthorName.charAt(0).toUpperCase() || "U";
   const [getCommentsPage] = useLazyGetCommentsQuery();
   const [addComment, { isLoading: isAddingComment }] = useAddCommentMutation();
   const [reactToPost] = useReactToPostMutation();
+  const [deletePost, { isLoading: isDeleting }] = useDeletePostMutation();
+
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     setIsLiked(post.currentUserReaction === "like");
@@ -105,6 +112,24 @@ export const FeedPostCard = ({ post }: Props) => {
     }
   };
 
+  const handleDeletePost = () => {
+    setIsMenuOpen(false);
+    Alert.alert("Xóa bài viết?", "Bài viết này sẽ bị xóa vĩnh viễn. Bạn không thể hoàn tác.", [
+      { text: "Hủy", style: "cancel" },
+      {
+        text: "Xóa",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deletePost(post.postId).unwrap();
+          } catch {
+            // Error handled by middleware
+          }
+        },
+      },
+    ]);
+  };
+
   return (
     <View className="mb-4 rounded-3xl border border-border/40 bg-card p-4">
       <View className="flex-row items-start justify-between gap-3">
@@ -123,7 +148,12 @@ export const FeedPostCard = ({ post }: Props) => {
             </Text>
           </View>
         </View>
-        <View />
+        <Pressable
+          onPress={() => setIsMenuOpen(true)}
+          className="-mr-2 rounded-full p-2 active:bg-muted/40"
+        >
+          <Ionicons name="ellipsis-horizontal" size={20} color="#64748b" />
+        </Pressable>
       </View>
       <View className="mt-3">
         <HashtagText text={extractedText.slice(0, 180) + (extractedText.length > 180 ? "…" : "")} />
@@ -289,6 +319,61 @@ export const FeedPostCard = ({ post }: Props) => {
           </View>
         </View>
       ) : null}
+
+      {/* Menu Modal */}
+      <Modal visible={isMenuOpen} transparent animationType="fade">
+        <Pressable
+          className="flex-1 items-center justify-center bg-black/20"
+          onPress={() => setIsMenuOpen(false)}
+        >
+          <Pressable
+            className="w-4/5 overflow-hidden rounded-2xl border border-border/40 bg-background shadow-lg"
+            onPress={(e) => e.stopPropagation()}
+          >
+            {isOwner ? (
+              <>
+                <Pressable
+                  className="flex-row items-center gap-3 border-b border-border/40 px-5 py-4 active:bg-muted"
+                  onPress={() => {
+                    setIsMenuOpen(false);
+                    router.push(`/(main)/(newsfeed)/editor/${post.postId}`);
+                  }}
+                >
+                  <Ionicons name="pencil" size={20} color="hsl(var(--foreground))" />
+                  <Text className="text-base font-medium text-foreground">Chỉnh sửa bài viết</Text>
+                </Pressable>
+                <Pressable
+                  className="flex-row items-center gap-3 px-5 py-4 active:bg-muted"
+                  onPress={handleDeletePost}
+                  disabled={isDeleting}
+                >
+                  <Ionicons name="trash" size={20} color="#ef4444" />
+                  <Text className="text-base font-medium text-red-500">
+                    {isDeleting ? "Đang xóa..." : "Xóa bài viết"}
+                  </Text>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <Pressable
+                  className="flex-row items-center gap-3 border-b border-border/40 px-5 py-4 active:bg-muted"
+                  onPress={() => setIsMenuOpen(false)}
+                >
+                  <Ionicons name="flag" size={20} color="hsl(var(--muted-foreground))" />
+                  <Text className="text-base font-medium text-muted-foreground">Báo cáo</Text>
+                </Pressable>
+                <Pressable
+                  className="flex-row items-center gap-3 px-5 py-4 active:bg-muted"
+                  onPress={() => setIsMenuOpen(false)}
+                >
+                  <Ionicons name="eye-off" size={20} color="hsl(var(--muted-foreground))" />
+                  <Text className="text-base font-medium text-muted-foreground">Ẩn bài viết</Text>
+                </Pressable>
+              </>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 };
