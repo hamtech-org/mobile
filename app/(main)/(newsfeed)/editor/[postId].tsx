@@ -18,6 +18,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useGetPostByIdQuery, useUpdatePostMutation } from "@/store/api/newsfeedApi";
 import { useUploadMediaMutation } from "@/store/api/mediaApi";
 import { prepareLocalFileForUpload } from "@/utils/uploadAttachment";
+import { useVideoPlayer, VideoView } from "expo-video";
 import type { PostPublicationStatus, PostVisibility } from "@/types/newsfeed.types";
 import TentapPostEditor from "@/components/newsfeed/TentapPostEditor";
 import { useSelector } from "react-redux";
@@ -53,6 +54,19 @@ type MobileMediaItem =
 /** Determines whether a URL/URI is likely a video */
 const isVideoUrl = (url: string): boolean =>
   /\.(mp4|webm|mov|avi|mkv)/i.test(url) || url.includes("video");
+
+const VideoPreviewPlayer = ({ url }: { url: string }) => {
+  const player = useVideoPlayer(url);
+  return (
+    <VideoView
+      style={{ width: "100%", height: "100%" }}
+      player={player}
+      allowsFullscreen
+      nativeControls
+      contentFit="cover"
+    />
+  );
+};
 
 export default function EditPostEditorScreen() {
   const router = useRouter();
@@ -262,17 +276,8 @@ export default function EditPostEditorScreen() {
                 >
                   {mediaItems[0]?.kind === "local" ? (
                     mediaItems[0].assetType === "video" ? (
-                      <View className="relative h-full w-full">
-                        <Image
-                          source={{ uri: previewUris[0] }}
-                          className="h-full w-full"
-                          resizeMode="cover"
-                        />
-                        <View className="absolute inset-0 items-center justify-center">
-                          <View className="rounded-full bg-black/60 p-2">
-                            <Play size={20} color="#fff" />
-                          </View>
-                        </View>
+                      <View className="relative h-full w-full bg-black">
+                        <VideoPreviewPlayer url={previewUris[0]} />
                       </View>
                     ) : (
                       <Image
@@ -282,17 +287,8 @@ export default function EditPostEditorScreen() {
                       />
                     )
                   ) : isVideoUrl(previewUris[0]) ? (
-                    <View className="relative h-full w-full">
-                      <Image
-                        source={{ uri: previewUris[0] }}
-                        className="h-full w-full"
-                        resizeMode="cover"
-                      />
-                      <View className="absolute inset-0 items-center justify-center">
-                        <View className="rounded-full bg-black/60 p-2">
-                          <Play size={20} color="#fff" />
-                        </View>
-                      </View>
+                    <View className="relative h-full w-full bg-black">
+                      <VideoPreviewPlayer url={previewUris[0]} />
                     </View>
                   ) : (
                     <Image
@@ -326,13 +322,8 @@ export default function EditPostEditorScreen() {
                         style={{ width: "48.5%", aspectRatio: 1 }}
                       >
                         {isVideo ? (
-                          <View className="relative h-full w-full">
-                            <Image source={{ uri }} className="h-full w-full" resizeMode="cover" />
-                            <View className="absolute inset-0 items-center justify-center">
-                              <View className="rounded-full bg-black/60 p-1.5">
-                                <Play size={14} color="#fff" />
-                              </View>
-                            </View>
+                          <View className="relative h-full w-full bg-black">
+                            <VideoPreviewPlayer url={uri} />
                           </View>
                         ) : (
                           <Image source={{ uri }} className="h-full w-full" resizeMode="cover" />
@@ -457,13 +448,8 @@ export default function EditPostEditorScreen() {
                       style={{ width: "48.5%", aspectRatio: 1 }}
                     >
                       {isVideo ? (
-                        <View className="relative h-full w-full">
-                          <Image source={{ uri }} className="h-full w-full" resizeMode="cover" />
-                          <View className="absolute inset-0 items-center justify-center">
-                            <View className="rounded-full bg-black/60 p-2">
-                              <Play size={20} color="#fff" />
-                            </View>
-                          </View>
+                        <View className="relative h-full w-full bg-black">
+                          <VideoPreviewPlayer url={uri} />
                         </View>
                       ) : (
                         <Image source={{ uri }} className="h-full w-full" resizeMode="cover" />

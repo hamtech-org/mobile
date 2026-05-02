@@ -18,7 +18,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useCreatePostMutation } from "@/store/api/newsfeedApi";
 import { useUploadMediaMutation } from "@/store/api/mediaApi";
 import { prepareLocalFileForUpload } from "@/utils/uploadAttachment";
-import { Video, ResizeMode } from "expo-av";
+import { useVideoPlayer, VideoView } from "expo-video";
 import type { PostPublicationStatus, PostVisibility } from "@/types/newsfeed.types";
 import TentapPostEditor from "@/components/newsfeed/TentapPostEditor";
 import { useSelector } from "react-redux";
@@ -53,6 +53,19 @@ type MobileMediaItem =
 /** Determines whether a URL/URI is likely a video */
 const isVideoUrl = (url: string): boolean =>
   /\.(mp4|webm|mov|avi|mkv)/i.test(url) || url.includes("video");
+
+const VideoPreviewPlayer = ({ url }: { url: string }) => {
+  const player = useVideoPlayer(url);
+  return (
+    <VideoView
+      style={{ width: "100%", height: "100%" }}
+      player={player}
+      allowsFullscreen
+      nativeControls
+      contentFit="cover"
+    />
+  );
+};
 
 export default function NewPostEditorScreen() {
   const router = useRouter();
@@ -270,12 +283,7 @@ export default function NewPostEditorScreen() {
                   {mediaItems[0]?.kind === "local" ? (
                     mediaItems[0].assetType === "video" ? (
                       <View className="relative h-full w-full bg-black">
-                        <Video
-                          source={{ uri: previewUris[0] }}
-                          style={{ width: "100%", height: "100%" }}
-                          useNativeControls
-                          resizeMode={ResizeMode.COVER}
-                        />
+                        <VideoPreviewPlayer url={previewUris[0]} />
                       </View>
                     ) : (
                       <Image
@@ -286,12 +294,7 @@ export default function NewPostEditorScreen() {
                     )
                   ) : isVideoUrl(previewUris[0]) ? (
                     <View className="relative h-full w-full bg-black">
-                      <Video
-                        source={{ uri: previewUris[0] }}
-                        style={{ width: "100%", height: "100%" }}
-                        useNativeControls
-                        resizeMode={ResizeMode.COVER}
-                      />
+                      <VideoPreviewPlayer url={previewUris[0]} />
                     </View>
                   ) : (
                     <Image
@@ -327,12 +330,7 @@ export default function NewPostEditorScreen() {
                       >
                         {isVideo ? (
                           <View className="relative h-full w-full bg-black">
-                            <Video
-                              source={{ uri }}
-                              style={{ width: "100%", height: "100%" }}
-                              useNativeControls
-                              resizeMode={ResizeMode.COVER}
-                            />
+                            <VideoPreviewPlayer url={uri} />
                           </View>
                         ) : (
                           <Image source={{ uri }} className="h-full w-full" resizeMode="cover" />
@@ -459,12 +457,7 @@ export default function NewPostEditorScreen() {
                     >
                       {isVideo ? (
                         <View className="relative h-full w-full bg-black">
-                          <Video
-                            source={{ uri }}
-                            style={{ width: "100%", height: "100%" }}
-                            useNativeControls
-                            resizeMode={ResizeMode.COVER}
-                          />
+                          <VideoPreviewPlayer url={uri} />
                         </View>
                       ) : (
                         <Image source={{ uri }} className="h-full w-full" resizeMode="cover" />

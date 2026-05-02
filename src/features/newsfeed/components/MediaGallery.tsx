@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import ImageViewing from "react-native-image-viewing";
-import { Pressable, View, Image, Text } from "react-native";
+import { Pressable, View, Image, Text, Modal } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { useVideoPlayer, VideoView } from "expo-video";
 
 interface Props {
   mediaUrls: string[];
@@ -9,21 +11,68 @@ interface Props {
 
 const isVideoUrl = (url: string) => /\.(mp4|webm|ogg|mov)(\?.*)?$/i.test(url);
 
+const VideoLightboxPlayer = ({ url }: { url: string }) => {
+  const player = useVideoPlayer(url, (p) => {
+    p.loop = true;
+    p.play();
+  });
+
+  return (
+    <VideoView
+      style={{ width: "100%", height: "100%" }}
+      player={player}
+      allowsFullscreen
+      allowsPictureInPicture
+    />
+  );
+};
+
+const VideoThumbnail = ({ url }: { url: string }) => {
+  const player = useVideoPlayer(url, (p) => {
+    p.muted = true;
+    p.pause();
+  });
+
+  return (
+    <VideoView
+      style={{ width: "100%", height: "100%" }}
+      player={player}
+      contentFit="cover"
+      nativeControls={false}
+    />
+  );
+};
+
 interface MediaItemProps {
   url: string;
   onPress: () => void;
   overlay?: React.ReactNode;
 }
 
-const MediaItem = ({ url, onPress, overlay }: MediaItemProps) => (
-  <Pressable onPress={onPress} className="h-full w-full">
-    <Image source={{ uri: url }} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
-    {overlay}
-  </Pressable>
-);
+const MediaItem = ({ url, onPress, overlay }: MediaItemProps) => {
+  const isVideo = isVideoUrl(url);
+  return (
+    <Pressable onPress={onPress} className="h-full w-full">
+      {isVideo ? (
+        <VideoThumbnail url={url} />
+      ) : (
+        <Image source={{ uri: url }} style={{ width: "100%", height: "100%" }} resizeMode="cover" />
+      )}
+      {isVideo && (
+        <View className="absolute inset-0 items-center justify-center">
+          <View className="items-center justify-center rounded-full bg-black/60 p-2 pb-2 pl-3 pr-2 pt-2">
+            <Ionicons name="play" size={24} color="white" style={{ marginLeft: 3 }} />
+          </View>
+        </View>
+      )}
+      {overlay}
+    </Pressable>
+  );
+};
 
 export const MediaGallery: React.FC<Props> = ({ mediaUrls }) => {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [videoLightboxUrl, setVideoLightboxUrl] = useState<string | null>(null);
 
   if (!mediaUrls || mediaUrls.length === 0) return null;
 
@@ -31,8 +80,9 @@ export const MediaGallery: React.FC<Props> = ({ mediaUrls }) => {
   const imageUrls = mediaUrls.filter((url) => !isVideoUrl(url)).map((url) => ({ uri: url }));
 
   const openLightbox = (index: number) => {
-    // Only open for images
-    if (!isVideoUrl(mediaUrls[index])) {
+    if (isVideoUrl(mediaUrls[index])) {
+      setVideoLightboxUrl(mediaUrls[index]);
+    } else {
       // map to image-only index
       const imgIndex = mediaUrls.slice(0, index + 1).filter((u) => !isVideoUrl(u)).length - 1;
       setLightboxIndex(imgIndex >= 0 ? imgIndex : 0);
@@ -127,6 +177,24 @@ export const MediaGallery: React.FC<Props> = ({ mediaUrls }) => {
           doubleTapToZoomEnabled
         />
       )}
+
+      {/* Video Lightbox */}
+      <Modal
+        visible={videoLightboxUrl !== null}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setVideoLightboxUrl(null)}
+      >
+        <View className="flex-1 items-center justify-center bg-black">
+          <Pressable
+            className="absolute right-4 top-12 z-10 rounded-full bg-black/40 p-2"
+            onPress={() => setVideoLightboxUrl(null)}
+          >
+            <Ionicons name="close" size={24} color="white" />
+          </Pressable>
+          {videoLightboxUrl && <VideoLightboxPlayer url={videoLightboxUrl} />}
+        </View>
+      </Modal>
     </>
   );
 };
