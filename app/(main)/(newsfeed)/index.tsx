@@ -1,5 +1,5 @@
-import React from "react";
-import { Text, View } from "react-native";
+import React, { useState } from "react";
+import { Text, View, Modal, Pressable } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SearchBar } from "@/components/common/SearchBar";
@@ -15,6 +15,7 @@ import { PaginatedFeedList } from "@/features/newsfeed/components/PaginatedFeedL
 export default function NewsfeedScreen() {
   const router = useRouter();
   const { posts, hasMore, isLoadingInitial, isFetchingNext, loadMore } = useNewsfeedPagination();
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const { query, setQuery, filteredPosts } = useNewsfeedSearch(posts);
   const { createPostName, createPostAvatar, createPostInitial } = useCreatePostHeader();
 
@@ -24,16 +25,17 @@ export default function NewsfeedScreen() {
         title="Bảng tin"
         rightActions={[
           {
+            icon: "search-outline",
+            accessibilityLabel: "Tìm kiếm",
+            onPress: () => setIsSearchOpen(true),
+          },
+          {
             icon: "add-circle-outline",
             accessibilityLabel: "Tạo bài viết",
             onPress: () => router.push("/(main)/(newsfeed)/editor/new"),
           },
         ]}
       />
-
-      <View className="px-4 pb-2 pt-3">
-        <SearchBar value={query} onChangeText={setQuery} placeholder="Tìm bài viết, hashtag..." />
-      </View>
 
       <PaginatedFeedList
         posts={filteredPosts}
@@ -53,6 +55,33 @@ export default function NewsfeedScreen() {
         }
         onEndReached={loadMore}
       />
+
+      <Modal visible={isSearchOpen} animationType="fade" transparent>
+        <View className="flex-1 bg-black/20">
+          <SafeAreaView className="bg-background" edges={["top"]}>
+            <View className="flex-row items-center gap-3 border-b border-border/40 px-4 py-3 shadow-sm">
+              <View className="flex-1">
+                <SearchBar
+                  value={query}
+                  onChangeText={setQuery}
+                  placeholder="Tìm bài viết, hashtag..."
+                  autoFocus
+                />
+              </View>
+              <Pressable
+                onPress={() => {
+                  setIsSearchOpen(false);
+                  setQuery("");
+                }}
+                className="py-2"
+              >
+                <Text className="text-base font-medium text-blue-600">Hủy</Text>
+              </Pressable>
+            </View>
+          </SafeAreaView>
+          <Pressable className="flex-1" onPress={() => setIsSearchOpen(false)} />
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
