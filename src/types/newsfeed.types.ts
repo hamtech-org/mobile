@@ -1,3 +1,5 @@
+import type { ReactionType } from "./reaction.types";
+
 export type PostType = "text" | "image" | "video" | "link";
 export type PostVisibility = "public" | "friends" | "private";
 export type PostPublicationStatus = "draft" | "published";
@@ -20,13 +22,13 @@ export interface IPost {
   categories: string[];
   tags: string[];
   author?: IAuthorInfo;
-  reactionsCount: Record<string, number>;
+  reactionsCount: Partial<Record<ReactionType, number>>;
   commentsCount: number;
   sharesCount: number;
   viewsCount: number;
   isModerated: boolean;
   moderationStatus: ModerationStatus;
-  currentUserReaction?: string | null;
+  currentUserReaction?: ReactionType | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -37,7 +39,8 @@ export interface IComment {
   authorId: string;
   content: string;
   parentId: string | null;
-  reactionsCount: Record<string, number>;
+  reactionsCount: Partial<Record<ReactionType, number>>;
+  currentUserReaction?: ReactionType | null;
   author?: IAuthorInfo;
   createdAt: string;
   updatedAt: string;
