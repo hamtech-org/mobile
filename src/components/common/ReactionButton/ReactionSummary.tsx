@@ -1,5 +1,6 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
+import LottieView from "lottie-react-native";
 import { IReactionSummary, REACTION_META } from "@/types/reaction.types";
 
 interface ReactionSummaryProps {
@@ -10,36 +11,53 @@ interface ReactionSummaryProps {
 export const ReactionSummary: React.FC<ReactionSummaryProps> = ({ summary, size = "md" }) => {
   if (!summary) return null;
 
-  let topEmojis: string[] = [];
   let total = 0;
+  let topLotties: object[];
 
   if ("counts" in summary && "total" in summary && "topReactions" in summary) {
     total = summary.total as number;
-    topEmojis = (summary.topReactions as string[])
-      .map((t) => REACTION_META[t as keyof typeof REACTION_META]?.emoji)
+    topLotties = (summary.topReactions as string[])
+      .map((t) => REACTION_META[t as keyof typeof REACTION_META]?.lottie)
       .filter(Boolean);
   } else {
     const counts = summary as Record<string, number>;
     total = Object.values(counts).reduce((a, b) => a + (b || 0), 0);
-    topEmojis = Object.entries(counts)
+    topLotties = Object.entries(counts)
       .filter(([, v]) => (v || 0) > 0)
       .sort(([, a], [, b]) => b - a)
       .slice(0, 3)
-      .map(([k]) => REACTION_META[k as keyof typeof REACTION_META]?.emoji)
+      .map(([k]) => REACTION_META[k as keyof typeof REACTION_META]?.lottie)
       .filter(Boolean);
   }
 
   if (total === 0) return null;
 
+  const bgSize = size === "sm" ? 18 : size === "lg" ? 28 : 24;
+  const lottieSize = size === "sm" ? 18 : size === "lg" ? 28 : 24;
+  const spacing = size === "sm" ? -4 : -8;
+
   return (
-    <View style={[styles.container, size === "sm" && styles.containerSm]}>
+    <View style={styles.container}>
       <View style={styles.emojis}>
-        {topEmojis.map((emoji, idx) => (
+        {topLotties.map((lottie, idx) => (
           <View
             key={idx}
-            style={[styles.emojiBg, { zIndex: 10 - idx }, size === "sm" && styles.emojiBgSm]}
+            style={[
+              styles.emojiBg,
+              {
+                zIndex: 10 - idx,
+                width: bgSize,
+                height: bgSize,
+                marginLeft: idx === 0 ? 0 : spacing,
+              },
+            ]}
           >
-            <Text style={[styles.emojiText, size === "sm" && styles.emojiTextSm]}>{emoji}</Text>
+            <LottieView
+              source={lottie}
+              autoPlay={true}
+              loop={false}
+              style={{ width: lottieSize, height: lottieSize }}
+            />
           </View>
         ))}
       </View>
@@ -53,36 +71,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "transparent", // Đảm bảo luôn trong suốt
-  },
-  containerSm: {
-    backgroundColor: "transparent",
   },
   emojis: {
     flexDirection: "row",
-    backgroundColor: "transparent",
+    alignItems: "center",
   },
   emojiBg: {
-    width: 24,
-    height: 24,
     alignItems: "center",
     justifyContent: "center",
-    marginLeft: -8,
     backgroundColor: "transparent",
-    borderWidth: 0, // Xóa bỏ hoàn toàn border
-    elevation: 0, // Xóa bóng trên Android
-    shadowOpacity: 0, // Xóa bóng trên iOS
-  },
-  emojiBgSm: {
-    width: 18,
-    height: 18,
-    marginLeft: -4,
-  },
-  emojiText: {
-    fontSize: 12,
-  },
-  emojiTextSm: {
-    fontSize: 10,
   },
   totalText: {
     fontSize: 13,
