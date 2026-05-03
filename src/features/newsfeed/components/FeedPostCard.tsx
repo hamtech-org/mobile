@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
 import type { IPost } from "@/types/newsfeed.types";
 import type { RootState } from "@/store/store";
+import type { ReactionType } from "@/types/reaction.types";
 import { extractTextFromTiptapJson } from "@/utils/tiptapText";
 import { HashtagText } from "./HashtagText";
 import { MediaGallery } from "./MediaGallery";
@@ -12,23 +13,36 @@ import {
   useAddCommentMutation,
   useLazyGetCommentsQuery,
   useReactToPostMutation,
+  useReactToCommentMutation,
   useDeletePostMutation,
 } from "@/store/api/newsfeedApi";
 import type { IComment } from "@/types/newsfeed.types";
 import { formatRelativeTime } from "@/utils/time";
+import { ReactionButton } from "@/components/common/ReactionButton";
+import { ReactionSummary } from "@/components/common/ReactionButton/ReactionSummary";
 
 interface Props {
   post: IPost;
 }
 
 export const FeedPostCard = ({ post }: Props) => {
-  // Cache extracted text to avoid parsing JSON twice
   const extractedText = extractTextFromTiptapJson(post.content);
-  const postImage = post.mediaUrls?.[0] ?? null;
-  const likes = Object.values(post.reactionsCount ?? {}).reduce((a, b) => a + b, 0);
   const displayName = post.author?.displayName ?? post.authorId;
   const avatar = post.author?.avatar ?? "";
   const initial = displayName.trim().charAt(0).toUpperCase();
+
+  // ── Reaction local state (for immediate UI updates) ──
+  const [localReaction, setLocalReaction] = useState<ReactionType | null>(
+    post.currentUserReaction ?? null,
+  );
+  const [localCounts, setLocalCounts] = useState(post.reactionsCount ?? {});
+
+  // Sync when prop changes (e.g. after refetch)
+  useEffect(() => {
+    setLocalReaction(post.currentUserReaction ?? null);
+    setLocalCounts(post.reactionsCount ?? {});
+  }, [post.currentUserReaction, post.reactionsCount]);
+
   const [isCommentOpen, setIsCommentOpen] = useState(false);
   const [commentText, setCommentText] = useState("");
   const [comments, setComments] = useState<IComment[]>([]);
@@ -36,9 +50,6 @@ export const FeedPostCard = ({ post }: Props) => {
   const [hasMoreComments, setHasMoreComments] = useState(false);
   const [isLoadingComments, setIsLoadingComments] = useState(false);
   const [isLoadingMoreComments, setIsLoadingMoreComments] = useState(false);
-  const [isLiked, setIsLiked] = useState(post.currentUserReaction === "like");
-  const initialLikes = Object.values(post.reactionsCount ?? {}).reduce((a, b) => a + b, 0);
-  const [displayLikesCount, setDisplayLikesCount] = useState(initialLikes);
   const [displayCommentsCount, setDisplayCommentsCount] = useState(post.commentsCount ?? 0);
   const currentUser = useSelector((state: RootState) => state.auth.user);
   const isOwner = currentUser?.userId === post.authorId;
@@ -48,15 +59,27 @@ export const FeedPostCard = ({ post }: Props) => {
   const [getCommentsPage] = useLazyGetCommentsQuery();
   const [addComment, { isLoading: isAddingComment }] = useAddCommentMutation();
   const [reactToPost] = useReactToPostMutation();
+  const [reactToComment] = useReactToCommentMutation();
   const [deletePost, { isLoading: isDeleting }] = useDeletePostMutation();
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const router = useRouter();
 
-  useEffect(() => {
-    setIsLiked(post.currentUserReaction === "like");
-    setDisplayLikesCount(Object.values(post.reactionsCount ?? {}).reduce((a, b) => a + b, 0));
-  }, [post]);
+  // Post reaction handler: update local state immediately, then send to server
+  const handlePostReact = (type: ReactionType | null) => {
+    const serverType = type ?? localReaction; // unlike: send oldType to toggle off
+    if (!serverType) return;
+    const isToggleOff = localReaction === serverType;
+    const newReaction = isToggleOff ? null : serverType;
+    setLocalReaction(newReaction);
+    setLocalCounts((prev) => {
+      const next = { ...prev };
+      if (localReaction) next[localReaction] = Math.max(0, (next[localReaction] ?? 1) - 1);
+      if (!isToggleOff) next[serverType] = (next[serverType] ?? 0) + 1;
+      return next;
+    });
+    void reactToPost({ postId: post.postId, type: serverType });
+  };
 
   const loadCommentPage = async (cursor?: string | null, append: boolean = false) => {
     if (append) {
@@ -102,8 +125,8 @@ export const FeedPostCard = ({ post }: Props) => {
     if (!content) return;
     try {
       const created = await addComment({ postId: post.postId, content }).unwrap();
-      if (created.data) {
-        setComments((prev) => [...prev, created.data]);
+      if (created) {
+        setComments((prev) => [...prev, created]);
         setDisplayCommentsCount((prev) => prev + 1);
       }
       setCommentText("");
@@ -161,36 +184,48 @@ export const FeedPostCard = ({ post }: Props) => {
 
       <MediaGallery mediaUrls={post.mediaUrls} />
 
-      <View className="mt-3 flex-row items-center justify-between">
-        <View className="flex-row items-center gap-2">
-          <Pressable
-            className="flex-row items-center gap-1.5 rounded-full px-3 py-1.5 transition-all hover:bg-muted/40 active:bg-muted/60"
-            onPress={() => {
-              void reactToPost({ postId: post.postId, type: "like" });
-              const nextLiked = !isLiked;
-              setIsLiked(nextLiked);
-              setDisplayLikesCount((count) => (nextLiked ? count + 1 : Math.max(0, count - 1)));
-            }}
-          >
-            <Ionicons
-              name={isLiked ? "heart" : "heart-outline"}
-              size={18}
-              color={isLiked ? "#ef4444" : "#64748b"}
-            />
-            <Text className="text-sm font-bold text-foreground">{displayLikesCount}</Text>
-          </Pressable>
-          <Pressable
-            className="flex-row items-center gap-1.5 rounded-full px-3 py-1.5 transition-all hover:bg-muted/40 active:bg-muted/60"
-            onPress={toggleCommentPanel}
-          >
-            <Ionicons name="chatbubble-outline" size={17} color="#64748b" />
-            <Text className="text-sm font-bold text-foreground">{displayCommentsCount}</Text>
-          </Pressable>
-          <Pressable className="flex-row items-center gap-1.5 rounded-full px-3 py-1.5 transition-all hover:bg-muted/40 active:bg-muted/60">
-            <Ionicons name="share-social-outline" size={18} color="#64748b" />
-            <Text className="text-sm font-bold text-foreground">{post.sharesCount ?? 0}</Text>
-          </Pressable>
+      {/* ── Reaction count bar (shows above action bar when reactions exist) ── */}
+      {Object.keys(localCounts).some((k) => (localCounts as Record<string, number>)[k] > 0) && (
+        <View className="mt-2 px-2">
+          <ReactionSummary summary={localCounts as any} size="sm" />
         </View>
+      )}
+
+      {/* ── Action bar: Thích | Bình luận | Chia sẻ ── */}
+      <View className="mt-2 h-11 flex-row items-center border-t border-slate-100">
+        {/* Thích */}
+        <ReactionButton size="md" currentUserReaction={localReaction} onReact={handlePostReact} />
+
+        {/* Divider */}
+        <View className="h-6 w-[1px] bg-slate-100" />
+
+        {/* Bình luận */}
+        <Pressable
+          className="h-full flex-1 flex-row items-center justify-center active:opacity-60"
+          onPress={toggleCommentPanel}
+        >
+          <Ionicons name="chatbubble-outline" size={19} color="#64748b" />
+          <Text
+            allowFontScaling={false}
+            className="ml-1.5 text-[14px] font-semibold text-[#64748b]"
+          >
+            Bình luận
+          </Text>
+        </Pressable>
+
+        {/* Divider */}
+        <View className="h-6 w-[1px] bg-slate-100" />
+
+        {/* Chia sẻ */}
+        <Pressable className="h-full flex-1 flex-row items-center justify-center active:opacity-60">
+          <Ionicons name="arrow-redo-outline" size={19} color="#64748b" />
+          <Text
+            allowFontScaling={false}
+            className="ml-1.5 text-[14px] font-semibold text-[#64748b]"
+          >
+            Chia sẻ
+          </Text>
+        </Pressable>
       </View>
 
       {isCommentOpen ? (
@@ -240,11 +275,25 @@ export const FeedPostCard = ({ post }: Props) => {
                       <Text className="text-[11px] text-muted-foreground">
                         {formatRelativeTime(comment.createdAt)}
                       </Text>
-                      <Pressable>
-                        <Text className="text-[11px] font-semibold text-muted-foreground">
-                          Thích
-                        </Text>
-                      </Pressable>
+                      <View className="z-10 flex-row items-center gap-1">
+                        <ReactionButton
+                          size="sm"
+                          showLabel={false}
+                          currentUserReaction={comment.currentUserReaction}
+                          onReact={(type) => {
+                            const serverType = type ?? comment.currentUserReaction;
+                            if (!serverType) return;
+                            void reactToComment({
+                              postId: post.postId,
+                              commentId: comment.commentId,
+                              type: serverType,
+                            });
+                          }}
+                        />
+                        {Object.keys(comment.reactionsCount || {}).length > 0 && (
+                          <ReactionSummary summary={comment.reactionsCount as any} size="sm" />
+                        )}
+                      </View>
                       <Pressable>
                         <Text className="text-[11px] font-semibold text-muted-foreground">
                           Trả lời

@@ -8,6 +8,7 @@ import type {
   PostPublicationStatus,
   PostVisibility,
 } from "@/types/newsfeed.types";
+import type { ReactionType, IReactionSummary } from "@/types/reaction.types";
 
 interface ApiEnvelope<T> {
   success: boolean;
@@ -209,43 +210,69 @@ export const newsfeedApi = createApi({
       },
     }),
 
-    reactToPost: builder.mutation<null, { postId: string; type: string }>({
+    reactToPost: builder.mutation<IReactionSummary, { postId: string; type: ReactionType }>({
       query: ({ postId, type }) => ({
         url: `/newsfeed/posts/${postId}/react`,
         method: "POST",
         body: { type },
       }),
-      transformResponse: () => null,
-      async onQueryStarted({ postId, type }, { dispatch, queryFulfilled }) {
-        const feedPatch = dispatch(
-          newsfeedApi.util.updateQueryData("getFeed", undefined, (draft) => {
-            const post = draft.items.find((p) => p.postId === postId);
-            if (post) {
-              const oldType = post.currentUserReaction;
-              if (oldType === type) {
-                // Unlike
-                post.currentUserReaction = null;
-                if (post.reactionsCount[type] > 0) {
-                  post.reactionsCount[type] -= 1;
+      transformResponse: (response: ApiEnvelope<IReactionSummary>) => response.data,
+    }),
+
+    reactToComment: builder.mutation<
+      IReactionSummary,
+      { postId: string; commentId: string; type: ReactionType }
+    >({
+      query: ({ postId, commentId, type }) => ({
+        url: `/newsfeed/comments/${commentId}/react`,
+        method: "POST",
+        body: { type, postId },
+      }),
+      transformResponse: (response: ApiEnvelope<IReactionSummary>) => response.data,
+      async onQueryStarted({ postId, commentId, type }, { dispatch, queryFulfilled }) {
+        const patch = dispatch(
+          newsfeedApi.util.updateQueryData(
+            "getComments",
+            { postId, limit: 5, cursor: null },
+            (draft) => {
+              const comment = draft.items.find((c) => c.commentId === commentId);
+              if (comment) {
+                const oldType = comment.currentUserReaction;
+                if (oldType === type) {
+                  comment.currentUserReaction = null;
+                  if (comment.reactionsCount[type] && comment.reactionsCount[type]! > 0) {
+                    comment.reactionsCount[type]! -= 1;
+                  }
+                } else {
+                  if (
+                    oldType &&
+                    comment.reactionsCount[oldType] &&
+                    comment.reactionsCount[oldType]! > 0
+                  ) {
+                    comment.reactionsCount[oldType]! -= 1;
+                  }
+                  comment.currentUserReaction = type;
+                  comment.reactionsCount[type] = (comment.reactionsCount[type] ?? 0) + 1;
                 }
-              } else {
-                // Change reaction or new reaction
-                if (oldType && post.reactionsCount[oldType] > 0) {
-                  post.reactionsCount[oldType] -= 1;
-                }
-                post.currentUserReaction = type;
-                post.reactionsCount[type] = (post.reactionsCount[type] ?? 0) + 1;
               }
-            }
-          }),
+            },
+          ),
         );
         try {
           await queryFulfilled;
         } catch {
-          feedPatch.undo();
+          patch.undo();
         }
       },
-      invalidatesTags: ["Feed", "Posts"],
+    }),
+
+    reactToReel: builder.mutation<IReactionSummary, { reelId: string; type: ReactionType }>({
+      query: ({ reelId, type }) => ({
+        url: `/newsfeed/reels/${reelId}/react`,
+        method: "POST",
+        body: { type },
+      }),
+      transformResponse: (response: ApiEnvelope<IReactionSummary>) => response.data,
     }),
   }),
 });
@@ -261,4 +288,6 @@ export const {
   useLazyGetCommentsQuery,
   useAddCommentMutation,
   useReactToPostMutation,
+  useReactToCommentMutation,
+  useReactToReelMutation,
 } = newsfeedApi;
