@@ -137,14 +137,17 @@ export const newsfeedApi = createApi({
       providesTags: (_res, _err, arg) => [{ type: "Comments", id: arg.postId }],
     }),
 
-    addComment: builder.mutation<IComment, { postId: string; content: string; parentId?: string }>({
-      query: ({ postId, content, parentId }) => ({
+    addComment: builder.mutation<
+      IComment,
+      { postId: string; content: string; parentId?: string; mediaUrls?: string[] }
+    >({
+      query: ({ postId, content, parentId, mediaUrls }) => ({
         url: `/newsfeed/posts/${postId}/comments`,
         method: "POST",
-        body: { content, parentId },
+        body: { content, parentId, mediaUrls },
       }),
       transformResponse: (response: ApiEnvelope<IComment>) => response.data,
-      async onQueryStarted({ postId, content }, { dispatch, queryFulfilled, getState }) {
+      async onQueryStarted({ postId, content, parentId }, { dispatch, queryFulfilled, getState }) {
         const currentUser = (
           getState() as {
             auth?: { user?: { userId?: string; displayName?: string; avatar?: string | null } };
@@ -161,21 +164,24 @@ export const newsfeedApi = createApi({
             avatar: currentUser?.avatar ?? null,
           },
           content,
-          parentId: null,
+          parentId: parentId ?? null,
           reactionsCount: {},
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
 
-        const patch = dispatch(
-          newsfeedApi.util.updateQueryData(
-            "getComments",
-            { postId, limit: 5, cursor: null },
-            (draft) => {
-              draft.items.push(tempComment);
-            },
-          ),
-        );
+        // Chỉ cập nhật cache root comments khi đây là comment gốc (không phải reply)
+        const patch = !parentId
+          ? dispatch(
+              newsfeedApi.util.updateQueryData(
+                "getComments",
+                { postId, limit: 5, cursor: null },
+                (draft) => {
+                  draft.items.push(tempComment);
+                },
+              ),
+            )
+          : null;
 
         const feedPatch = dispatch(
           newsfeedApi.util.updateQueryData("getFeed", undefined, (draft) => {
@@ -189,7 +195,7 @@ export const newsfeedApi = createApi({
 
         try {
           const { data } = await queryFulfilled;
-          if (data) {
+          if (data && !parentId) {
             dispatch(
               newsfeedApi.util.updateQueryData(
                 "getComments",
@@ -204,7 +210,7 @@ export const newsfeedApi = createApi({
             );
           }
         } catch {
-          patch.undo();
+          patch?.undo();
           feedPatch.undo();
         }
       },
@@ -266,6 +272,21 @@ export const newsfeedApi = createApi({
       },
     }),
 
+    getCommentReplies: builder.query<
+      ICommentsPage,
+      { postId: string; commentId: string; cursor?: string | null }
+    >({
+      query: ({ postId, commentId, cursor }) => ({
+        url: `/newsfeed/posts/${postId}/comments`,
+        params: { parentId: commentId, limit: 5, cursor: cursor ?? undefined },
+      }),
+      transformResponse: (response: ApiEnvelope<ICommentsPage>) => ({
+        items: Array.isArray(response?.data?.items) ? response.data.items : [],
+        nextCursor: response?.data?.nextCursor ?? null,
+        hasMore: Boolean(response?.data?.hasMore),
+      }),
+    }),
+
     reactToReel: builder.mutation<IReactionSummary, { reelId: string; type: ReactionType }>({
       query: ({ reelId, type }) => ({
         url: `/newsfeed/reels/${reelId}/react`,
@@ -290,4 +311,6 @@ export const {
   useReactToPostMutation,
   useReactToCommentMutation,
   useReactToReelMutation,
+  useGetCommentRepliesQuery,
+  useLazyGetCommentRepliesQuery,
 } = newsfeedApi;

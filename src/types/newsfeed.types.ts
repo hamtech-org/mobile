@@ -38,9 +38,11 @@ export interface IComment {
   postId: string;
   authorId: string;
   content: string;
+  mediaUrls?: string[];
   parentId: string | null;
   reactionsCount: Partial<Record<ReactionType, number>>;
   currentUserReaction?: ReactionType | null;
+  repliesCount?: number;
   author?: IAuthorInfo;
   createdAt: string;
   updatedAt: string;
