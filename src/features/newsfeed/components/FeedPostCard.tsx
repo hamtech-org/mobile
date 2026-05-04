@@ -181,10 +181,22 @@ export const FeedPostCard = ({ post }: Props) => {
 
       <MediaGallery mediaUrls={post.mediaUrls} />
 
-      {/* Reaction summary */}
-      {Object.keys(localCounts).some((k) => (localCounts as Record<string, number>)[k] > 0) && (
-        <View className="mt-2 px-2">
-          <ReactionSummary summary={localCounts as any} size="sm" />
+      {/* Stats line */}
+      {(Object.keys(localCounts).some((k) => (localCounts as Record<string, number>)[k] > 0) ||
+        displayCommentsCount > 0) && (
+        <View className="mt-2 flex-row items-center justify-between px-2">
+          {Object.keys(localCounts).some((k) => (localCounts as Record<string, number>)[k] > 0) ? (
+            <ReactionSummary summary={localCounts as any} size="sm" />
+          ) : (
+            <View />
+          )}
+          {displayCommentsCount > 0 && (
+            <Pressable onPress={toggleCommentPanel}>
+              <Text className="text-xs text-muted-foreground">
+                {displayCommentsCount} bình luận
+              </Text>
+            </Pressable>
+          )}
         </View>
       )}
 
@@ -198,7 +210,7 @@ export const FeedPostCard = ({ post }: Props) => {
         >
           <Ionicons name="chatbubble-outline" size={19} color="#64748b" />
           <Text allowFontScaling={false} className="text-[14px] font-semibold text-[#64748b]">
-            {displayCommentsCount > 0 ? `Bình luận (${displayCommentsCount})` : "Bình luận"}
+            Bình luận
           </Text>
         </Pressable>
         <View className="h-6 w-[1px] bg-slate-100" />
@@ -245,14 +257,26 @@ export const FeedPostCard = ({ post }: Props) => {
                     newReply={latestReplies[comment.commentId]}
                   />
                 ))}
-                {hasMoreComments && (
+                {isLoadingMoreComments && (
+                  <View className="gap-2 py-1">
+                    {[0, 1].map((i) => (
+                      <View key={i} className="flex-row items-start gap-2">
+                        <View className="size-7 rounded-full bg-muted/60" />
+                        <View className="flex-1 gap-1.5">
+                          <View className="h-2.5 w-16 rounded bg-muted/60" />
+                          <View className="h-8 rounded-xl bg-muted/50" style={{ width: "75%" }} />
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+                {hasMoreComments && !isLoadingMoreComments && (
                   <Pressable
                     onPress={() => void loadCommentPage(nextCursor, true)}
-                    disabled={isLoadingMoreComments}
-                    className="self-start px-1 py-1 disabled:opacity-60"
+                    className="self-start px-1 py-1"
                   >
                     <Text className="text-xs font-semibold text-muted-foreground">
-                      {isLoadingMoreComments ? "Đang tải..." : "Xem thêm bình luận"}
+                      Xem thêm bình luận
                     </Text>
                   </Pressable>
                 )}
