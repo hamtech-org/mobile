@@ -11,6 +11,16 @@ export interface IAuthorInfo {
   avatar: string | null;
 }
 
+export interface ISharedPostInfo {
+  postId: string;
+  authorId: string;
+  content?: string;
+  mediaUrls?: string[];
+  type?: PostType;
+  author?: IAuthorInfo;
+  createdAt: string;
+}
+
 export interface IPost {
   postId: string;
   authorId: string;
@@ -29,8 +39,23 @@ export interface IPost {
   isModerated: boolean;
   moderationStatus: ModerationStatus;
   currentUserReaction?: ReactionType | null;
+  isSaved?: boolean;
+  sharedFrom?: ISharedPostInfo;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ISavedPost {
+  userId: string;
+  postId: string;
+  savedAt: string;
+  post?: IPost;
+}
+
+export interface ISavedPostsPage {
+  items: ISavedPost[];
+  nextCursor: string | null;
+  hasMore: boolean;
 }
 
 export interface IComment {

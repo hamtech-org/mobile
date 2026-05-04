@@ -13,9 +13,12 @@ import {
   useLazyGetCommentsQuery,
   useReactToPostMutation,
   useDeletePostMutation,
+  useToggleSavePostMutation,
 } from "@/store/api/newsfeedApi";
 import { CommentItem } from "./CommentItem";
 import { CommentInput } from "./CommentInput";
+import { SharedPostPreview } from "./SharedPostPreview";
+import { SharePostModal } from "./SharePostModal";
 import { formatRelativeTime } from "@/utils/time";
 import { ReactionButton } from "@/components/common/ReactionButton";
 import { ReactionSummary } from "@/components/common/ReactionButton/ReactionSummary";
@@ -59,9 +62,13 @@ export const FeedPostCard = ({ post }: Props) => {
   const commentAuthorAvatar = currentUser?.avatar || "";
   const commentAuthorInitial = commentAuthorName.charAt(0).toUpperCase() || "U";
 
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [isSaved, setIsSaved] = useState(post.isSaved ?? false);
+
   const [getCommentsPage] = useLazyGetCommentsQuery();
   const [reactToPost] = useReactToPostMutation();
   const [deletePost, { isLoading: isDeleting }] = useDeletePostMutation();
+  const [toggleSavePost] = useToggleSavePostMutation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const router = useRouter();
 
@@ -177,26 +184,33 @@ export const FeedPostCard = ({ post }: Props) => {
       {/* Content */}
       <View className="mt-3">
         <HashtagText text={extractedText.slice(0, 180) + (extractedText.length > 180 ? "…" : "")} />
+        {post.sharedFrom && <SharedPostPreview sharedFrom={post.sharedFrom} />}
       </View>
 
-      <MediaGallery mediaUrls={post.mediaUrls} />
+      {!post.sharedFrom && <MediaGallery mediaUrls={post.mediaUrls} />}
 
       {/* Stats line */}
       {(Object.keys(localCounts).some((k) => (localCounts as Record<string, number>)[k] > 0) ||
-        displayCommentsCount > 0) && (
+        displayCommentsCount > 0 ||
+        (post.sharesCount ?? 0) > 0) && (
         <View className="mt-2 flex-row items-center justify-between px-2">
           {Object.keys(localCounts).some((k) => (localCounts as Record<string, number>)[k] > 0) ? (
             <ReactionSummary summary={localCounts as any} size="sm" />
           ) : (
             <View />
           )}
-          {displayCommentsCount > 0 && (
-            <Pressable onPress={toggleCommentPanel}>
-              <Text className="text-xs text-muted-foreground">
-                {displayCommentsCount} bình luận
-              </Text>
-            </Pressable>
-          )}
+          <View className="flex-row items-center gap-3">
+            {(post.sharesCount ?? 0) > 0 && (
+              <Text className="text-xs text-muted-foreground">{post.sharesCount} chia sẻ</Text>
+            )}
+            {displayCommentsCount > 0 && (
+              <Pressable onPress={toggleCommentPanel}>
+                <Text className="text-xs text-muted-foreground">
+                  {displayCommentsCount} bình luận
+                </Text>
+              </Pressable>
+            )}
+          </View>
         </View>
       )}
 
@@ -214,7 +228,10 @@ export const FeedPostCard = ({ post }: Props) => {
           </Text>
         </Pressable>
         <View className="h-6 w-[1px] bg-slate-100" />
-        <Pressable className="h-full flex-1 flex-row items-center justify-center active:opacity-60">
+        <Pressable
+          className="h-full flex-1 flex-row items-center justify-center active:opacity-60"
+          onPress={() => setShareModalOpen(true)}
+        >
           <Ionicons name="arrow-redo-outline" size={19} color="#64748b" />
           <Text
             allowFontScaling={false}
@@ -299,6 +316,13 @@ export const FeedPostCard = ({ post }: Props) => {
         </View>
       )}
 
+      {/* Share modal */}
+      <SharePostModal
+        visible={shareModalOpen}
+        post={post}
+        onClose={() => setShareModalOpen(false)}
+      />
+
       {/* Menu Modal */}
       <Modal visible={isMenuOpen} transparent animationType="fade">
         <Pressable
@@ -311,6 +335,28 @@ export const FeedPostCard = ({ post }: Props) => {
           >
             {isOwner ? (
               <>
+                <Pressable
+                  className="flex-row items-center gap-3 border-b border-border/40 px-5 py-4 active:bg-muted"
+                  onPress={() => {
+                    setIsMenuOpen(false);
+                    const next = !isSaved;
+                    setIsSaved(next);
+                    void toggleSavePost(post.postId)
+                      .unwrap()
+                      .catch(() => setIsSaved(!next));
+                  }}
+                >
+                  <Ionicons
+                    name={isSaved ? "bookmark" : "bookmark-outline"}
+                    size={20}
+                    color={isSaved ? "#3b82f6" : "hsl(var(--foreground))"}
+                  />
+                  <Text
+                    className={`text-base font-medium ${isSaved ? "text-blue-500" : "text-foreground"}`}
+                  >
+                    {isSaved ? "Bỏ lưu bài viết" : "Lưu bài viết"}
+                  </Text>
+                </Pressable>
                 <Pressable
                   className="flex-row items-center gap-3 border-b border-border/40 px-5 py-4 active:bg-muted"
                   onPress={() => {
@@ -334,6 +380,28 @@ export const FeedPostCard = ({ post }: Props) => {
               </>
             ) : (
               <>
+                <Pressable
+                  className="flex-row items-center gap-3 border-b border-border/40 px-5 py-4 active:bg-muted"
+                  onPress={() => {
+                    setIsMenuOpen(false);
+                    const next = !isSaved;
+                    setIsSaved(next);
+                    void toggleSavePost(post.postId)
+                      .unwrap()
+                      .catch(() => setIsSaved(!next));
+                  }}
+                >
+                  <Ionicons
+                    name={isSaved ? "bookmark" : "bookmark-outline"}
+                    size={20}
+                    color={isSaved ? "#3b82f6" : "hsl(var(--muted-foreground))"}
+                  />
+                  <Text
+                    className={`text-base font-medium ${isSaved ? "text-blue-500" : "text-muted-foreground"}`}
+                  >
+                    {isSaved ? "Bỏ lưu bài viết" : "Lưu bài viết"}
+                  </Text>
+                </Pressable>
                 <Pressable
                   className="flex-row items-center gap-3 border-b border-border/40 px-5 py-4 active:bg-muted"
                   onPress={() => setIsMenuOpen(false)}
