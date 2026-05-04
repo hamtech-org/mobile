@@ -633,7 +633,7 @@ export default function CallAgoraScreen() {
     dim.height = 1280;
     vp.dimensions = dim;
     vp.frameRate = 15;
-    vp.contentHint = VideoContentHint.VideoContentHintDetails;
+    vp.contentHint = VideoContentHint.ContentHintDetails;
     cap.videoParams = vp;
 
     const ret = engine.startScreenCapture(cap);

@@ -11,6 +11,7 @@ import { contactReducer } from "./slices/contactSlice";
 import { newsfeedReducer } from "./slices/newsfeedSlice";
 import { notificationReducer } from "./slices/notificationSlice";
 import { uiReducer } from "./slices/uiSlice";
+import { newsfeedApi } from "./api/newsfeedApi";
 
 export const store = configureStore({
   reducer: {
@@ -25,6 +26,7 @@ export const store = configureStore({
     [chatApi.reducerPath]: chatApi.reducer,
     [mediaApi.reducerPath]: mediaApi.reducer,
     [userApi.reducerPath]: userApi.reducer,
+    [newsfeedApi.reducerPath]: newsfeedApi.reducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(
@@ -32,6 +34,7 @@ export const store = configureStore({
       chatApi.middleware,
       mediaApi.middleware,
       userApi.middleware,
+      newsfeedApi.middleware,
     ),
 });
 

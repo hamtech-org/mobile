@@ -18,7 +18,7 @@ interface ApiEnvelope<T> {
 export const userApi = createApi({
   reducerPath: "userApi",
   baseQuery: baseQueryWithReauth,
-  tagTypes: ["Friend"],
+  tagTypes: ["Friend", "User"],
   endpoints: (builder) => ({
     /** Danh sách đã kết bạn — cùng nguồn với web (`GET /contacts/friends`). */
     getFriends: builder.query<FriendListItem[], void>({
@@ -27,7 +27,19 @@ export const userApi = createApi({
         Array.isArray(response?.data) ? response.data : [],
       providesTags: ["Friend"],
     }),
+
+    /** Batch fetch user public profile (displayName/avatar) by ids. */
+    postMultipleUsers: builder.mutation<FriendListItem[], { userIds: string[] }>({
+      query: ({ userIds }) => ({
+        url: "/users/multiple",
+        method: "POST",
+        body: { userIds },
+      }),
+      transformResponse: (response: ApiEnvelope<FriendListItem[]>) =>
+        Array.isArray(response?.data) ? response.data : [],
+      invalidatesTags: ["User"],
+    }),
   }),
 });
 
-export const { useGetFriendsQuery } = userApi;
+export const { useGetFriendsQuery, usePostMultipleUsersMutation } = userApi;

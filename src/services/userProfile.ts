@@ -11,6 +11,7 @@ interface UserProfileResponse {
   userId: string;
   email: string;
   displayName: string;
+  avatar?: string | null;
 }
 
 export const fetchCurrentUserProfile = async (): Promise<AuthUser | null> => {
@@ -20,6 +21,7 @@ export const fetchCurrentUserProfile = async (): Promise<AuthUser | null> => {
       userId: response.data.data.userId,
       email: response.data.data.email,
       displayName: response.data.data.displayName,
+      avatar: response.data.data.avatar ?? null,
     };
   } catch {
     return null;
