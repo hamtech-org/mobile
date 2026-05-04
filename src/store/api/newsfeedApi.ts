@@ -5,6 +5,7 @@ import type {
   ICommentsPage,
   IFeedPage,
   IPost,
+  ISavedPostsPage,
   PostPublicationStatus,
   PostVisibility,
 } from "@/types/newsfeed.types";
@@ -39,6 +40,11 @@ export interface UpdatePostBody {
 export interface FeedQueryParams {
   limit?: number;
   cursor?: string | null;
+}
+
+export interface SharePostBody {
+  content?: string;
+  visibility?: PostVisibility;
 }
 
 export interface CommentsQueryParams {
@@ -295,6 +301,53 @@ export const newsfeedApi = createApi({
       }),
       transformResponse: (response: ApiEnvelope<IReactionSummary>) => response.data,
     }),
+
+    sharePost: builder.mutation<IPost, { postId: string } & SharePostBody>({
+      query: ({ postId, ...body }) => ({
+        url: `/newsfeed/posts/${postId}/share`,
+        method: "POST",
+        body,
+      }),
+      transformResponse: (response: ApiEnvelope<IPost>) => response.data,
+      invalidatesTags: ["Feed"],
+    }),
+
+    toggleSavePost: builder.mutation<{ isSaved: boolean }, string>({
+      query: (postId) => ({
+        url: `/newsfeed/posts/${postId}/save`,
+        method: "POST",
+      }),
+      transformResponse: (response: ApiEnvelope<{ isSaved: boolean }>) => response.data,
+      async onQueryStarted(postId, { dispatch, queryFulfilled }) {
+        const patch = dispatch(
+          newsfeedApi.util.updateQueryData("getFeed", undefined, (draft) => {
+            const post = draft.items.find((p) => p.postId === postId);
+            if (post) post.isSaved = !post.isSaved;
+          }),
+        );
+        try {
+          await queryFulfilled;
+        } catch {
+          patch.undo();
+        }
+      },
+    }),
+
+    getSavedPosts: builder.query<ISavedPostsPage, FeedQueryParams | void>({
+      query: (params) => ({
+        url: "/newsfeed/feed/saved",
+        params: {
+          limit: params?.limit,
+          cursor: params?.cursor ?? undefined,
+        },
+      }),
+      transformResponse: (response: ApiEnvelope<ISavedPostsPage>) => ({
+        items: Array.isArray(response?.data?.items) ? response.data.items : [],
+        nextCursor: response?.data?.nextCursor ?? null,
+        hasMore: Boolean(response?.data?.hasMore),
+      }),
+      providesTags: ["Feed"],
+    }),
   }),
 });
 
@@ -313,4 +366,7 @@ export const {
   useReactToReelMutation,
   useGetCommentRepliesQuery,
   useLazyGetCommentRepliesQuery,
+  useSharePostMutation,
+  useToggleSavePostMutation,
+  useGetSavedPostsQuery,
 } = newsfeedApi;
