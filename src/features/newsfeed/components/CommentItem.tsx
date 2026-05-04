@@ -1,5 +1,8 @@
-import { ActivityIndicator, Image, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Image, Modal, Pressable, Text, View } from "react-native";
 import { useState, useEffect, useRef } from "react";
+import { useVideoPlayer, VideoView } from "expo-video";
+import ImageViewing from "react-native-image-viewing";
+import { Ionicons } from "@expo/vector-icons";
 import type { IComment } from "@/types/newsfeed.types";
 import type { ReactionType } from "@/types/reaction.types";
 import { useReactToCommentMutation, useLazyGetCommentRepliesQuery } from "@/store/api/newsfeedApi";
@@ -7,6 +10,38 @@ import { ReactionButton } from "@/components/common/ReactionButton";
 import { ReactionSummary } from "@/components/common/ReactionButton/ReactionSummary";
 import { HashtagText } from "./HashtagText";
 import { formatRelativeTime } from "@/utils/time";
+
+const IS_VIDEO = /\.(mp4|webm|ogg|mov)(\?|$)/i;
+
+const CommentVideoThumb = ({ uri }: { uri: string }) => {
+  const player = useVideoPlayer(uri, (p) => {
+    p.muted = true;
+    p.pause();
+  });
+  return (
+    <VideoView
+      style={{ width: "100%", height: "100%" }}
+      player={player}
+      contentFit="cover"
+      nativeControls={false}
+    />
+  );
+};
+
+const CommentVideoPlayer = ({ uri }: { uri: string }) => {
+  const player = useVideoPlayer(uri, (p) => {
+    p.loop = true;
+    p.play();
+  });
+  return (
+    <VideoView
+      style={{ width: "100%", height: "100%" }}
+      player={player}
+      allowsFullscreen
+      allowsPictureInPicture
+    />
+  );
+};
 
 interface Props {
   comment: IComment;
@@ -26,6 +61,7 @@ export const CommentItem = ({ comment, postId, isNested = false, onReply, newRep
   const [replyNextCursor, setReplyNextCursor] = useState<string | null>(null);
   const [hasMoreReplies, setHasMoreReplies] = useState(false);
   const [localRepliesCount, setLocalRepliesCount] = useState(comment.repliesCount ?? 0);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const addedReplyIds = useRef<Set<string>>(new Set());
 
   const [reactToComment] = useReactToCommentMutation();
@@ -65,6 +101,8 @@ export const CommentItem = ({ comment, postId, isNested = false, onReply, newRep
   const authorName = comment.author?.displayName ?? comment.authorId;
   const authorAvatar = comment.author?.avatar ?? "";
   const totalReactions = Object.values(localReactionsCount).reduce((a, b) => a + (b || 0), 0);
+  const mediaUrl = comment.mediaUrls?.[0];
+  const isVideoMedia = !!mediaUrl && IS_VIDEO.test(mediaUrl);
 
   return (
     <View style={isNested ? { marginLeft: 36 } : undefined}>
@@ -84,28 +122,75 @@ export const CommentItem = ({ comment, postId, isNested = false, onReply, newRep
         </View>
 
         <View className="flex-1">
-          <View className="rounded-xl bg-muted/50 px-3 py-2">
-            <Text
-              className={`font-semibold text-foreground/80 ${isNested ? "text-[11px]" : "text-xs"}`}
-            >
-              {authorName}
-            </Text>
-            <HashtagText text={comment.content} />
-          </View>
+          {/* Author name — ngoài bubble */}
+          <Text
+            className={`mb-0.5 px-1 font-semibold text-foreground/80 ${isNested ? "text-[11px]" : "text-xs"}`}
+          >
+            {authorName}
+          </Text>
 
-          {/* Media attachments */}
-          {comment.mediaUrls && comment.mediaUrls.length > 0 && (
-            <View className="mt-1.5 flex-row flex-wrap gap-1.5">
-              {comment.mediaUrls.map((url, idx) => (
-                <Image
-                  key={idx}
-                  source={{ uri: url }}
-                  className="size-20 rounded-lg"
-                  resizeMode="cover"
-                />
-              ))}
+          {/* Bubble — chỉ render khi có text */}
+          {!!comment.content && (
+            <View className="self-start rounded-xl bg-muted/50 px-3 py-2">
+              <HashtagText text={comment.content} />
             </View>
           )}
+
+          {/* Media — thumbnail tappable + lightbox */}
+          {mediaUrl && (
+            <Pressable
+              onPress={() => setPreviewOpen(true)}
+              className="mt-1 overflow-hidden rounded-xl"
+              style={{ width: 200, height: 150 }}
+            >
+              {isVideoMedia ? (
+                <>
+                  <CommentVideoThumb uri={mediaUrl} />
+                  <View className="absolute inset-0 items-center justify-center">
+                    <View className="rounded-full bg-black/60 p-2.5">
+                      <Ionicons name="play" size={20} color="white" style={{ marginLeft: 2 }} />
+                    </View>
+                  </View>
+                </>
+              ) : (
+                <Image
+                  source={{ uri: mediaUrl }}
+                  style={{ width: "100%", height: "100%" }}
+                  resizeMode="cover"
+                />
+              )}
+            </Pressable>
+          )}
+
+          {/* Image lightbox */}
+          {mediaUrl && !isVideoMedia && (
+            <ImageViewing
+              images={[{ uri: mediaUrl }]}
+              imageIndex={0}
+              visible={previewOpen}
+              onRequestClose={() => setPreviewOpen(false)}
+              swipeToCloseEnabled
+              doubleTapToZoomEnabled
+            />
+          )}
+
+          {/* Video modal */}
+          <Modal
+            visible={previewOpen && isVideoMedia}
+            animationType="fade"
+            transparent
+            onRequestClose={() => setPreviewOpen(false)}
+          >
+            <View className="flex-1 items-center justify-center bg-black">
+              <Pressable
+                className="absolute right-4 top-12 z-10 rounded-full bg-black/40 p-2"
+                onPress={() => setPreviewOpen(false)}
+              >
+                <Ionicons name="close" size={24} color="white" />
+              </Pressable>
+              {previewOpen && mediaUrl && <CommentVideoPlayer uri={mediaUrl} />}
+            </View>
+          </Modal>
 
           <View className="mt-0.5 flex-row items-center gap-3 px-1">
             <Text className="text-[11px] text-muted-foreground">
