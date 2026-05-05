@@ -1,6 +1,6 @@
 import { Tabs } from "expo-router";
 import { useColorScheme } from "react-native";
-import { MessageCircleMore, Newspaper, User, Users } from "lucide-react-native";
+import { MessageCircleMore, Newspaper, PlayCircle, User, Users } from "lucide-react-native";
 
 interface TabConfig {
   name: string;
@@ -12,6 +12,7 @@ const TABS: TabConfig[] = [
   { name: "(chat)", title: "Tin nhắn", Icon: MessageCircleMore },
   { name: "(contacts)", title: "Danh bạ", Icon: Users },
   { name: "(newsfeed)", title: "Bảng tin", Icon: Newspaper },
+  { name: "(reels)", title: "Reels", Icon: PlayCircle },
   { name: "(profile)", title: "Tôi", Icon: User },
 ];
 
