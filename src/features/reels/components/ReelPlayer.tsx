@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Dimensions, Pressable, Text, View } from "react-native";
+import { Pressable, Text, useWindowDimensions, View } from "react-native";
 import { Image } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { Ionicons } from "@expo/vector-icons";
 import { useRecordReelViewMutation } from "@/store/api/newsfeedApi";
 import type { IReel } from "@/types/newsfeed.types";
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
-
 interface Props {
   reel: IReel;
   isVisible: boolean;
+  height: number;
 }
 
 /**
@@ -20,7 +19,8 @@ interface Props {
  * - Tap to toggle play/pause
  * - Auto view recording sau 2s xem
  */
-export const ReelPlayer = ({ reel, isVisible }: Props) => {
+export const ReelPlayer = ({ reel, isVisible, height }: Props) => {
+  const { width: screenWidth } = useWindowDimensions();
   const [isPaused, setIsPaused] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const viewRecordedRef = useRef(false);
@@ -82,12 +82,12 @@ export const ReelPlayer = ({ reel, isVisible }: Props) => {
     <Pressable
       onPress={handleTap}
       className="flex-1 bg-black"
-      style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT }}
+      style={{ width: screenWidth, height: height }}
     >
       {/* Video */}
       <VideoView
         player={player}
-        style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT }}
+        style={{ width: screenWidth, height: height }}
         contentFit="cover"
         nativeControls={false}
       />
@@ -96,7 +96,7 @@ export const ReelPlayer = ({ reel, isVisible }: Props) => {
       <View
         className="absolute inset-x-0 bottom-0"
         style={{
-          height: SCREEN_HEIGHT * 0.35,
+          height: height * 0.35,
           backgroundColor: "transparent",
         }}
         pointerEvents="none"
