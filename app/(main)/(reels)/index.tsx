@@ -1,14 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Dimensions,
-  FlatList,
-  Pressable,
-  StatusBar,
-  Text,
-  View,
-} from "react-native";
-import type { ViewToken } from "react-native";
+import { ActivityIndicator, FlatList, Pressable, StatusBar, Text, View } from "react-native";
+import type { LayoutChangeEvent, ViewToken } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useGetReelsFeedQuery, useLazyGetReelsFeedQuery } from "@/store/api/newsfeedApi";
@@ -16,8 +8,6 @@ import { ReelPlayer } from "@/features/reels/components/ReelPlayer";
 import { ReelActionBar } from "@/features/reels/components/ReelActionBar";
 import { ReelCommentsSheet } from "@/features/reels/components/ReelCommentsSheet";
 import type { IReel, ReelFeedKind } from "@/types/newsfeed.types";
-
-const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 const TABS: { key: ReelFeedKind; label: string }[] = [
   { key: "foryou", label: "Dành cho bạn" },
@@ -33,6 +23,11 @@ export default function ReelsFeedScreen() {
   const [feedKind, setFeedKind] = useState<ReelFeedKind>("foryou");
   const [visibleIndex, setVisibleIndex] = useState(0);
   const [commentsReelId, setCommentsReelId] = useState<string | null>(null);
+  const [itemHeight, setItemHeight] = useState(0);
+
+  const handleLayout = useCallback((e: LayoutChangeEvent) => {
+    setItemHeight(e.nativeEvent.layout.height);
+  }, []);
 
   const { data, isLoading, isFetching } = useGetReelsFeedQuery({
     feed: feedKind,
@@ -90,18 +85,18 @@ export default function ReelsFeedScreen() {
 
   const renderItem = useCallback(
     ({ item, index }: { item: IReel; index: number }) => (
-      <View style={{ height: SCREEN_HEIGHT }}>
-        <ReelPlayer reel={item} isVisible={visibleIndex === index} />
+      <View style={{ height: itemHeight }}>
+        <ReelPlayer reel={item} isVisible={visibleIndex === index} height={itemHeight} />
         <ReelActionBar reel={item} onOpenComments={() => setCommentsReelId(item.reelId)} />
       </View>
     ),
-    [visibleIndex],
+    [visibleIndex, itemHeight],
   );
 
   const keyExtractor = useCallback((item: IReel) => item.reelId, []);
 
   return (
-    <View className="flex-1 bg-black">
+    <View className="flex-1 bg-black" onLayout={handleLayout}>
       <StatusBar barStyle="light-content" />
 
       {/* Top tabs */}
@@ -147,7 +142,7 @@ export default function ReelsFeedScreen() {
           renderItem={renderItem}
           pagingEnabled
           showsVerticalScrollIndicator={false}
-          snapToInterval={SCREEN_HEIGHT}
+          snapToInterval={itemHeight}
           snapToAlignment="start"
           decelerationRate="fast"
           onViewableItemsChanged={onViewableItemsChanged}
@@ -155,8 +150,8 @@ export default function ReelsFeedScreen() {
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.5}
           getItemLayout={(_data, index) => ({
-            length: SCREEN_HEIGHT,
-            offset: SCREEN_HEIGHT * index,
+            length: itemHeight,
+            offset: itemHeight * index,
             index,
           })}
           ListFooterComponent={
