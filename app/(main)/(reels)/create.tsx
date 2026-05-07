@@ -65,7 +65,7 @@ export default function CreateReelScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["videos"],
       quality: 1,
-      videoMaxDuration: 60,
+      videoMaxDuration: 600,
     });
 
     if (result.canceled || !result.assets?.length) return;
@@ -196,7 +196,7 @@ export default function CreateReelScreen() {
                 <Ionicons name="videocam" size={32} color="#3b82f6" />
               </View>
               <Text className="text-sm font-semibold text-foreground">Chọn video</Text>
-              <Text className="mt-1 text-xs text-muted-foreground">MP4, MOV — Tối đa 60 giây</Text>
+              <Text className="mt-1 text-xs text-muted-foreground">MP4, MOV — Tối đa 10 phút</Text>
             </Pressable>
           )}
 
