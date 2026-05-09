@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, StatusBar, Text, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, Pressable, StatusBar, Text, View } from "react-native";
 import type { LayoutChangeEvent, ViewToken } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -87,7 +87,16 @@ export default function ReelsFeedScreen() {
     ({ item, index }: { item: IReel; index: number }) => (
       <View style={{ height: itemHeight }}>
         <ReelPlayer reel={item} isVisible={visibleIndex === index} height={itemHeight} />
-        <ReelActionBar reel={item} onOpenComments={() => setCommentsReelId(item.reelId)} />
+        <ReelActionBar
+          reel={item}
+          onOpenComments={() => setCommentsReelId(item.reelId)}
+          onOpenReport={() =>
+            Alert.alert("Báo cáo", "Bạn muốn báo cáo reel này?", [
+              { text: "Hủy", style: "cancel" },
+              { text: "Báo cáo", style: "destructive" },
+            ])
+          }
+        />
       </View>
     ),
     [visibleIndex, itemHeight],

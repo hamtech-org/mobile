@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Modal, Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { ComponentProps } from "react";
 import { useReactToReelMutation, useToggleSaveReelMutation } from "@/store/api/newsfeedApi";
@@ -11,33 +11,20 @@ type IoniconsName = ComponentProps<typeof Ionicons>["name"];
 interface Props {
   reel: IReel;
   onOpenComments: () => void;
+  onOpenReport: () => void;
 }
 
-/** Tổng reactions từ reactionsCount map */
 function totalReactions(counts: Partial<Record<ReactionType, number>>): number {
   return Object.values(counts).reduce((acc, v) => acc + (v ?? 0), 0);
 }
 
-/** Format số lớn: 1200 → 1.2K */
 function formatCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return String(n);
 }
 
-interface ActionItem {
-  icon: IoniconsName;
-  label: string;
-  count: string;
-  color: string;
-  onPress: (() => void) | undefined;
-}
-
-/**
- * Cột action bên phải reel (TikTok-style) cho mobile.
- * ❤️ Like, 💬 Comment, 🔖 Save, 👁 Views
- */
-export const ReelActionBar = ({ reel, onOpenComments }: Props) => {
+export const ReelActionBar = ({ reel, onOpenComments, onOpenReport }: Props) => {
   const [reactToReel] = useReactToReelMutation();
   const [toggleSave] = useToggleSaveReelMutation();
 
@@ -45,6 +32,7 @@ export const ReelActionBar = ({ reel, onOpenComments }: Props) => {
   const [likeCount, setLikeCount] = useState(totalReactions(reel.reactionsCount));
   const [saved, setSaved] = useState(reel.isSaved ?? false);
   const [saveCount, setSaveCount] = useState(reel.savesCount);
+  const [moreVisible, setMoreVisible] = useState(false);
 
   const handleLike = useCallback(async () => {
     const prevLiked = liked;
@@ -81,13 +69,19 @@ export const ReelActionBar = ({ reel, onOpenComments }: Props) => {
     }
   }, [saved, saveCount, reel.reelId, toggleSave]);
 
-  const actions: ActionItem[] = [
+  const mainActions: {
+    icon: IoniconsName;
+    label: string;
+    count: string;
+    color: string;
+    onPress: () => void;
+  }[] = [
     {
       icon: liked ? "heart" : "heart-outline",
       label: "Thích",
       count: formatCount(likeCount),
       color: liked ? "#EF4444" : "#fff",
-      onPress: handleLike,
+      onPress: () => void handleLike(),
     },
     {
       icon: "chatbubble-ellipses-outline",
@@ -97,46 +91,89 @@ export const ReelActionBar = ({ reel, onOpenComments }: Props) => {
       onPress: onOpenComments,
     },
     {
-      icon: saved ? "bookmark" : "bookmark-outline",
-      label: "Lưu",
-      count: formatCount(saveCount),
-      color: saved ? "#FACC15" : "#fff",
-      onPress: handleSave,
-    },
-    {
-      icon: "eye-outline",
-      label: "Lượt xem",
-      count: formatCount(reel.viewsCount),
-      color: "rgba(255,255,255,0.6)",
-      onPress: undefined,
+      icon: "arrow-redo-outline",
+      label: "Chia sẻ",
+      count: formatCount(reel.sharesCount),
+      color: "#fff",
+      onPress: () => {},
     },
   ];
 
   return (
-    <View className="absolute bottom-28 right-3 z-20 items-center gap-5">
-      {/* Author avatar */}
-      <Pressable className="mb-2">
-        <View className="size-12 items-center justify-center rounded-full border-2 border-white bg-blue-600">
-          <Text className="text-base font-bold text-white">
-            {reel.author?.displayName?.charAt(0)?.toUpperCase() ?? "?"}
-          </Text>
-        </View>
-      </Pressable>
+    <>
+      <View className="absolute bottom-28 right-3 z-20 items-center gap-5">
+        {mainActions.map((action) => (
+          <Pressable
+            key={action.label}
+            onPress={action.onPress}
+            className="items-center gap-1"
+            hitSlop={8}
+          >
+            <Ionicons name={action.icon} size={28} color={action.color} />
+            <Text className="text-xs font-semibold text-white">{action.count}</Text>
+          </Pressable>
+        ))}
 
-      {actions.map((action) => (
-        <Pressable
-          key={action.label}
-          onPress={action.onPress}
-          className="items-center gap-1"
-          hitSlop={8}
-          disabled={!action.onPress}
-        >
-          <View className="size-11 items-center justify-center rounded-full bg-black/30">
-            <Ionicons name={action.icon} size={24} color={action.color} />
-          </View>
-          <Text className="text-xs font-semibold text-white">{action.count}</Text>
+        {/* More button */}
+        <Pressable onPress={() => setMoreVisible(true)} className="items-center" hitSlop={8}>
+          <Ionicons name="ellipsis-horizontal" size={28} color="#fff" />
         </Pressable>
-      ))}
-    </View>
+      </View>
+
+      {/* More menu modal */}
+      <Modal
+        visible={moreVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMoreVisible(false)}
+      >
+        <Pressable className="flex-1 justify-end bg-black/50" onPress={() => setMoreVisible(false)}>
+          <Pressable
+            className="rounded-t-2xl bg-neutral-900 px-4 pb-10 pt-4"
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View className="mx-auto mb-4 h-1 w-10 rounded-full bg-white/30" />
+
+            <Pressable
+              onPress={() => {
+                void handleSave();
+                setMoreVisible(false);
+              }}
+              className="flex-row items-center gap-3 rounded-xl px-3 py-3.5 active:bg-white/10"
+            >
+              <Ionicons
+                name={saved ? "bookmark" : "bookmark-outline"}
+                size={22}
+                color={saved ? "#FACC15" : "#fff"}
+              />
+              <Text className="flex-1 text-[15px] font-medium text-white">
+                {saved ? "Bỏ lưu" : "Lưu reel"}
+              </Text>
+              {saveCount > 0 && (
+                <Text className="text-sm text-white/50">{formatCount(saveCount)}</Text>
+              )}
+            </Pressable>
+
+            <Pressable
+              onPress={() => {
+                setMoreVisible(false);
+                onOpenReport();
+              }}
+              className="flex-row items-center gap-3 rounded-xl px-3 py-3.5 active:bg-white/10"
+            >
+              <Ionicons name="flag-outline" size={22} color="#EF4444" />
+              <Text className="text-[15px] font-medium text-red-400">Báo cáo</Text>
+            </Pressable>
+
+            <View className="flex-row items-center gap-3 px-3 py-3.5">
+              <Ionicons name="eye-outline" size={22} color="rgba(255,255,255,0.5)" />
+              <Text className="text-[15px] text-white/50">
+                {formatCount(reel.viewsCount)} lượt xem
+              </Text>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </>
   );
 };

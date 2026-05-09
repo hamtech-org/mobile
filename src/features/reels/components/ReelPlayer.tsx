@@ -12,17 +12,10 @@ interface Props {
   height: number;
 }
 
-/**
- * Full-screen video player cho 1 reel trên mobile.
- * Dùng expo-video (useVideoPlayer) cho native performance.
- * - Autoplay khi visible, pause khi không
- * - Tap to toggle play/pause
- * - Auto view recording sau 2s xem
- */
 export const ReelPlayer = ({ reel, isVisible, height }: Props) => {
   const { width: screenWidth } = useWindowDimensions();
   const [isPaused, setIsPaused] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
+  const [captionExpanded, setCaptionExpanded] = useState(false);
   const viewRecordedRef = useRef(false);
   const watchStartRef = useRef<number | null>(null);
 
@@ -33,7 +26,6 @@ export const ReelPlayer = ({ reel, isVisible, height }: Props) => {
     p.muted = false;
   });
 
-  // Autoplay / pause based on visibility
   useEffect(() => {
     if (isVisible) {
       player.play();
@@ -43,15 +35,10 @@ export const ReelPlayer = ({ reel, isVisible, height }: Props) => {
       player.pause();
       setIsPaused(true);
       watchStartRef.current = null;
+      setCaptionExpanded(false);
     }
   }, [isVisible, player]);
 
-  // Mute control
-  useEffect(() => {
-    player.muted = isMuted;
-  }, [isMuted, player]);
-
-  // Record view after 2s
   useEffect(() => {
     if (!isVisible || viewRecordedRef.current) return;
 
@@ -78,16 +65,17 @@ export const ReelPlayer = ({ reel, isVisible, height }: Props) => {
     }
   }, [isPaused, player]);
 
+  const hasLongCaption = (reel.caption?.length ?? 0) > 60;
+
   return (
     <Pressable
       onPress={handleTap}
       className="flex-1 bg-black"
-      style={{ width: screenWidth, height: height }}
+      style={{ width: screenWidth, height }}
     >
-      {/* Video */}
       <VideoView
         player={player}
-        style={{ width: screenWidth, height: height }}
+        style={{ width: screenWidth, height }}
         contentFit="cover"
         nativeControls={false}
       />
@@ -95,12 +83,11 @@ export const ReelPlayer = ({ reel, isVisible, height }: Props) => {
       {/* Gradient overlay bottom */}
       <View
         className="absolute inset-x-0 bottom-0"
-        style={{
-          height: height * 0.35,
-          backgroundColor: "transparent",
-        }}
+        style={{ height: height * 0.35 }}
         pointerEvents="none"
-      />
+      >
+        <View className="flex-1 bg-black/60" style={{ opacity: 0.7 }} />
+      </View>
 
       {/* Pause icon overlay */}
       {isPaused && (
@@ -111,19 +98,10 @@ export const ReelPlayer = ({ reel, isVisible, height }: Props) => {
         </View>
       )}
 
-      {/* Mute toggle */}
-      <Pressable
-        onPress={() => setIsMuted((m) => !m)}
-        className="absolute bottom-5 right-20 z-20 size-9 items-center justify-center rounded-full bg-black/40"
-        hitSlop={10}
-      >
-        <Ionicons name={isMuted ? "volume-mute" : "volume-high"} size={18} color="#fff" />
-      </Pressable>
-
-      {/* Reel info overlay (bottom-left) */}
-      <View className="absolute bottom-5 left-4 right-20 z-10" pointerEvents="none">
-        {/* Author */}
-        <View className="mb-2 flex-row items-center gap-2">
+      {/* Author + caption overlay (bottom-left) */}
+      <View className="absolute bottom-5 left-4 right-16 z-10">
+        {/* Author row */}
+        <View className="mb-2 flex-row items-center gap-2.5">
           {reel.author?.avatar ? (
             <Image
               source={{ uri: reel.author.avatar }}
@@ -136,23 +114,33 @@ export const ReelPlayer = ({ reel, isVisible, height }: Props) => {
               </Text>
             </View>
           )}
-          <Text className="text-sm font-bold text-white">
+          <Text className="text-[15px] font-bold text-white">
             {reel.author?.displayName ?? "Người dùng"}
           </Text>
+          <Text className="text-sm text-white/50">·</Text>
+          <Text className="text-sm font-medium text-white/80">Đang theo dõi</Text>
         </View>
 
         {/* Caption */}
         {reel.caption ? (
-          <Text className="text-sm leading-snug text-white" numberOfLines={3}>
-            {reel.caption}
-          </Text>
+          <Pressable onPress={() => hasLongCaption && setCaptionExpanded((e) => !e)}>
+            <Text
+              className="text-[13px] leading-snug text-white"
+              numberOfLines={captionExpanded ? undefined : 1}
+            >
+              {reel.caption}
+            </Text>
+            {hasLongCaption && !captionExpanded && (
+              <Text className="mt-0.5 text-[13px] font-semibold text-white/80">... Xem thêm</Text>
+            )}
+          </Pressable>
         ) : null}
 
         {/* Hashtags */}
         {reel.hashtags.length > 0 ? (
-          <View className="mt-1 flex-row flex-wrap gap-1">
+          <View className="mt-1 flex-row flex-wrap gap-1.5">
             {reel.hashtags.map((tag) => (
-              <Text key={tag} className="text-xs font-semibold text-blue-300">
+              <Text key={tag} className="text-[13px] font-semibold text-blue-300">
                 #{tag}
               </Text>
             ))}
