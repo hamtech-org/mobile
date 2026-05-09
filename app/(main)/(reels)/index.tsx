@@ -7,20 +7,10 @@ import { useGetReelsFeedQuery, useLazyGetReelsFeedQuery } from "@/store/api/news
 import { ReelPlayer } from "@/features/reels/components/ReelPlayer";
 import { ReelActionBar } from "@/features/reels/components/ReelActionBar";
 import { ReelCommentsSheet } from "@/features/reels/components/ReelCommentsSheet";
-import type { IReel, ReelFeedKind } from "@/types/newsfeed.types";
+import type { IReel } from "@/types/newsfeed.types";
 
-const TABS: { key: ReelFeedKind; label: string }[] = [
-  { key: "foryou", label: "Dành cho bạn" },
-  { key: "following", label: "Đang theo dõi" },
-];
-
-/**
- * Reels feed screen — FlatList full-screen snap-scroll (TikTok-style).
- * Tab route: (reels)/index
- */
 export default function ReelsFeedScreen() {
   const router = useRouter();
-  const [feedKind, setFeedKind] = useState<ReelFeedKind>("foryou");
   const [visibleIndex, setVisibleIndex] = useState(0);
   const [commentsReelId, setCommentsReelId] = useState<string | null>(null);
   const [itemHeight, setItemHeight] = useState(0);
@@ -30,7 +20,7 @@ export default function ReelsFeedScreen() {
   }, []);
 
   const { data, isLoading, isFetching } = useGetReelsFeedQuery({
-    feed: feedKind,
+    feed: "foryou",
     limit: 10,
   });
   const [fetchMore] = useLazyGetReelsFeedQuery();
@@ -62,7 +52,7 @@ export default function ReelsFeedScreen() {
   // Load more
   const handleEndReached = useCallback(() => {
     if (!hasMore || !nextCursor || isFetching) return;
-    fetchMore({ feed: feedKind, limit: 10, cursor: nextCursor })
+    fetchMore({ feed: "foryou", limit: 10, cursor: nextCursor })
       .unwrap()
       .then((res) => {
         if (res) {
@@ -72,16 +62,7 @@ export default function ReelsFeedScreen() {
         }
       })
       .catch(() => {});
-  }, [hasMore, nextCursor, isFetching, feedKind, fetchMore]);
-
-  // Switch tab
-  const handleSwitchTab = useCallback((kind: ReelFeedKind) => {
-    setFeedKind(kind);
-    setAllReels([]);
-    setNextCursor(null);
-    setHasMore(true);
-    setVisibleIndex(0);
-  }, []);
+  }, [hasMore, nextCursor, isFetching, fetchMore]);
 
   const renderItem = useCallback(
     ({ item, index }: { item: IReel; index: number }) => (
@@ -107,23 +88,6 @@ export default function ReelsFeedScreen() {
   return (
     <View className="flex-1 bg-black" onLayout={handleLayout}>
       <StatusBar barStyle="light-content" />
-
-      {/* Top tabs */}
-      <View className="absolute inset-x-0 top-0 z-30 flex-row items-center justify-center gap-6 pb-2 pt-14">
-        {TABS.map((tab) => (
-          <Pressable key={tab.key} onPress={() => handleSwitchTab(tab.key)}>
-            <Text
-              className={`border-b-2 pb-1 text-sm font-bold ${
-                feedKind === tab.key
-                  ? "border-white text-white"
-                  : "border-transparent text-white/50"
-              }`}
-            >
-              {tab.label}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
 
       {/* Create button */}
       <Pressable

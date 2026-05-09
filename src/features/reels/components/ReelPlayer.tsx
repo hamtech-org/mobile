@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, Text, useWindowDimensions, View } from "react-native";
-import { Image } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { Ionicons } from "@expo/vector-icons";
 import { useRecordReelViewMutation } from "@/store/api/newsfeedApi";
@@ -101,24 +100,10 @@ export const ReelPlayer = ({ reel, isVisible, height }: Props) => {
       {/* Author + caption overlay (bottom-left) */}
       <View className="absolute bottom-5 left-4 right-16 z-10">
         {/* Author row */}
-        <View className="mb-2 flex-row items-center gap-2.5">
-          {reel.author?.avatar ? (
-            <Image
-              source={{ uri: reel.author.avatar }}
-              className="size-10 rounded-full border-2 border-white/80"
-            />
-          ) : (
-            <View className="size-10 items-center justify-center rounded-full border-2 border-white/80 bg-blue-600/80">
-              <Text className="text-sm font-bold text-white">
-                {reel.author?.displayName?.charAt(0)?.toUpperCase() ?? "?"}
-              </Text>
-            </View>
-          )}
+        <View className="mb-2 flex-row items-center">
           <Text className="text-[15px] font-bold text-white">
             {reel.author?.displayName ?? "Người dùng"}
           </Text>
-          <Text className="text-sm text-white/50">·</Text>
-          <Text className="text-sm font-medium text-white/80">Đang theo dõi</Text>
         </View>
 
         {/* Caption */}

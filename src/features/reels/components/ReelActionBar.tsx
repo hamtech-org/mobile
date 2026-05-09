@@ -1,12 +1,13 @@
-import { useCallback, useState } from "react";
-import { Modal, Pressable, Text, View } from "react-native";
+import { useCallback, useRef, useState } from "react";
+import { Image, Modal, Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import type { ComponentProps } from "react";
+import { ThumbsUp } from "lucide-react-native";
+import LottieView from "lottie-react-native";
+import { EmojiPicker } from "@/components/common/ReactionButton/EmojiPicker";
 import { useReactToReelMutation, useToggleSaveReelMutation } from "@/store/api/newsfeedApi";
+import { REACTION_META } from "@/types/reaction.types";
 import type { ReactionType } from "@/types/reaction.types";
 import type { IReel } from "@/types/newsfeed.types";
-
-type IoniconsName = ComponentProps<typeof Ionicons>["name"];
 
 interface Props {
   reel: IReel;
@@ -33,26 +34,49 @@ export const ReelActionBar = ({ reel, onOpenComments, onOpenReport }: Props) => 
   const [saved, setSaved] = useState(reel.isSaved ?? false);
   const [saveCount, setSaveCount] = useState(reel.savesCount);
   const [moreVisible, setMoreVisible] = useState(false);
+  const [reactionPickerVisible, setReactionPickerVisible] = useState(false);
+  const [anchorY, setAnchorY] = useState<number | undefined>(undefined);
+  const [anchorX, setAnchorX] = useState<number | undefined>(undefined);
+  const likeButtonRef = useRef<View>(null);
 
-  const handleLike = useCallback(async () => {
-    const prevLiked = liked;
-    const prevCount = likeCount;
+  const handleReact = useCallback(
+    async (type: ReactionType) => {
+      const prevLiked = liked;
+      const prevCount = likeCount;
+      setReactionPickerVisible(false);
 
-    if (liked) {
-      setLiked(null);
-      setLikeCount((c) => Math.max(0, c - 1));
-    } else {
-      setLiked("like");
-      setLikeCount((c) => c + 1);
-    }
+      const toggling = type === liked;
+      if (toggling) {
+        setLiked(null);
+        setLikeCount((c) => Math.max(0, c - 1));
+      } else if (!liked) {
+        setLiked(type);
+        setLikeCount((c) => c + 1);
+      } else {
+        setLiked(type);
+      }
 
-    try {
-      await reactToReel({ reelId: reel.reelId, type: "like" }).unwrap();
-    } catch {
-      setLiked(prevLiked);
-      setLikeCount(prevCount);
-    }
-  }, [liked, likeCount, reel.reelId, reactToReel]);
+      try {
+        await reactToReel({ reelId: reel.reelId, type }).unwrap();
+      } catch {
+        setLiked(prevLiked);
+        setLikeCount(prevCount);
+      }
+    },
+    [liked, likeCount, reel.reelId, reactToReel],
+  );
+
+  const handleDefaultPress = useCallback(() => {
+    void handleReact(liked ?? "like");
+  }, [liked, handleReact]);
+
+  const handleLongPress = useCallback(() => {
+    likeButtonRef.current?.measureInWindow((x, y) => {
+      setAnchorX(x);
+      setAnchorY(y);
+      setReactionPickerVisible(true);
+    });
+  }, []);
 
   const handleSave = useCallback(async () => {
     const prevSaved = saved;
@@ -69,56 +93,86 @@ export const ReelActionBar = ({ reel, onOpenComments, onOpenReport }: Props) => 
     }
   }, [saved, saveCount, reel.reelId, toggleSave]);
 
-  const mainActions: {
-    icon: IoniconsName;
-    label: string;
-    count: string;
-    color: string;
-    onPress: () => void;
-  }[] = [
-    {
-      icon: liked ? "heart" : "heart-outline",
-      label: "Thích",
-      count: formatCount(likeCount),
-      color: liked ? "#EF4444" : "#fff",
-      onPress: () => void handleLike(),
-    },
-    {
-      icon: "chatbubble-ellipses-outline",
-      label: "Bình luận",
-      count: formatCount(reel.commentsCount),
-      color: "#fff",
-      onPress: onOpenComments,
-    },
-    {
-      icon: "arrow-redo-outline",
-      label: "Chia sẻ",
-      count: formatCount(reel.sharesCount),
-      color: "#fff",
-      onPress: () => {},
-    },
-  ];
+  const currentMeta = liked ? REACTION_META[liked] : null;
 
   return (
     <>
       <View className="absolute bottom-28 right-3 z-20 items-center gap-5">
-        {mainActions.map((action) => (
-          <Pressable
-            key={action.label}
-            onPress={action.onPress}
-            className="items-center gap-1"
-            hitSlop={8}
-          >
-            <Ionicons name={action.icon} size={28} color={action.color} />
-            <Text className="text-xs font-semibold text-white">{action.count}</Text>
-          </Pressable>
-        ))}
+        {/* Avatar */}
+        <View className="relative mb-1 items-center">
+          {reel.author?.avatar ? (
+            <Image
+              source={{ uri: reel.author.avatar }}
+              className="size-12 rounded-full border-2 border-white/80"
+            />
+          ) : (
+            <View className="size-12 items-center justify-center rounded-full border-2 border-white/80 bg-blue-600/80">
+              <Text className="text-sm font-bold text-white">
+                {reel.author?.displayName?.charAt(0)?.toUpperCase() ?? "?"}
+              </Text>
+            </View>
+          )}
+          <View className="absolute -bottom-2 size-5 items-center justify-center rounded-full bg-blue-600">
+            <Text className="text-xs font-bold text-white">+</Text>
+          </View>
+        </View>
 
-        {/* More button */}
+        {/* Like — long press to open emoji picker */}
+        <View ref={likeButtonRef} className="items-center">
+          <Pressable
+            onPress={handleDefaultPress}
+            onLongPress={handleLongPress}
+            delayLongPress={350}
+            hitSlop={8}
+            className="items-center gap-1"
+          >
+            {currentMeta ? (
+              <LottieView
+                source={currentMeta.lottie}
+                autoPlay
+                loop={false}
+                style={{ width: 28, height: 28 }}
+              />
+            ) : (
+              <ThumbsUp size={28} color="#fff" />
+            )}
+            <Text
+              className="text-xs font-semibold"
+              style={{ color: currentMeta ? currentMeta.color : "#fff" }}
+            >
+              {formatCount(likeCount)}
+            </Text>
+          </Pressable>
+        </View>
+
+        {/* Comment */}
+        <Pressable onPress={onOpenComments} className="items-center gap-1" hitSlop={8}>
+          <Ionicons name="chatbubble-ellipses-outline" size={28} color="#fff" />
+          <Text className="text-xs font-semibold text-white">
+            {formatCount(reel.commentsCount)}
+          </Text>
+        </Pressable>
+
+        {/* Share */}
+        <Pressable className="items-center gap-1" hitSlop={8}>
+          <Ionicons name="arrow-redo-outline" size={28} color="#fff" />
+          <Text className="text-xs font-semibold text-white">{formatCount(reel.sharesCount)}</Text>
+        </Pressable>
+
+        {/* More */}
         <Pressable onPress={() => setMoreVisible(true)} className="items-center" hitSlop={8}>
           <Ionicons name="ellipsis-horizontal" size={28} color="#fff" />
         </Pressable>
       </View>
+
+      {/* Emoji reaction picker */}
+      <EmojiPicker
+        isVisible={reactionPickerVisible}
+        onReact={(type) => void handleReact(type)}
+        onClose={() => setReactionPickerVisible(false)}
+        anchorY={anchorY}
+        anchorX={anchorX}
+      />
 
       {/* More menu modal */}
       <Modal
