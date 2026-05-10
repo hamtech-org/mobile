@@ -7,6 +7,7 @@ import { useGetReelsFeedQuery, useLazyGetReelsFeedQuery } from "@/store/api/news
 import { ReelPlayer } from "@/features/reels/components/ReelPlayer";
 import { ReelActionBar } from "@/features/reels/components/ReelActionBar";
 import { ReelCommentsSheet } from "@/features/reels/components/ReelCommentsSheet";
+import { ReelCommentInputBar } from "@/features/reels/components/ReelCommentInputBar";
 import type { IReel } from "@/types/newsfeed.types";
 
 export default function ReelsFeedScreen() {
@@ -137,12 +138,15 @@ export default function ReelsFeedScreen() {
         />
       )}
 
-      {/* Comments Sheet */}
+      {/* Comments Sheet — chỉ hiển thị danh sách bình luận */}
       <ReelCommentsSheet
         reelId={commentsReelId ?? ""}
         visible={!!commentsReelId}
         onClose={() => setCommentsReelId(null)}
       />
+
+      {/* Input bar — fixed phía trên tab bar, tách hoàn toàn khỏi sheet */}
+      {commentsReelId && <ReelCommentInputBar reelId={commentsReelId} />}
     </View>
   );
 }
