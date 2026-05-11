@@ -6,7 +6,6 @@ import {
   PermissionsAndroid,
   Platform,
   Pressable,
-  ScrollView,
   Text,
   useWindowDimensions,
   View,
@@ -34,6 +33,8 @@ import {
   VideoSourceType,
 } from "react-native-agora";
 import {
+  ChevronLeft,
+  ChevronRight,
   LayoutGrid,
   LogOut,
   Mic,
@@ -58,6 +59,7 @@ import {
 } from "@/store/slices/callSlice";
 import type { AppDispatch, RootState } from "@/store/store";
 import { userIdToAgoraUid } from "@/utils/agoraUid";
+import { GROUP_TILE_GAP_PX, gridColsRows, maxTilesPerPage } from "@/utils/groupCallVideoGrid";
 
 function paramOne(v: string | string[] | undefined): string {
   if (v == null) return "";
@@ -150,7 +152,6 @@ export default function CallAgoraScreen() {
   const showUpgradeIncomingModal = !isGroup && upgradeStatus === "pending-incoming";
 
   const [agoraUidToName, setAgoraUidToName] = useState<Map<number, string>>(new Map());
-  const [filmstripVisible, setFilmstripVisible] = useState(true);
   const [pinnedUid, setPinnedUid] = useState<number | null>(null);
   const [localScreenSharing, setLocalScreenSharing] = useState(false);
   const [participantsOpen, setParticipantsOpen] = useState(false);
@@ -161,6 +162,8 @@ export default function CallAgoraScreen() {
   const [remoteUids, setRemoteUids] = useState<number[]>([]);
   const [peerUid, setPeerUid] = useState<number | null>(null);
   const [remoteVideoOn, setRemoteVideoOn] = useState<Map<number, boolean>>(() => new Map());
+  const [groupGridInnerH, setGroupGridInnerH] = useState(0);
+  const [groupVideoPage, setGroupVideoPage] = useState(0);
 
   const engineRef = useRef<IRtcEngine | null>(null);
   const remoteUidsRef = useRef<number[]>([]);
@@ -257,6 +260,11 @@ export default function CallAgoraScreen() {
   }, [isGroup, joined, upgradeStatus]);
 
   const shutdownRtc = useCallback(() => {
+    const ch = channelRef.current;
+    const conv = conversationIdRef.current;
+    if (isGroupRef.current && ch.startsWith("grp_") && conv) {
+      socketRef.current?.emit("call:group-rtc-left", { channelName: ch, conversationId: conv });
+    }
     const engine = engineRef.current;
     if (!engine) return;
     try {
@@ -332,6 +340,14 @@ export default function CallAgoraScreen() {
           if (cancelled) return;
           setJoined(true);
           dispatch(setCallConnected());
+          const ch = channelRef.current;
+          const conv = conversationIdRef.current;
+          if (isGroupRef.current && ch.startsWith("grp_") && conv) {
+            socketRef.current?.emit("call:group-rtc-joined", {
+              channelName: ch,
+              conversationId: conv,
+            });
+          }
         },
         onUserJoined: (_connection, remoteUid) => {
           if (cancelled) return;
@@ -552,13 +568,16 @@ export default function CallAgoraScreen() {
   };
 
   const handleDirectEnd = useCallback(() => {
-    endCall({ durationSec: timer, result: "completed" });
+    endCall({
+      durationSec: status === "connected" ? timer : 0,
+      result: status === "outgoing-ringing" ? "cancelled" : "completed",
+    });
     shutdownRtc();
     setTimeout(() => {
       dispatch(resetCall());
       goBack();
     }, 400);
-  }, [dispatch, endCall, goBack, shutdownRtc, timer]);
+  }, [dispatch, endCall, goBack, shutdownRtc, status, timer]);
 
   const handleGroupLeave = useCallback(() => {
     leaveGroupCall();
@@ -670,7 +689,9 @@ export default function CallAgoraScreen() {
                 ? "Nhỡ máy"
                 : endReason === "rejected"
                   ? "Từ chối"
-                  : "Kết thúc"
+                  : endReason === "busy"
+                    ? "Đang bận"
+                    : "Kết thúc"
               : "";
 
   const calleeLabel = useMemo(() => {
@@ -679,6 +700,36 @@ export default function CallAgoraScreen() {
     const uid = userIdToAgoraUid(raw);
     return agoraUidToName.get(uid) ?? "Ẩn danh";
   }, [agoraUidToName, calleeId]);
+
+  const groupGridViewport = useMemo(() => {
+    const vw = Math.max(200, width - 24);
+    const vh = Math.max(150, groupGridInnerH > 0 ? groupGridInnerH - 48 : height * 0.48);
+    return { width: vw, height: vh };
+  }, [width, height, groupGridInnerH]);
+
+  const groupTilesLayout = useMemo(() => {
+    const n = remoteUids.length;
+    if (n === 0) return { tilesPerPage: 1, pageCount: 1 };
+    const t =
+      groupGridViewport.width > 0 && groupGridViewport.height > 0
+        ? maxTilesPerPage(groupGridViewport.width, groupGridViewport.height, n)
+        : Math.min(n, 4);
+    return { tilesPerPage: t, pageCount: Math.max(1, Math.ceil(n / t)) };
+  }, [remoteUids.length, groupGridViewport]);
+
+  useEffect(() => {
+    setGroupVideoPage((p) => Math.min(p, Math.max(0, groupTilesLayout.pageCount - 1)));
+  }, [groupTilesLayout.pageCount]);
+
+  const groupPages = useMemo(() => {
+    const { tilesPerPage, pageCount } = groupTilesLayout;
+    return Array.from({ length: pageCount }, (_, i) => {
+      const start = i * tilesPerPage;
+      return remoteUids.slice(start, start + tilesPerPage);
+    });
+  }, [remoteUids, groupTilesLayout]);
+
+  const groupPagesListRef = useRef<FlatList<number[]>>(null);
 
   const allGroupUids = useMemo(() => {
     const s = new Set<number>();
@@ -689,9 +740,13 @@ export default function CallAgoraScreen() {
 
   const localCameraSourceType = VideoSourceType.VideoSourceCameraPrimary;
 
-  const renderGroupVideoCell = (uid: number, compact: boolean) => {
-    const h = compact ? "h-32" : "h-48";
-    const w = compact ? "w-28" : "w-36";
+  const renderGroupVideoCell = (
+    uid: number,
+    compact: boolean,
+    cellPx?: { w: number; h: number },
+  ) => {
+    const h = cellPx ? "" : compact ? "h-32" : "h-48";
+    const w = cellPx ? "" : compact ? "w-28" : "w-36";
     const isLocal = uid === localUid;
     const sourceType = isLocal
       ? localScreenSharing
@@ -706,7 +761,12 @@ export default function CallAgoraScreen() {
       <Pressable
         key={uid}
         onPress={() => onOpenPinMenu(uid)}
-        className={`${h} ${w} overflow-hidden rounded-xl border border-white/10 bg-neutral-900`}
+        className={
+          cellPx
+            ? "overflow-hidden rounded-xl border border-white/10 bg-neutral-900"
+            : `${h} ${w} overflow-hidden rounded-xl border border-white/10 bg-neutral-900`
+        }
+        style={cellPx ? { width: cellPx.w, height: cellPx.h } : undefined}
       >
         {shouldRenderVideo ? (
           <RtcSurfaceView
@@ -731,8 +791,6 @@ export default function CallAgoraScreen() {
     );
   };
 
-  const pinnedMainUid = pinnedUid ?? remoteUids[0] ?? localUid;
-
   return (
     <SafeAreaView className="flex-1 bg-neutral-950" edges={["top", "bottom"]}>
       <View className="flex-1 px-3 pt-2">
@@ -747,12 +805,6 @@ export default function CallAgoraScreen() {
                 >
                   <LayoutGrid size={16} color={primary} />
                   <Text className="text-xs text-white">Danh sách</Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => setFilmstripVisible((v) => !v)}
-                  className="rounded-lg bg-white/10 px-2 py-1"
-                >
-                  <Text className="text-xs text-white">Filmstrip</Text>
                 </Pressable>
                 {isLandscape ? (
                   <Pressable
@@ -784,40 +836,111 @@ export default function CallAgoraScreen() {
         {isVideoCall ? (
           <View className="mb-2 min-h-[200px] flex-1 overflow-hidden rounded-2xl bg-black/40">
             {isGroup ? (
-              <View className="flex-1">
-                <View className="min-h-[220px] flex-1 overflow-hidden rounded-xl border border-white/10">
-                  <RtcSurfaceView
-                    style={{ flex: 1 }}
-                    canvas={{
-                      uid: pinnedMainUid === localUid ? localUid : pinnedMainUid,
-                      sourceType:
-                        pinnedMainUid === localUid
-                          ? localScreenSharing
-                            ? VideoSourceType.VideoSourceScreen
-                            : localCameraSourceType
-                          : VideoSourceType.VideoSourceRemote,
-                      renderMode: RenderModeType.RenderModeFit,
-                    }}
-                  />
-                  <View className="absolute left-3 top-3 rounded bg-black/60 px-2 py-1">
-                    <Text className="text-[11px] font-semibold text-white" numberOfLines={1}>
-                      {labelForUid(pinnedMainUid)}
-                    </Text>
+              <View
+                className="flex-1"
+                onLayout={(e) => setGroupGridInnerH(e.nativeEvent.layout.height)}
+              >
+                {remoteUids.length === 0 ? (
+                  <View className="min-h-[220px] flex-1 items-center justify-center rounded-xl border border-white/10">
+                    <Text className="text-sm text-white/50">Đang chờ thành viên vào kênh...</Text>
                   </View>
-                </View>
-                {!uiHidden && filmstripVisible ? (
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    className="mt-2 max-h-40"
-                  >
-                    <View className="flex-row gap-2 py-1">
-                      {allGroupUids
-                        .filter((u) => u !== pinnedMainUid)
-                        .map((u) => renderGroupVideoCell(u, true))}
-                    </View>
-                  </ScrollView>
-                ) : null}
+                ) : (
+                  <>
+                    <FlatList
+                      ref={groupPagesListRef}
+                      data={groupPages}
+                      extraData={`${width}-${groupGridInnerH}-${remoteUids.join(",")}`}
+                      horizontal
+                      pagingEnabled
+                      showsHorizontalScrollIndicator={false}
+                      keyExtractor={(_, i) => `gcall-page-${i}`}
+                      getItemLayout={(_, index) => ({
+                        length: width - 24,
+                        offset: (width - 24) * index,
+                        index,
+                      })}
+                      onMomentumScrollEnd={(ev) => {
+                        const pageW = width - 24;
+                        const idx = Math.round(ev.nativeEvent.contentOffset.x / pageW);
+                        setGroupVideoPage(
+                          Math.max(0, Math.min(groupTilesLayout.pageCount - 1, idx)),
+                        );
+                      }}
+                      renderItem={({ item: pageUids }) => {
+                        const dims = gridColsRows(Math.max(1, pageUids.length));
+                        const pageW = width - 24;
+                        const innerH = Math.max(
+                          120,
+                          (groupGridInnerH > 0 ? groupGridInnerH : height * 0.5) - 52,
+                        );
+                        const cellW = Math.floor(
+                          (pageW - GROUP_TILE_GAP_PX * Math.max(0, dims.cols - 1)) / dims.cols,
+                        );
+                        const cellH = Math.floor(
+                          (innerH - GROUP_TILE_GAP_PX * Math.max(0, dims.rows - 1)) / dims.rows,
+                        );
+                        return (
+                          <View
+                            style={{
+                              width: pageW,
+                              minHeight: innerH,
+                              flexDirection: "row",
+                              flexWrap: "wrap",
+                              justifyContent: "center",
+                              alignContent: "center",
+                              gap: GROUP_TILE_GAP_PX,
+                              paddingVertical: 4,
+                            }}
+                          >
+                            {pageUids.map((uid) => (
+                              <View key={uid}>
+                                {renderGroupVideoCell(uid, false, { w: cellW, h: cellH })}
+                              </View>
+                            ))}
+                          </View>
+                        );
+                      }}
+                    />
+                    {groupTilesLayout.pageCount > 1 ? (
+                      <View className="flex-row items-center justify-center gap-6 py-2">
+                        <Pressable
+                          disabled={groupVideoPage <= 0}
+                          onPress={() => {
+                            const next = Math.max(0, groupVideoPage - 1);
+                            setGroupVideoPage(next);
+                            groupPagesListRef.current?.scrollToOffset({
+                              offset: (width - 24) * next,
+                              animated: true,
+                            });
+                          }}
+                          className="rounded-full bg-white/10 p-2 active:opacity-80 disabled:opacity-30"
+                        >
+                          <ChevronLeft size={22} color="#fff" />
+                        </Pressable>
+                        <Text className="text-xs text-white/70">
+                          {groupVideoPage + 1} / {groupTilesLayout.pageCount}
+                        </Text>
+                        <Pressable
+                          disabled={groupVideoPage >= groupTilesLayout.pageCount - 1}
+                          onPress={() => {
+                            const next = Math.min(
+                              groupTilesLayout.pageCount - 1,
+                              groupVideoPage + 1,
+                            );
+                            setGroupVideoPage(next);
+                            groupPagesListRef.current?.scrollToOffset({
+                              offset: (width - 24) * next,
+                              animated: true,
+                            });
+                          }}
+                          className="rounded-full bg-white/10 p-2 active:opacity-80 disabled:opacity-30"
+                        >
+                          <ChevronRight size={22} color="#fff" />
+                        </Pressable>
+                      </View>
+                    ) : null}
+                  </>
+                )}
               </View>
             ) : (
               <View className="flex-1">

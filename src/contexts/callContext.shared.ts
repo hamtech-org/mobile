@@ -13,7 +13,10 @@ export interface CallContextValue {
   initiateGroupCall: (type: CallType, conversationIdArg?: string) => void;
   acceptCall: () => void;
   rejectCall: () => void;
-  endCall: (meta?: { durationSec?: number; result?: "completed" | "missed" | "rejected" }) => void;
+  endCall: (meta?: {
+    durationSec?: number;
+    result?: "completed" | "missed" | "rejected" | "cancelled";
+  }) => void;
   leaveGroupCall: () => void;
   endGroupCallForAll: (meta?: { durationSec?: number }) => void;
   joinActiveGroupCall: () => void;

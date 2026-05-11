@@ -115,15 +115,25 @@ function CallLogMessage({ message, isOwn }: { message: IMessage; isOwn: boolean 
       ? "Cuộc gọi nhỡ"
       : kind === "rejected"
         ? "Cuộc gọi bị từ chối"
-        : callType === "video"
-          ? "Cuộc gọi video"
-          : "Cuộc gọi thoại";
+        : kind === "cancelled" && isOwn
+          ? callType === "video"
+            ? "Bạn đã hủy cuộc gọi video"
+            : "Bạn đã hủy cuộc gọi thoại"
+          : kind === "cancelled" && !isOwn
+            ? "Cuộc gọi nhỡ"
+            : callType === "video"
+              ? "Cuộc gọi video"
+              : "Cuộc gọi thoại";
 
   const durationLabel =
-    durationSec > 0 ? `${Math.floor(durationSec / 60)} phút ${durationSec % 60} giây` : "";
+    kind === "missed" || kind === "rejected" || kind === "cancelled"
+      ? ""
+      : durationSec > 0
+        ? `${Math.floor(durationSec / 60)} phút ${durationSec % 60} giây`
+        : "";
 
   const IconComponent = callType === "video" ? Video : Phone;
-  const iconColor = kind === "missed" ? "#ef4444" : primary;
+  const iconColor = kind === "missed" || (kind === "cancelled" && !isOwn) ? "#ef4444" : primary;
 
   return (
     <View className={`my-3 px-4 ${isOwn ? "items-end" : "items-start"}`}>
