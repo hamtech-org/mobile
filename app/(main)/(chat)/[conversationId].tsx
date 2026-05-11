@@ -526,6 +526,8 @@ export default function ChatDetailScreen() {
           conversation={conversation}
           currentUserId={currentUserId}
           initialPanel={groupModalInitial}
+          onJumpToMessage={handleJumpToMessage}
+          onOpenPollVote={(pollId) => setActivePollId(pollId)}
         />
       ) : null}
 
