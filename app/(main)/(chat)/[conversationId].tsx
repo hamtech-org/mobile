@@ -539,18 +539,9 @@ export default function ChatDetailScreen() {
 
       <ChatPinnedReminderBar
         pinnedMessages={pinnedMessages}
-        tasksRaw={isGroup && tasksEnvelope?.data ? (tasksEnvelope.data as unknown[]) : []}
-        isGroup={Boolean(isGroup)}
         currentUserId={currentUserId ?? ""}
         onJumpToMessage={handleJumpToMessage}
-        onManagePins={
-          isGroup
-            ? () => {
-                setGroupModalInitial("pinned");
-                setGroupManageOpen(true);
-              }
-            : undefined
-        }
+        onTogglePin={handleTogglePinForSheet}
       />
 
       {frameBanner && frameBanner.conversationId === conversationId ? (
