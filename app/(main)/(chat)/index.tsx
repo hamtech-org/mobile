@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback, useEffect } from "react";
 import { router } from "expo-router";
-import { Alert, FlatList, Pressable, Text, View, RefreshControl } from "react-native";
+import { FlatList, Pressable, Text, View, RefreshControl, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { CloudOff, MessageCircle, MessageSquare, Pin, Search, Users } from "lucide-react-native";
 
@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { SearchBar } from "@/components/common/SearchBar";
 import { ConversationItem } from "@/components/chat/ConversationItem";
 import {
+  ConversationListActionSheet,
   CreateGroupModal,
   MutedConversationsFooter,
   MuteNotificationsModal,
@@ -47,67 +48,59 @@ export default function ChatListScreen() {
   const [muteTarget, setMuteTarget] = useState<IConversation | null>(null);
   const [muteSubmitting, setMuteSubmitting] = useState(false);
   const [mutedExpanded, setMutedExpanded] = useState(false);
+  const [quickMenuConversation, setQuickMenuConversation] = useState<IConversation | null>(null);
   const { primary, muted: iconMuted } = useIconColors();
 
   const onRefresh = useCallback(() => {
     void refetch();
   }, [refetch]);
 
-  const openConversationQuickMenu = useCallback(
+  const handleQuickMenuTogglePin = useCallback(
     (item: IConversation) => {
       const pinned = item.isPinnedToTop ?? false;
-      const muted = item.isMuted ?? false;
-      Alert.alert(item.name ?? "Hội thoại", undefined, [
-        {
-          text: pinned ? "Bỏ ghim" : "Ghim lên đầu",
-          onPress: () => {
-            if (!pinned) {
-              const list = data ?? [];
-              const pinnedCount = list.filter((c) => c.isPinnedToTop).length;
-              if (!item.isPinnedToTop && pinnedCount >= MAX_PINNED_CHATS_TO_TOP) {
-                toast.error(
-                  `Chỉ ghim được tối đa ${MAX_PINNED_CHATS_TO_TOP} hội thoại lên đầu danh sách.`,
-                );
-                return;
-              }
-            }
-            void patchPrefs({ conversationId: item.conversationId, isPinnedToTop: !pinned })
-              .unwrap()
-              .then(() => toast.success(pinned ? "Đã bỏ ghim hội thoại" : "Đã ghim hội thoại"))
-              .catch((e: unknown) => {
-                const msg =
-                  (e as { data?: { error?: { message?: string } } })?.data?.error?.message ?? "";
-                if (msg.includes("Chỉ ghim được tối đa")) {
-                  toast.error(msg);
-                } else {
-                  toast.error("Không cập nhật được ghim hội thoại");
-                }
-              });
-          },
-        },
-        muted
-          ? {
-              text: "Bật thông báo",
-              onPress: () => {
-                void patchPrefs({
-                  conversationId: item.conversationId,
-                  isMuted: false,
-                  notificationsMutedUntil: null,
-                })
-                  .unwrap()
-                  .then(() => toast.success("Đã bật thông báo"))
-                  .catch(() => toast.error("Không cập nhật được thông báo"));
-              },
-            }
-          : {
-              text: "Tắt thông báo…",
-              onPress: () => setMuteTarget(item),
-            },
-        { text: "Hủy", style: "cancel" },
-      ]);
+      if (!pinned) {
+        const list = data ?? [];
+        const pinnedCount = list.filter((c) => c.isPinnedToTop).length;
+        if (!item.isPinnedToTop && pinnedCount >= MAX_PINNED_CHATS_TO_TOP) {
+          toast.error(
+            `Chỉ ghim được tối đa ${MAX_PINNED_CHATS_TO_TOP} hội thoại lên đầu danh sách.`,
+          );
+          return;
+        }
+      }
+      void patchPrefs({ conversationId: item.conversationId, isPinnedToTop: !pinned })
+        .unwrap()
+        .then(() => toast.success(pinned ? "Đã bỏ ghim hội thoại" : "Đã ghim hội thoại"))
+        .catch((e: unknown) => {
+          const msg =
+            (e as { data?: { error?: { message?: string } } })?.data?.error?.message ?? "";
+          if (msg.includes("Chỉ ghim được tối đa")) {
+            toast.error(msg);
+          } else {
+            toast.error("Không cập nhật được ghim hội thoại");
+          }
+        });
     },
     [data, patchPrefs],
   );
+
+  const handleQuickMenuUnmute = useCallback(
+    (item: IConversation) => {
+      void patchPrefs({
+        conversationId: item.conversationId,
+        isMuted: false,
+        notificationsMutedUntil: null,
+      })
+        .unwrap()
+        .then(() => toast.success("Đã bật thông báo"))
+        .catch(() => toast.error("Không cập nhật được thông báo"));
+    },
+    [patchPrefs],
+  );
+
+  const openConversationQuickMenu = useCallback((item: IConversation) => {
+    setQuickMenuConversation(item);
+  }, []);
 
   const { listRows, mutedConversations, totalUnread, mutedUnreadTotal, listableCount } =
     useMemo(() => {
@@ -344,6 +337,14 @@ export default function ChatListScreen() {
       </View>
 
       <CreateGroupModal visible={createGroupOpen} onClose={() => setCreateGroupOpen(false)} />
+
+      <ConversationListActionSheet
+        conversation={quickMenuConversation}
+        onClose={() => setQuickMenuConversation(null)}
+        onTogglePin={handleQuickMenuTogglePin}
+        onOpenMutePicker={(item) => setMuteTarget(item)}
+        onUnmute={handleQuickMenuUnmute}
+      />
 
       <MuteNotificationsModal
         visible={muteTarget !== null}
