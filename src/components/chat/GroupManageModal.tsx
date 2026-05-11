@@ -51,6 +51,7 @@ import {
   User,
   UserPlus,
   Users,
+  Plus,
 } from "lucide-react-native";
 
 import { Avatar } from "@/components/common/Avatar";
@@ -922,7 +923,7 @@ export function GroupManageModal({
                   : panel === "bulletinFeed"
                     ? "Tin ghim & Bình chọn"
                     : panel === "tasks"
-                      ? "Danh sách nhắc hẹn"
+                      ? "Danh sách giao việc & nhắc hẹn"
                       : panel === "personal"
                         ? "Cài đặt cá nhân"
                         : "Chuyển quyền";
@@ -1108,7 +1109,7 @@ export function GroupManageModal({
             >
               <Clock size={18} color={Z.sub} strokeWidth={1.75} />
               <Text style={[styles.bulletinRowLabel, { flex: 1, marginLeft: 12 }]}>
-                Danh sách nhắc hẹn
+                Danh sách giao việc & nhắc hẹn
               </Text>
               <ChevronRight size={16} color={Z.sub} />
             </Pressable>
@@ -1605,7 +1606,7 @@ export function GroupManageModal({
           ]}
         >
           <View style={styles.bulletinPinCardTop}>
-            <Pin size={16} color={Z.primary} strokeWidth={2} />
+            <Pin size={18} color={Z.primary} strokeWidth={2} />
             <Text style={styles.bulletinPinWho} numberOfLines={1}>
               {who}
             </Text>
@@ -1666,6 +1667,67 @@ export function GroupManageModal({
             </Text>
           ) : null}
           <Text style={styles.bulletinPollMeta}>{statusLine}</Text>
+        </Pressable>
+      );
+    });
+  };
+
+  /** Thẻ nhắc hẹn — cùng layout với thẻ bình chọn / tin ghim trong modal. */
+  const renderTaskCards = (emptyHint: string) => {
+    if (tasksList.length === 0) {
+      return (
+        <Text
+          style={[styles.help, { textAlign: "center", paddingVertical: 28, paddingHorizontal: 16 }]}
+        >
+          {emptyHint}
+        </Text>
+      );
+    }
+    return tasksList.map((raw, idx) => {
+      const t = taskSummary(raw);
+      const key = t.id || `task-${idx}`;
+      const dueObj = t.due ? new Date(t.due) : null;
+      let dueLine = "";
+      if (dueObj) {
+        dueLine = dueObj.toLocaleString("vi-VN", {
+          day: "2-digit",
+          month: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        if (dueObj.getTime() < Date.now()) {
+          dueLine = `Hết hạn: ${dueLine}`;
+        } else {
+          dueLine = `Hạn: ${dueLine}`;
+        }
+      }
+      const overdue = dueLine.startsWith("Hết hạn");
+      const statusTrim = t.status.trim();
+      return (
+        <Pressable
+          key={key}
+          style={({ pressed }) => [styles.bulletinPollCard, pressed ? { opacity: 0.92 } : null]}
+          onPress={() => {
+            setEditingTaskData(raw);
+            setTaskModalOpen(true);
+          }}
+        >
+          <View style={styles.bulletinPollCardTop}>
+            <Clock size={18} color="#059669" strokeWidth={2} />
+            <Text style={styles.bulletinPollTitle} numberOfLines={3}>
+              {t.title}
+            </Text>
+          </View>
+          {statusTrim ? (
+            <Text style={styles.bulletinPollPreview} numberOfLines={2}>
+              {statusTrim}
+            </Text>
+          ) : null}
+          {dueLine ? (
+            <Text style={[styles.bulletinPollMeta, overdue ? { color: Z.red } : null]}>
+              {dueLine}
+            </Text>
+          ) : null}
         </Pressable>
       );
     });
@@ -1805,97 +1867,41 @@ export function GroupManageModal({
     );
   };
 
-  const renderTasks = () => (
-    <ScrollView
-      style={styles.scroll}
-      keyboardShouldPersistTaps="handled"
-      contentContainerStyle={{ paddingBottom: 32 }}
-    >
-      <Text style={styles.sectionCap}>Danh sách</Text>
-      {tasksFetching && tasksList.length === 0 ? (
-        <Text style={[styles.help, { paddingHorizontal: 16, textAlign: "center" }]}>
-          Đang tải...
-        </Text>
-      ) : tasksList.length === 0 ? (
-        <Text style={[styles.help, { paddingHorizontal: 16 }]}>
-          Chưa có nhắc hẹn hay công việc.
-        </Text>
-      ) : (
-        tasksList.map((raw, idx) => {
-          const t = taskSummary(raw);
-          const key = t.id || `task-${idx}`;
-          const dueObj = t.due ? new Date(t.due) : null;
-          let dueLine = "";
-          if (dueObj) {
-            dueLine = dueObj.toLocaleString("vi-VN", {
-              day: "2-digit",
-              month: "2-digit",
-              hour: "2-digit",
-              minute: "2-digit",
-            });
-            if (dueObj.getTime() < Date.now()) {
-              dueLine = `Hết hạn: ${dueLine}`;
-            } else {
-              dueLine = `Hạn: ${dueLine}`;
-            }
-          }
-          const subLine = [t.status, dueLine].filter(Boolean).join(" · ");
-          return (
-            <Pressable
-              key={key}
-              style={styles.searchRow}
-              onPress={() => {
-                setEditingTaskData(raw);
-                setTaskModalOpen(true);
-              }}
-            >
-              <Text style={styles.menuLabel} numberOfLines={2}>
-                {t.title}
-              </Text>
-              {subLine ? (
-                <Text
-                  style={[
-                    styles.subSmall,
-                    dueLine.includes("Hết hạn")
-                      ? { color: "#DC2626", fontWeight: "600" }
-                      : undefined,
-                  ]}
-                >
-                  {subLine}
-                </Text>
-              ) : null}
-            </Pressable>
-          );
-        })
-      )}
-
-      {tasksList.length > 0 ? (
-        <Text style={[styles.help, { paddingHorizontal: 16, marginTop: 12 }]}>
-          Có thể chạm vào công việc để xem chi tiết hoặc chỉnh sửa.
-        </Text>
-      ) : null}
-
-      {!canCreateTaskUi ? (
-        <Text style={[styles.help, { paddingHorizontal: 16, marginTop: 12 }]}>
-          Nhóm không cho phép thành viên tạo công việc / nhắc hẹn.
-        </Text>
-      ) : null}
-      <Pressable
-        style={[
-          styles.primaryBtn,
-          { marginHorizontal: 16, marginTop: 12 },
-          (!canCreateTaskUi || busy) && { opacity: 0.45 },
-        ]}
-        onPress={() => {
-          setEditingTaskData(null);
-          setTaskModalOpen(true);
-        }}
-        disabled={busy || !canCreateTaskUi}
+  const renderTasks = () => {
+    const showLoading = tasksFetching && tasksList.length === 0;
+    return (
+      <ScrollView
+        style={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 24 }}
       >
-        <Text style={styles.primaryBtnText}>Tạo công việc / nhắc hẹn</Text>
-      </Pressable>
-    </ScrollView>
-  );
+        {showLoading ? (
+          <Text style={[styles.help, { textAlign: "center", paddingVertical: 20 }]}>
+            Đang tải...
+          </Text>
+        ) : tasksList.length > 0 ? (
+          <View style={{ paddingBottom: 8 }}>
+            <Text style={styles.bulletinSectionCap}>NHẮC HẸN</Text>
+            {renderTaskCards("")}
+          </View>
+        ) : (
+          renderTaskCards("Chưa có nhắc hẹn hay công việc.")
+        )}
+
+        {tasksList.length > 0 ? (
+          <Text style={[styles.help, { marginTop: 14 }]}>
+            Có thể chạm vào công việc để xem chi tiết hoặc chỉnh sửa.
+          </Text>
+        ) : null}
+
+        {!canCreateTaskUi ? (
+          <Text style={[styles.help, { marginTop: 14 }]}>
+            Nhóm không cho phép thành viên tạo công việc / nhắc hẹn.
+          </Text>
+        ) : null}
+      </ScrollView>
+    );
+  };
 
   const renderMedia = () => {
     const w = Dimensions.get("window").width;
@@ -2091,11 +2097,30 @@ export function GroupManageModal({
       >
         <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
           <View style={styles.topBar}>
-            <Pressable onPress={handleBack} style={styles.backBtn} hitSlop={12}>
-              <ChevronLeft size={28} color={Z.text} strokeWidth={1.75} />
-            </Pressable>
-            <Text style={styles.topTitle}>{headerTitle}</Text>
-            <View style={{ width: 40 }} />
+            <View style={styles.topBarSide}>
+              <Pressable onPress={handleBack} style={styles.backBtn} hitSlop={12}>
+                <ChevronLeft size={28} color={Z.text} strokeWidth={1.75} />
+              </Pressable>
+            </View>
+            <Text style={styles.topTitleCenter} numberOfLines={1}>
+              {headerTitle}
+            </Text>
+            <View style={[styles.topBarSide, { alignItems: "flex-end" }]}>
+              {panel === "tasks" && canCreateTaskUi ? (
+                <Pressable
+                  onPress={() => {
+                    setEditingTaskData(null);
+                    setTaskModalOpen(true);
+                  }}
+                  disabled={busy}
+                  style={styles.backBtn}
+                  hitSlop={12}
+                  accessibilityLabel="Tạo công việc hoặc nhắc hẹn"
+                >
+                  <Plus size={26} color={Z.primary} strokeWidth={2.25} />
+                </Pressable>
+              ) : null}
+            </View>
           </View>
 
           <View style={styles.body}>
@@ -2333,7 +2358,14 @@ const styles = StyleSheet.create({
     backgroundColor: Z.bg,
   },
   backBtn: { padding: 8 },
-  topTitle: { fontSize: 17, fontWeight: "700", color: Z.text },
+  topBarSide: { width: 44, justifyContent: "center" },
+  topTitleCenter: {
+    flex: 1,
+    fontSize: 17,
+    fontWeight: "700",
+    color: Z.text,
+    textAlign: "center",
+  },
   body: { flex: 1, backgroundColor: Z.bg },
   scroll: { flex: 1 },
   hero: { alignItems: "center", paddingTop: 12, paddingBottom: 8 },
@@ -2692,7 +2724,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: Z.bg,
     padding: 12,
-    marginBottom: 10,
+    marginBottom: 12,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.06,
