@@ -37,7 +37,6 @@ import {
   ChevronRight,
   ChevronLeft,
   ChevronDown,
-  CheckSquare,
   Check,
   Camera,
   BellOff,
@@ -112,12 +111,17 @@ export type GroupManagePanel =
   | "members"
   | "requests"
   | "settings"
-  | "pinned"
+  /** Ghim + bình chọn (tab giống web ConversationInfoPanel). */
+  | "bulletinFeed"
   | "media"
   | "transferOwner"
+  /** @deprecated Dùng bulletinFeed + tab; giữ để initialPanel cũ vẫn mở đúng tab. */
+  | "pinned"
   | "polls"
   | "tasks"
   | "personal";
+
+type BulletinNotesTab = "all" | "pinned" | "polls";
 
 type Panel = GroupManagePanel;
 
@@ -128,6 +132,10 @@ interface GroupManageModalProps {
   currentUserId?: string;
   /** Khi mở modal, nhảy thẳng tới tab (vd. từ thanh ghim → Chỉnh sửa). */
   initialPanel?: Panel;
+  /** Đóng modal nhóm rồi cuộn tới tin trong luồng chat (giống web onJumpToMessage). */
+  onJumpToMessage?: (messageId: string) => void;
+  /** Mở PollVoteModal trên màn chat (giống web onOpenPollVote). */
+  onOpenPollVote?: (pollId: string) => void;
 }
 
 const Z = {
@@ -178,12 +186,59 @@ function taskSummary(raw: unknown): { id: string; title: string; status: string;
   };
 }
 
+/** Giống web `formatBulletinFooterTime` — 28/02/2026 lúc 16:24 */
+function formatBulletinFooterTime(iso?: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const date = d.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const time = d.toLocaleTimeString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  return `${date} lúc ${time}`;
+}
+
+function resolveCreatorLabel(
+  creatorId: string | undefined | null,
+  creatorDisplayName: string | null | undefined,
+  currentUserId: string | undefined,
+  memberNameById: Map<string, string>,
+): string {
+  const fromApi = creatorDisplayName?.trim();
+  if (fromApi) return fromApi;
+  if (creatorId && currentUserId && creatorId === currentUserId) return "Bạn";
+  if (creatorId) {
+    const fromMembers = memberNameById.get(creatorId)?.trim();
+    if (fromMembers) return fromMembers;
+  }
+  if (creatorId) return "Thành viên";
+  return "Không rõ";
+}
+
+function pollOptionsPreview(raw: unknown): string {
+  if (!raw || typeof raw !== "object") return "";
+  const o = raw as Record<string, unknown>;
+  const options = Array.isArray(o.options) ? o.options : [];
+  return options
+    .slice(0, 5)
+    .map((x) => {
+      const opt = x as Record<string, unknown>;
+      return String(opt.text ?? "").trim();
+    })
+    .filter(Boolean)
+    .join(" · ");
+}
+
 export function GroupManageModal({
   visible,
   onClose,
   conversation,
   currentUserId,
   initialPanel,
+  onJumpToMessage,
+  onOpenPollVote,
 }: GroupManageModalProps): ReactElement {
   const groupId = conversation.conversationId;
   const authUserId = useAppSelector((s) => s.auth.user?.userId);
@@ -204,13 +259,27 @@ export function GroupManageModal({
   const [muteNotifSubmitting, setMuteNotifSubmitting] = useState(false);
   const [mediaTab, setMediaTab] = useState<"media" | "file" | "link">("media");
   const [bulletinExpanded, setBulletinExpanded] = useState(true);
+  const [bulletinNotesTab, setBulletinNotesTab] = useState<BulletinNotesTab>("all");
   const [aiSummaryOpen, setAiSummaryOpen] = useState(false);
   const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
   const [aiSummaryResult, setAiSummaryResult] = useState("");
 
   useEffect(() => {
     if (visible) {
-      setPanel(initialPanel ?? "home");
+      const init = initialPanel ?? "home";
+      if (init === "pinned") {
+        setPanel("bulletinFeed");
+        setBulletinNotesTab("pinned");
+      } else if (init === "polls") {
+        setPanel("bulletinFeed");
+        setBulletinNotesTab("polls");
+      } else if (init === "bulletinFeed") {
+        setPanel("bulletinFeed");
+        setBulletinNotesTab("all");
+      } else {
+        setPanel(init);
+        setBulletinNotesTab("all");
+      }
       setEditName(conversation.name ?? "");
       setAddFriendFilter("");
       setPickOwnerForLeave(false);
@@ -225,7 +294,7 @@ export function GroupManageModal({
       setAiSummaryLoading(false);
       setAiSummaryResult("");
     }
-  }, [visible, conversation.name, initialPanel]);
+  }, [visible, conversation.name, conversation.conversationId, initialPanel]);
 
   const {
     data: members = [],
@@ -295,11 +364,11 @@ export function GroupManageModal({
   const [uploadMedia, { isLoading: uploadingAvatar }] = useUploadMediaMutation();
   const [deleteTaskMut] = useDeleteTaskMutation();
 
-  const { data: pollsEnvelope } = useGetPollsQuery(groupId, {
+  const { data: pollsEnvelope, isFetching: pollsFetching } = useGetPollsQuery(groupId, {
     skip: !visible,
   });
 
-  const { data: tasksEnvelope } = useGetTasksQuery(groupId, {
+  const { data: tasksEnvelope, isFetching: tasksFetching } = useGetTasksQuery(groupId, {
     skip: !visible,
   });
 
@@ -362,19 +431,76 @@ export function GroupManageModal({
   }, [messages]);
 
   const pinnedList = useMemo(
-    () => messages.filter((m) => m.isPinned && !m.isRecalled && !m.isDeleted),
+    () =>
+      messages
+        .filter((m) => m.isPinned && !m.isRecalled && !m.isDeleted)
+        .slice()
+        .sort((a, b) => {
+          const am = new Date(a.createdAt).getTime();
+          const bm = new Date(b.createdAt).getTime();
+          return (Number.isFinite(bm) ? bm : 0) - (Number.isFinite(am) ? am : 0);
+        }),
     [messages],
   );
+
+  const memberNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const row of members) {
+      if (!row.userId) continue;
+      const label = row.displayName?.trim();
+      if (label) m.set(row.userId, label);
+    }
+    return m;
+  }, [members]);
 
   const pollsList = useMemo(() => {
     const raw = pollsEnvelope?.data;
     return Array.isArray(raw) ? raw : [];
   }, [pollsEnvelope]);
 
+  const pollsSorted = useMemo(() => {
+    const list = pollsList.slice();
+    list.sort((a, b) => {
+      const ax = a as Record<string, unknown>;
+      const bx = b as Record<string, unknown>;
+      const at = Date.parse(String(ax.createdAt ?? "")) || 0;
+      const bt = Date.parse(String(bx.createdAt ?? "")) || 0;
+      if (bt !== at) return bt - at;
+      return String(ax.pollId ?? "").localeCompare(String(bx.pollId ?? ""));
+    });
+    return list;
+  }, [pollsList]);
+
   const tasksList = useMemo(() => {
     const raw = tasksEnvelope?.data;
     return Array.isArray(raw) ? raw : [];
   }, [tasksEnvelope]);
+
+  const jumpToPinnedMessage = useCallback(
+    (messageId: string) => {
+      if (!onJumpToMessage) {
+        toast.info("Không thể mở tin từ đây.");
+        return;
+      }
+      onClose();
+      setTimeout(() => onJumpToMessage(messageId), 220);
+    },
+    [onClose, onJumpToMessage],
+  );
+
+  const openPollFromBulletin = useCallback(
+    (pollId: string) => {
+      const id = String(pollId).trim();
+      if (!id) return;
+      if (!onOpenPollVote) {
+        toast.info("Không thể mở bình chọn từ đây.");
+        return;
+      }
+      onClose();
+      setTimeout(() => onOpenPollVote(id), 220);
+    },
+    [onClose, onOpenPollVote],
+  );
 
   const navigateOut = useCallback(() => {
     onClose();
@@ -787,21 +913,19 @@ export function GroupManageModal({
               ? "Duyệt thành viên"
               : panel === "settings"
                 ? "Cài đặt nhóm"
-                : panel === "pinned"
-                  ? "Tin đã ghim"
-                  : panel === "media"
-                    ? mediaTab === "media"
-                      ? "Ảnh / Video"
-                      : mediaTab === "file"
-                        ? "File"
-                        : "Link"
-                    : panel === "polls"
-                      ? "Bình chọn"
-                      : panel === "tasks"
-                        ? "Công việc"
-                        : panel === "personal"
-                          ? "Cài đặt cá nhân"
-                          : "Chuyển quyền";
+                : panel === "media"
+                  ? mediaTab === "media"
+                    ? "Ảnh / Video"
+                    : mediaTab === "file"
+                      ? "File"
+                      : "Link"
+                  : panel === "bulletinFeed"
+                    ? "Tin ghim & Bình chọn"
+                    : panel === "tasks"
+                      ? "Danh sách nhắc hẹn"
+                      : panel === "personal"
+                        ? "Cài đặt cá nhân"
+                        : "Chuyển quyền";
 
   const renderHome = () => (
     <ScrollView
@@ -988,24 +1112,20 @@ export function GroupManageModal({
               </Text>
               <ChevronRight size={16} color={Z.sub} />
             </Pressable>
-            <View style={styles.bulletinSplitRow}>
-              <Pressable
-                style={styles.bulletinSplitBtn}
-                onPress={() => setPanel("pinned")}
-                android_ripple={{ color: "rgba(0,0,0,0.04)" }}
-              >
-                <Pin size={16} color={Z.primary} strokeWidth={1.75} />
-                <Text style={styles.bulletinSplitBtnText}>Tin ghim</Text>
-              </Pressable>
-              <Pressable
-                style={styles.bulletinSplitBtn}
-                onPress={() => setPanel("polls")}
-                android_ripple={{ color: "rgba(0,0,0,0.04)" }}
-              >
-                <BarChart2 size={16} color={Z.primary} strokeWidth={1.75} />
-                <Text style={styles.bulletinSplitBtnText}>Bình chọn</Text>
-              </Pressable>
-            </View>
+            <Pressable
+              style={styles.bulletinRow}
+              onPress={() => {
+                setBulletinNotesTab("all");
+                setPanel("bulletinFeed");
+              }}
+              android_ripple={{ color: "rgba(0,0,0,0.04)" }}
+            >
+              <FileText size={18} color={Z.sub} strokeWidth={1.75} />
+              <Text style={[styles.bulletinRowLabel, { flex: 1, marginLeft: 12 }]}>
+                Tin ghim & Bình chọn
+              </Text>
+              <ChevronRight size={16} color={Z.sub} />
+            </Pressable>
           </View>
         ) : null}
       </View>
@@ -1458,31 +1578,232 @@ export function GroupManageModal({
     );
   };
 
-  const renderPinned = () => (
-    <View style={{ flex: 1 }}>
-      <FlatList
-        data={pinnedList}
-        keyExtractor={(m) => m.messageId}
-        ListEmptyComponent={
-          <Text style={[styles.help, { textAlign: "center", marginTop: 24 }]}>
-            Chưa có tin ghim.
+  const renderPinnedMessageCards = (emptyHint: string) => {
+    if (pinnedList.length === 0) {
+      return (
+        <Text
+          style={[styles.help, { textAlign: "center", paddingVertical: 28, paddingHorizontal: 16 }]}
+        >
+          {emptyHint}
+        </Text>
+      );
+    }
+    return pinnedList.map((m) => {
+      const who = String(m.senderDisplayName ?? "").trim() || "Thành viên";
+      const when = formatBulletinFooterTime(m.createdAt);
+      const rawContent = String(m.content ?? "").trim();
+      const preview = rawContent.length > 180 ? `${rawContent.slice(0, 180)}…` : rawContent || "…";
+      return (
+        <Pressable
+          key={m.messageId}
+          onPress={() => jumpToPinnedMessage(m.messageId)}
+          disabled={!onJumpToMessage}
+          style={({ pressed }) => [
+            styles.bulletinPinCard,
+            pressed && onJumpToMessage ? { opacity: 0.92 } : null,
+            !onJumpToMessage ? { opacity: 0.85 } : null,
+          ]}
+        >
+          <View style={styles.bulletinPinCardTop}>
+            <Pin size={16} color={Z.primary} strokeWidth={2} />
+            <Text style={styles.bulletinPinWho} numberOfLines={1}>
+              {who}
+            </Text>
+            <Text style={styles.bulletinPinWhen} numberOfLines={1}>
+              {when || "—"}
+            </Text>
+          </View>
+          <Text style={styles.bulletinPinPreview} numberOfLines={8}>
+            {preview}
           </Text>
-        }
-        renderItem={({ item: m }) => {
-          const viewer = effectiveUserId ?? "";
-          const preview = formatChatPreviewLine(m, viewer);
-          return (
-            <View style={styles.searchRow}>
-              <Text style={styles.menuLabel} numberOfLines={3}>
-                {preview}
-              </Text>
-              <Text style={styles.subSmall}>{new Date(m.createdAt).toLocaleString("vi-VN")}</Text>
+        </Pressable>
+      );
+    });
+  };
+
+  const renderPollCards = (emptyHint: string) => {
+    if (pollsSorted.length === 0) {
+      return (
+        <Text
+          style={[styles.help, { textAlign: "center", paddingVertical: 28, paddingHorizontal: 16 }]}
+        >
+          {emptyHint}
+        </Text>
+      );
+    }
+    return pollsSorted.map((raw, idx) => {
+      const o = raw as Record<string, unknown>;
+      const p = pollSummary(raw);
+      const key = p.id || `poll-${idx}`;
+      const preview = pollOptionsPreview(raw);
+      const creator = resolveCreatorLabel(
+        typeof o.creatorId === "string" ? o.creatorId : null,
+        o.creatorDisplayName != null ? String(o.creatorDisplayName) : null,
+        effectiveUserId,
+        memberNameById,
+      );
+      const statusLine = `${p.closed ? "Đã đóng" : "Đang mở"}${creator ? ` · ${creator}` : ""}`;
+      return (
+        <Pressable
+          key={key}
+          onPress={() => openPollFromBulletin(p.id)}
+          disabled={!onOpenPollVote || !p.id}
+          style={({ pressed }) => [
+            styles.bulletinPollCard,
+            pressed && onOpenPollVote ? { opacity: 0.92 } : null,
+            !onOpenPollVote ? { opacity: 0.85 } : null,
+          ]}
+        >
+          <View style={styles.bulletinPollCardTop}>
+            <BarChart2 size={18} color="#f97316" strokeWidth={2} />
+            <Text style={styles.bulletinPollTitle} numberOfLines={3}>
+              {p.title}
+            </Text>
+          </View>
+          {preview ? (
+            <Text style={styles.bulletinPollPreview} numberOfLines={3}>
+              {preview}
+            </Text>
+          ) : null}
+          <Text style={styles.bulletinPollMeta}>{statusLine}</Text>
+        </Pressable>
+      );
+    });
+  };
+
+  const renderBulletinFeed = () => {
+    const tabDefs: { id: BulletinNotesTab; label: string }[] = [
+      { id: "all", label: "Tất cả" },
+      { id: "pinned", label: "Tin ghim" },
+      { id: "polls", label: "Bình chọn" },
+    ];
+
+    const showPollsLoading =
+      bulletinNotesTab !== "pinned" && pollsFetching && pollsSorted.length === 0;
+    const showAllLoading =
+      bulletinNotesTab === "all" &&
+      (pollsFetching || tasksFetching) &&
+      pinnedList.length === 0 &&
+      pollsSorted.length === 0;
+
+    let body: ReactNode = null;
+    if (bulletinNotesTab === "all") {
+      if (showAllLoading) {
+        body = (
+          <Text style={[styles.help, { textAlign: "center", paddingVertical: 20 }]}>
+            Đang tải...
+          </Text>
+        );
+      } else if (pinnedList.length === 0 && pollsSorted.length === 0) {
+        body = (
+          <Text
+            style={[
+              styles.help,
+              { textAlign: "center", paddingVertical: 28, paddingHorizontal: 16 },
+            ]}
+          >
+            Chưa có tin ghim hay bình chọn.
+          </Text>
+        );
+      } else {
+        body = (
+          <View style={{ paddingBottom: 8 }}>
+            {pinnedList.length > 0 ? (
+              <View style={{ marginBottom: 16 }}>
+                <Text style={styles.bulletinSectionCap}>TIN GHIM</Text>
+                {renderPinnedMessageCards("")}
+              </View>
+            ) : null}
+            {pollsSorted.length > 0 ? (
+              <View>
+                <Text style={styles.bulletinSectionCap}>BÌNH CHỌN</Text>
+                {renderPollCards("")}
+              </View>
+            ) : null}
+          </View>
+        );
+      }
+    } else if (bulletinNotesTab === "pinned") {
+      body = renderPinnedMessageCards("Chưa có tin ghim trong hội thoại.");
+    } else {
+      if (showPollsLoading) {
+        body = (
+          <Text style={[styles.help, { textAlign: "center", paddingVertical: 20 }]}>
+            Đang tải bình chọn...
+          </Text>
+        );
+      } else {
+        body = renderPollCards("Chưa có bình chọn.");
+      }
+    }
+
+    return (
+      <View style={{ flex: 1 }}>
+        <View style={styles.bulletinTabBar}>
+          {tabDefs.map((t) => {
+            const on = bulletinNotesTab === t.id;
+            return (
+              <Pressable
+                key={t.id}
+                onPress={() => setBulletinNotesTab(t.id)}
+                style={styles.bulletinTabBtn}
+              >
+                <Text
+                  style={[styles.bulletinTabLabel, on ? styles.bulletinTabLabelActive : null]}
+                  numberOfLines={1}
+                >
+                  {t.label}
+                </Text>
+                {on ? <View style={styles.bulletinTabUnderline} /> : <View style={{ height: 2 }} />}
+              </Pressable>
+            );
+          })}
+        </View>
+        <ScrollView
+          style={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 24 }}
+        >
+          {body}
+          {canCreatePollUi || canCreateTaskUi ? (
+            <View style={{ marginTop: 16, gap: 10 }}>
+              {canCreatePollUi ? (
+                <Pressable
+                  style={[styles.secondaryBtn, (!canCreatePollUi || busy) && { opacity: 0.45 }]}
+                  onPress={() => setPollModalOpen(true)}
+                  disabled={busy || !canCreatePollUi}
+                >
+                  <Text style={styles.secondaryBtnText}>Tạo bình chọn mới</Text>
+                </Pressable>
+              ) : null}
+              {canCreateTaskUi ? (
+                <Pressable
+                  style={[styles.secondaryBtn, (!canCreateTaskUi || busy) && { opacity: 0.45 }]}
+                  onPress={() => {
+                    setEditingTaskData(null);
+                    setTaskModalOpen(true);
+                  }}
+                  disabled={busy || !canCreateTaskUi}
+                >
+                  <Text style={styles.secondaryBtnText}>Tạo công việc / nhắc hẹn</Text>
+                </Pressable>
+              ) : null}
             </View>
-          );
-        }}
-      />
-    </View>
-  );
+          ) : null}
+          {!canCreatePollUi ? (
+            <Text style={[styles.help, { marginTop: 14 }]}>
+              Nhóm không cho phép thành viên tạo bình chọn.
+            </Text>
+          ) : null}
+          {!canCreateTaskUi ? (
+            <Text style={[styles.help, { marginTop: 8 }]}>
+              Nhóm không cho phép thành viên tạo công việc / nhắc hẹn.
+            </Text>
+          ) : null}
+        </ScrollView>
+      </View>
+    );
+  };
 
   const renderTasks = () => (
     <ScrollView
@@ -1491,8 +1812,14 @@ export function GroupManageModal({
       contentContainerStyle={{ paddingBottom: 32 }}
     >
       <Text style={styles.sectionCap}>Danh sách</Text>
-      {tasksList.length === 0 ? (
-        <Text style={[styles.help, { paddingHorizontal: 16 }]}>Chưa có công việc.</Text>
+      {tasksFetching && tasksList.length === 0 ? (
+        <Text style={[styles.help, { paddingHorizontal: 16, textAlign: "center" }]}>
+          Đang tải...
+        </Text>
+      ) : tasksList.length === 0 ? (
+        <Text style={[styles.help, { paddingHorizontal: 16 }]}>
+          Chưa có nhắc hẹn hay công việc.
+        </Text>
       ) : (
         tasksList.map((raw, idx) => {
           const t = taskSummary(raw);
@@ -1696,49 +2023,6 @@ export function GroupManageModal({
     return Number.isFinite(t) && t > Date.now() ? u : null;
   }, [conversation.notificationsMutedUntil]);
 
-  const renderPolls = () => (
-    <ScrollView
-      style={styles.scroll}
-      keyboardShouldPersistTaps="handled"
-      contentContainerStyle={{ paddingBottom: 32 }}
-    >
-      <Text style={styles.sectionCap}>Danh sách</Text>
-      {pollsList.length === 0 ? (
-        <Text style={[styles.help, { paddingHorizontal: 16 }]}>Chưa có bình chọn.</Text>
-      ) : (
-        pollsList.map((raw, idx) => {
-          const p = pollSummary(raw);
-          const key = p.id || `poll-${idx}`;
-          return (
-            <View key={key} style={styles.searchRow}>
-              <Text style={styles.menuLabel} numberOfLines={2}>
-                {p.title}
-              </Text>
-              <Text style={styles.subSmall}>{p.closed ? "Đã đóng" : "Đang mở"}</Text>
-            </View>
-          );
-        })
-      )}
-
-      {!canCreatePollUi ? (
-        <Text style={[styles.help, { paddingHorizontal: 16, marginTop: 12 }]}>
-          Nhóm không cho phép thành viên tạo bình chọn.
-        </Text>
-      ) : null}
-      <Pressable
-        style={[
-          styles.primaryBtn,
-          { marginHorizontal: 16, marginTop: 12 },
-          (!canCreatePollUi || busy) && { opacity: 0.45 },
-        ]}
-        onPress={() => setPollModalOpen(true)}
-        disabled={busy || !canCreatePollUi}
-      >
-        <Text style={styles.primaryBtnText}>Tạo bình chọn mới</Text>
-      </Pressable>
-    </ScrollView>
-  );
-
   const renderPersonal = () => {
     return (
       <ScrollView
@@ -1821,11 +2105,10 @@ export function GroupManageModal({
             {panel === "members" && renderMembers()}
             {panel === "requests" && renderRequests()}
             {panel === "settings" && renderSettings()}
-            {panel === "pinned" && renderPinned()}
+            {panel === "bulletinFeed" && renderBulletinFeed()}
             {panel === "media" && renderMedia()}
             {panel === "transferOwner" && renderTransfer()}
             {panel === "tasks" && renderTasks()}
-            {panel === "polls" && renderPolls()}
             {panel === "personal" && renderPersonal()}
           </View>
         </SafeAreaView>
@@ -2368,6 +2651,111 @@ const styles = StyleSheet.create({
     backgroundColor: "#FEE2E2",
   },
   kickOutBtnText: { fontSize: 14, fontWeight: "700", color: Z.red },
+  bulletinTabBar: {
+    flexDirection: "row",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Z.line,
+    backgroundColor: Z.bg,
+  },
+  bulletinTabBtn: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+  },
+  bulletinTabLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: Z.sub,
+    textAlign: "center",
+  },
+  bulletinTabLabelActive: { color: Z.primary },
+  bulletinTabUnderline: {
+    marginTop: 6,
+    height: 2,
+    alignSelf: "stretch",
+    marginHorizontal: 8,
+    borderRadius: 2,
+    backgroundColor: Z.primary,
+  },
+  bulletinSectionCap: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+    color: Z.sub,
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  bulletinPinCard: {
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.06)",
+    borderRadius: 16,
+    backgroundColor: Z.bg,
+    padding: 12,
+    marginBottom: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  bulletinPinCardTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  bulletinPinWho: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 13,
+    fontWeight: "700",
+    color: Z.text,
+  },
+  bulletinPinWhen: { fontSize: 11, fontWeight: "600", color: Z.sub },
+  bulletinPinPreview: {
+    marginTop: 8,
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#374151",
+    lineHeight: 19,
+  },
+  bulletinPollCard: {
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.06)",
+    borderRadius: 16,
+    backgroundColor: Z.bg,
+    padding: 12,
+    marginBottom: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  bulletinPollCardTop: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
+  bulletinPollTitle: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "800",
+    color: Z.text,
+    lineHeight: 21,
+  },
+  bulletinPollPreview: {
+    marginTop: 8,
+    fontSize: 13,
+    color: "#4b5563",
+    lineHeight: 18,
+  },
+  bulletinPollMeta: { marginTop: 8, fontSize: 12, fontWeight: "600", color: Z.sub },
+  secondaryBtn: {
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    backgroundColor: "#EFF6FF",
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  secondaryBtnText: { fontSize: 15, fontWeight: "700", color: Z.primary },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", padding: 20 },
   sheet: { backgroundColor: Z.bg, borderRadius: 16, paddingTop: 12, maxHeight: "80%" },
   sheetTitle: {
