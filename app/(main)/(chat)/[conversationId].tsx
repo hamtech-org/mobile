@@ -92,6 +92,9 @@ export default function ChatDetailScreen() {
   const frameBanner = useAppSelector((state) => state.chat.frameBanner);
   const activeGroupCall = useAppSelector((state) => state.call.activeGroupCall);
   const callStatus = useAppSelector((state) => state.call.status);
+  const callScope = useAppSelector((state) => state.call.callScope);
+  const callConversationId = useAppSelector((state) => state.call.conversationId);
+  const callChannelName = useAppSelector((state) => state.call.channelName);
   const replyingTo = useAppSelector((state) => state.chat.replyingTo);
   const typingUsers = useAppSelector((state) =>
     conversationId
@@ -482,11 +485,21 @@ export default function ChatDetailScreen() {
     }
   }, [conversation, conversationId, initiateCall, initiateGroupCall]);
 
+  const inThisGroupCallFlow =
+    Boolean(isGroup) &&
+    Boolean(conversationId) &&
+    activeGroupCall?.conversationId === conversationId &&
+    callScope === "group" &&
+    callConversationId === conversationId &&
+    ["incoming-ringing", "outgoing-ringing", "connecting", "connected"].includes(callStatus) &&
+    (!activeGroupCall.channelName ||
+      !callChannelName ||
+      activeGroupCall.channelName === callChannelName);
   const showJoinGroupBanner =
     Boolean(isGroup) &&
     Boolean(conversationId) &&
     activeGroupCall?.conversationId === conversationId &&
-    (callStatus === "idle" || callStatus === "ended");
+    !inThisGroupCallFlow;
 
   if (isLoading) {
     return <Loading fullScreen message="Đang tải tin nhắn..." />;

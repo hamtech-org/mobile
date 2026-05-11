@@ -35,7 +35,7 @@ export interface CallState {
   upgradeStatus: UpgradeStatus;
   isScreenSharing: boolean;
   returnTo: string | null;
-  endReason: "missed" | "rejected" | null;
+  endReason: "missed" | "rejected" | "busy" | null;
   activeGroupCall: ActiveGroupCallSession | null;
 }
 
