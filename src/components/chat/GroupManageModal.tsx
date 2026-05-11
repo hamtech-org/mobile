@@ -133,6 +133,10 @@ interface GroupManageModalProps {
   currentUserId?: string;
   /** Khi mở modal, nhảy thẳng tới tab (vd. từ thanh ghim → Chỉnh sửa). */
   initialPanel?: Panel;
+  /** Mở sẵn form sửa task (vd. từ thẻ task trong chat). */
+  initialTaskIdForEditor?: string | null;
+  /** Gọi sau khi đã xử lý `initialTaskIdForEditor` (mở editor hoặc bỏ qua). */
+  onConsumedInitialTaskEditor?: () => void;
   /** Đóng modal nhóm rồi cuộn tới tin trong luồng chat (giống web onJumpToMessage). */
   onJumpToMessage?: (messageId: string) => void;
   /** Mở PollVoteModal trên màn chat (giống web onOpenPollVote). */
@@ -238,6 +242,8 @@ export function GroupManageModal({
   conversation,
   currentUserId,
   initialPanel,
+  initialTaskIdForEditor,
+  onConsumedInitialTaskEditor,
   onJumpToMessage,
   onOpenPollVote,
 }: GroupManageModalProps): ReactElement {
@@ -476,6 +482,18 @@ export function GroupManageModal({
     const raw = tasksEnvelope?.data;
     return Array.isArray(raw) ? raw : [];
   }, [tasksEnvelope]);
+
+  useEffect(() => {
+    if (!visible || !initialTaskIdForEditor?.trim()) return;
+    if (tasksFetching && tasksList.length === 0) return;
+    const id = initialTaskIdForEditor.trim();
+    const raw = tasksList.find((x) => String((x as Record<string, unknown>).taskId ?? "") === id);
+    if (raw) {
+      setEditingTaskData(raw);
+      setTaskModalOpen(true);
+    }
+    onConsumedInitialTaskEditor?.();
+  }, [visible, initialTaskIdForEditor, tasksList, tasksFetching, onConsumedInitialTaskEditor]);
 
   const jumpToPinnedMessage = useCallback(
     (messageId: string) => {

@@ -10,11 +10,11 @@ import {
 } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
 import {
+  AlarmClock,
   AlarmClockOff,
   Ban,
   AlertCircle,
   BarChart2,
-  CalendarClock,
   Check,
   CheckCheck,
   ChevronRight,
@@ -23,6 +23,7 @@ import {
   MapPin,
   Pencil,
   Phone,
+  Trash2,
   Users,
   Video,
 } from "lucide-react-native";
@@ -44,23 +45,33 @@ import {
 } from "@/utils/systemMessage";
 import { formatDateLabel, formatTimestamp, isSameDay } from "@/utils/time";
 import { toast } from "@/utils/appToast";
+import { TaskDeadlineChipMobile } from "@/utils/taskDeadlineDisplay";
+import { isTaskJoinDeadlinePassed } from "@/utils/taskJoin";
 import { normalizeMediaUrl } from "@/utils/url";
 
 /** Dữ liệu nhóm để card giao việc / nút bình chọn (chỉ khi `isGroup`). */
 export interface ChatBubbleGroupExtras {
   conversationId: string;
   currentUserId: string;
+  /** Map tên hiển thị — giống web `groupMembers` + `byId`. */
+  groupMembers?: { userId: string; displayName: string }[];
   groupTasks: {
     taskId?: string;
+    creatorId?: string;
     participants?: string[];
     assignees?: string[];
     assignToAll?: boolean;
     broadcast?: boolean;
+    dueDate?: string;
+    subtasks?: { assigneeId?: string; content?: string; done?: boolean }[];
   }[];
   /** Optional backend call. For local-only demo, this can be a no-op. */
   joinTask?: (taskId: string) => Promise<void>;
   onTaskJoined?: (taskId: string) => void;
   onOpenPollVote: (pollId: string) => void;
+  /** Chỉ người tạo task — mở modal nhóm + editor (giống web). */
+  onEditGroupTask?: (taskId: string) => void;
+  onDeleteGroupTask?: (taskId: string) => void;
 }
 
 interface ChatBubbleProps {
@@ -279,14 +290,76 @@ function SystemCenterBlock({
   }
 
   const t = (groupExtras?.groupTasks ?? []).find((x) => String(x.taskId ?? "") === view.taskId);
+  const tx = t as Record<string, unknown> | undefined;
+  const byId = new Map<string, string>();
+  for (const row of groupExtras?.groupMembers ?? []) {
+    byId.set(String(row.userId), String(row.displayName ?? row.userId).trim());
+  }
+
+  const boardAssignees = Array.isArray(tx?.assignees) ? (tx.assignees as string[]) : [];
+  const boardSubs = Array.isArray(tx?.subtasks)
+    ? (tx.subtasks as { assigneeId?: string; done?: boolean }[])
+    : [];
+  const subAssigneeIds = Array.from(
+    new Set(boardSubs.map((s) => String(s?.assigneeId ?? "").trim()).filter(Boolean)),
+  );
+  const topIds = boardAssignees.map(String);
+  const labelRaw = String(view.assigneeLabel ?? "");
+  const labelNorm = labelRaw
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  const labelLooksLikeGroup =
+    labelNorm.includes("ca nhom") || labelNorm.includes("group") || labelNorm.includes("all");
+
   const participants = Array.isArray(t?.participants) ? (t.participants as string[]) : [];
-  const participantsCount = participants.length;
   const joined = groupExtras ? participants.includes(groupExtras.currentUserId) : false;
-  const assignees = Array.isArray(t?.assignees) ? (t.assignees as string[]) : [];
-  const assignToAll =
-    Boolean((t as any)?.assignToAll) || Boolean((t as any)?.broadcast) || assignees.length === 0;
-  const canJoinThisTask =
-    Boolean(groupExtras) && (assignToAll || assignees.includes(groupExtras!.currentUserId));
+  const uid = groupExtras?.currentUserId ?? "";
+  const isSubtaskAssignee = uid ? subAssigneeIds.includes(String(uid)) : false;
+  const isTopLevelAssignee = uid ? topIds.map(String).includes(String(uid)) : false;
+  const explicitAssignToAll = Boolean((t as any)?.assignToAll) || Boolean((t as any)?.broadcast);
+  const hasTopLevelAssignees = topIds.length > 0;
+  const hasSubtasksAssignees = subAssigneeIds.length > 0;
+  const canJoinThisTask = Boolean(groupExtras)
+    ? hasSubtasksAssignees
+      ? isSubtaskAssignee
+      : explicitAssignToAll ||
+        (!hasTopLevelAssignees && !hasSubtasksAssignees && labelLooksLikeGroup) ||
+        (!hasTopLevelAssignees && !hasSubtasksAssignees) ||
+        isTopLevelAssignee
+    : false;
+
+  const dueForJoin =
+    tx?.dueDate != null && String(tx.dueDate).trim() !== ""
+      ? String(tx.dueDate)
+      : (view.dueDate ?? "");
+  const joinDeadlinePassed = isTaskJoinDeadlinePassed(dueForJoin || undefined);
+
+  let assigneeDisplay = "—";
+  if (explicitAssignToAll) assigneeDisplay = "Cả nhóm";
+  else {
+    const ids = hasSubtasksAssignees ? subAssigneeIds : topIds;
+    if (ids.length > 0)
+      assigneeDisplay = ids.map((id) => byId.get(String(id)) ?? String(id)).join(", ");
+    else assigneeDisplay = view.assigneeLabel || "—";
+  }
+
+  const subtaskProgress =
+    boardSubs.length === 0
+      ? null
+      : {
+          done: boardSubs.filter((s) => s?.done).length,
+          total: boardSubs.length,
+          pct: Math.round((boardSubs.filter((s) => s?.done).length / boardSubs.length) * 100),
+        };
+
+  const creatorId =
+    tx?.creatorId != null && String(tx.creatorId).trim() !== "" ? String(tx.creatorId).trim() : "";
+  const isTaskCreator = Boolean(
+    groupExtras && creatorId && creatorId === groupExtras.currentUserId,
+  );
+  const showTaskCreatorActions =
+    isTaskCreator && Boolean(groupExtras?.onEditGroupTask || groupExtras?.onDeleteGroupTask);
 
   const onJoin = async (): Promise<void> => {
     if (!groupExtras) return;
@@ -306,6 +379,8 @@ function SystemCenterBlock({
     }
   };
 
+  const showJoin = !joined;
+
   return (
     <View className="my-3 w-full items-center px-4">
       <SystemNotifyTimePill
@@ -313,145 +388,182 @@ function SystemCenterBlock({
         now={calendarNow}
         prevMessage={prevMessage}
       />
-      <View className="w-full max-w-[92%] overflow-hidden rounded-2xl border border-black/[0.06] bg-card px-3 py-3 shadow-sm dark:border-white/10">
-        <View>
-          {groupExtras ? (
-            <View className="mb-2 flex-row flex-wrap items-center justify-center gap-2">
-              <Text className="text-[12px] font-semibold text-muted-foreground">
-                {participantsCount} người đã tham gia
-              </Text>
-              <Pressable
-                onPress={() => void onJoin()}
-                disabled={joined || !canJoinThisTask || joinBusy}
-                className={
-                  joined
-                    ? "rounded-full bg-muted px-3 py-1"
-                    : !canJoinThisTask
-                      ? "rounded-full bg-muted px-3 py-1"
-                      : "rounded-full bg-primary px-3 py-1"
-                }
-              >
-                {joinBusy ? (
-                  <ActivityIndicator color="white" size="small" />
-                ) : (
+      <View className="w-full max-w-[92%] overflow-hidden rounded-2xl border border-black/[0.06] bg-card shadow-sm dark:border-white/10">
+        <View className="px-3 py-3">
+          <View className="mb-2 flex-row flex-wrap items-center gap-1.5">
+            <ClipboardList size={14} color="#4F46E5" strokeWidth={2} />
+            <Text className="text-[11px] font-extrabold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+              {view.actorLabel} đã giao việc
+            </Text>
+          </View>
+
+          {(() => {
+            const expanded = expandedTaskIds.has(String(view.taskId ?? ""));
+            const long = (view.title?.length ?? 0) > 60;
+            return (
+              <>
+                <Pressable onPress={() => long && toggleExpanded(view.taskId)}>
                   <Text
-                    className={`text-[12px] font-bold ${joined || !canJoinThisTask ? "text-muted-foreground" : "text-white"}`}
+                    className="mb-3 pr-1 text-center text-[16px] font-black leading-snug text-foreground"
+                    numberOfLines={expanded || !long ? undefined : 3}
                   >
-                    {joined ? "Đã tham gia" : "Tham gia"}
+                    {view.title}
                   </Text>
-                )}
-              </Pressable>
+                </Pressable>
+                {long ? (
+                  <Pressable
+                    onPress={() => toggleExpanded(view.taskId)}
+                    className="mb-2 self-center rounded-full bg-primary/10 px-3 py-1"
+                  >
+                    <Text className="text-[11px] font-bold text-primary">
+                      {expanded ? "Thu gọn tiêu đề" : "Xem thêm tiêu đề"}
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </>
+            );
+          })()}
+
+          <View className="gap-2.5">
+            <View className="flex-row items-start gap-2.5">
+              <View className="pt-0.5">
+                <Users size={16} color={muted} strokeWidth={2} />
+              </View>
+              <View className="min-w-0 flex-1 flex-row flex-wrap items-center gap-1">
+                <Text className="text-[13px] font-semibold text-muted-foreground">Giao cho: </Text>
+                <Text className="text-[13px] font-bold text-foreground" numberOfLines={3}>
+                  {assigneeDisplay}
+                </Text>
+              </View>
+            </View>
+            {dueForJoin.trim() ? (
+              <View className="flex-row items-start gap-2.5">
+                <View className="pt-0.5">
+                  <AlarmClock size={16} color={muted} strokeWidth={2} />
+                </View>
+                <View className="min-w-0 flex-1 flex-row flex-wrap items-center gap-1.5">
+                  <Text className="text-[13px] font-semibold text-muted-foreground">
+                    Hạn chót:{" "}
+                  </Text>
+                  <TaskDeadlineChipMobile dateIso={dueForJoin} compact />
+                </View>
+              </View>
+            ) : null}
+          </View>
+
+          {subtaskProgress ? (
+            <View className="mt-3 flex-row items-center gap-3 rounded-xl border border-border/60 bg-muted/25 p-2.5">
+              <View className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                <View
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${subtaskProgress.pct}%`,
+                    backgroundColor: subtaskProgress.pct === 100 ? "#10B981" : "#6366F1",
+                  }}
+                />
+              </View>
+              <Text className="text-[12px] font-bold text-muted-foreground">
+                {subtaskProgress.done}/{subtaskProgress.total} mục
+              </Text>
             </View>
           ) : null}
 
-          <View className="mb-1 flex-row items-center justify-center gap-2">
-            <ClipboardList size={16} color="#22c55e" strokeWidth={2} />
-            <Text className="text-[12px] font-bold text-foreground">Giao việc</Text>
-          </View>
-
-          <View className="rounded-xl border border-border/40 bg-background/80 px-3 py-2">
-            <Text className="mb-1 text-center text-[12px] font-semibold text-muted-foreground">
-              {message.senderId === (viewerUserId ?? groupExtras?.currentUserId)
-                ? "Bạn"
-                : view.actorLabel}{" "}
-              đã giao việc
-            </Text>
-            {(() => {
-              const expanded = expandedTaskIds.has(String(view.taskId ?? ""));
-              const long = (view.title?.length ?? 0) > 60;
-              return (
-                <>
-                  <Pressable onPress={() => long && toggleExpanded(view.taskId)} className="px-2">
-                    <Text
-                      className="text-center text-[13px] font-extrabold text-foreground"
-                      numberOfLines={expanded || !long ? undefined : 2}
-                    >
-                      {view.title}
-                    </Text>
-                  </Pressable>
-                  {long ? (
-                    <Pressable
-                      onPress={() => toggleExpanded(view.taskId)}
-                      className="mt-1 self-center rounded-full bg-primary/10 px-3 py-1"
-                    >
-                      <Text className="text-[11px] font-bold text-primary">
-                        {expanded ? "Thu gọn" : "Xem thêm"}
+          {view.note
+            ? (() => {
+                const expanded = expandedTaskIds.has(String(view.taskId ?? ""));
+                const long = (view.note?.length ?? 0) > 90;
+                return (
+                  <View className="mt-2 px-1">
+                    <Pressable onPress={() => long && toggleExpanded(view.taskId)}>
+                      <Text
+                        className="text-center text-[12px] text-muted-foreground"
+                        numberOfLines={expanded || !long ? undefined : 2}
+                      >
+                        <Text className="font-semibold">Ghi chú:</Text> {view.note}
                       </Text>
                     </Pressable>
-                  ) : null}
-                </>
-              );
-            })()}
-            <View className="mt-2 gap-1">
-              <View className="flex-row flex-wrap items-center justify-center gap-2">
-                <Users size={14} color={muted} strokeWidth={2} />
-                <Text className="text-[12px] text-muted-foreground">
-                  <Text className="font-semibold">Giao cho:</Text> {view.assigneeLabel}
+                    {long ? (
+                      <Pressable
+                        onPress={() => toggleExpanded(view.taskId)}
+                        className="mt-1 self-center rounded-full bg-primary/10 px-3 py-1"
+                      >
+                        <Text className="text-[11px] font-bold text-primary">
+                          {expanded ? "Thu gọn ghi chú" : "Xem thêm ghi chú"}
+                        </Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                );
+              })()
+            : null}
+        </View>
+
+        {groupExtras ? (
+          <View className="flex-row flex-wrap items-center justify-between gap-3 border-t border-black/5 px-3 py-3 dark:border-white/10">
+            <View className="min-w-0 flex-1 flex-row flex-wrap items-center gap-2">
+              <View className="flex-row items-center gap-1.5 rounded-full border border-black/5 bg-white px-2.5 py-1.5 dark:border-white/10 dark:bg-zinc-800">
+                <Text className="text-[11px] font-bold text-muted-foreground">
+                  {participants.length > 0 ? `${participants.length} đã tham gia` : "Chưa có ai"}
                 </Text>
               </View>
-              {view.dueDate
-                ? (() => {
-                    const dueMs = new Date(view.dueDate).getTime();
-                    const ok = Number.isFinite(dueMs);
-                    return (
-                      <View className="items-center justify-center gap-1">
-                        <View className="flex-row flex-wrap items-center justify-center gap-2">
-                          <CalendarClock size={14} color={muted} strokeWidth={2} />
-                          <Text className="text-[12px] text-muted-foreground">
-                            <Text className="font-semibold">Deadline:</Text>{" "}
-                            {new Date(view.dueDate).toLocaleString("vi-VN")}
-                          </Text>
-                        </View>
-                        {!ok ? (
-                          <Text className="text-[12px] font-semibold text-muted-foreground">
-                            Deadline không hợp lệ
-                          </Text>
-                        ) : null}
-                      </View>
-                    );
-                  })()
-                : null}
-              {view.note
-                ? (() => {
-                    const expanded = expandedTaskIds.has(String(view.taskId ?? ""));
-                    const long = (view.note?.length ?? 0) > 90;
-                    return (
-                      <View className="items-center px-2">
-                        <Pressable onPress={() => long && toggleExpanded(view.taskId)}>
-                          <Text
-                            className="text-center text-[12px] text-muted-foreground"
-                            numberOfLines={expanded || !long ? undefined : 2}
-                          >
-                            <Text className="font-semibold">Ghi chú:</Text> {view.note}
-                          </Text>
-                        </Pressable>
-                        {long ? (
-                          <Pressable
-                            onPress={() => toggleExpanded(view.taskId)}
-                            className="mt-1 self-center rounded-full bg-primary/10 px-3 py-1"
-                          >
-                            <Text className="text-[11px] font-bold text-primary">
-                              {expanded ? "Thu gọn" : "Xem thêm"}
-                            </Text>
-                          </Pressable>
-                        ) : null}
-                      </View>
-                    );
-                  })()
-                : null}
+              {joined ? (
+                <View className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 dark:border-emerald-500/20 dark:bg-emerald-500/10">
+                  <Text className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                    Đã tham gia
+                  </Text>
+                </View>
+              ) : joinDeadlinePassed ? (
+                <View className="rounded-full border border-black/5 bg-black/5 px-3 py-1.5 dark:border-white/10 dark:bg-white/10">
+                  <Text className="text-[11px] font-bold text-muted-foreground">Chưa tham gia</Text>
+                </View>
+              ) : showJoin ? (
+                <Pressable
+                  onPress={() => void onJoin()}
+                  disabled={!canJoinThisTask || joinBusy}
+                  className={
+                    !canJoinThisTask
+                      ? "rounded-full bg-black/5 px-3 py-1.5 dark:bg-white/10"
+                      : "rounded-full bg-emerald-500 px-3 py-1.5"
+                  }
+                >
+                  {joinBusy ? (
+                    <ActivityIndicator color="white" size="small" />
+                  ) : (
+                    <Text
+                      className={`text-[11px] font-bold ${!canJoinThisTask ? "text-muted-foreground" : "text-white"}`}
+                    >
+                      Xác nhận tham gia
+                    </Text>
+                  )}
+                </Pressable>
+              ) : null}
             </View>
-            <Pressable
-              onPress={() => toggleExpanded(view.taskId)}
-              className="mt-3 self-center rounded-full bg-black/5 px-3 py-1"
-            >
-              <Text className="text-[11px] font-bold text-muted-foreground">
-                {expandedTaskIds.has(String(view.taskId ?? ""))
-                  ? "Thu gọn chi tiết"
-                  : "Xem chi tiết"}
-              </Text>
-            </Pressable>
+            {showTaskCreatorActions ? (
+              <View className="flex-row flex-wrap items-center justify-end gap-2">
+                {groupExtras.onEditGroupTask ? (
+                  <Pressable
+                    onPress={() => groupExtras.onEditGroupTask?.(view.taskId)}
+                    className="flex-row items-center gap-1 rounded-full border border-black/10 bg-white px-2.5 py-1.5 dark:border-white/15 dark:bg-zinc-800"
+                  >
+                    <Pencil size={13} color={muted} strokeWidth={2} />
+                    <Text className="text-[11px] font-bold text-foreground">Sửa</Text>
+                  </Pressable>
+                ) : null}
+                {groupExtras.onDeleteGroupTask ? (
+                  <Pressable
+                    onPress={() => groupExtras.onDeleteGroupTask?.(view.taskId)}
+                    className="flex-row items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2.5 py-1.5 dark:border-red-500/30 dark:bg-red-500/15"
+                  >
+                    <Trash2 size={13} color="#DC2626" strokeWidth={2} />
+                    <Text className="text-[11px] font-bold text-red-600 dark:text-red-400">
+                      Hủy
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            ) : null}
           </View>
-        </View>
+        ) : null}
       </View>
     </View>
   );

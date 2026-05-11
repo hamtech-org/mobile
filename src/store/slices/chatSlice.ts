@@ -1,11 +1,16 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import type { IMessage, MessageStatus, TypingUserEntry } from "@/types/chat.types";
 
+/** Giống web `ChatFrameNoticeVariant` — màu + icon banner nhóm. */
+export type ChatFrameBannerVariant = "poll" | "task_assigned" | "task_joined";
+
 /** Thông báo ngắn trong khung chat (ghim, đổi tên nhóm, …) kèm mốc giờ. */
 export interface ChatFrameBanner {
   conversationId: string;
   message: string;
   atIso: string;
+  /** Không set → kiểu primary (ghim, thu hồi, …). */
+  variant?: ChatFrameBannerVariant;
 }
 
 interface ChatState {

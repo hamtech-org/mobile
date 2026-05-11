@@ -25,6 +25,7 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { Loading } from "@/components/common/Loading";
 import { useUploadMediaMutation } from "@/store/api/mediaApi";
 import {
+  useDeleteTaskMutation,
   useGetConversationsQuery,
   useGetGroupMembersQuery,
   useGetPollsQuery,
@@ -104,6 +105,7 @@ export default function ChatDetailScreen() {
   const [activePollId, setActivePollId] = useState<string | null>(null);
   const [votingIndex, setVotingIndex] = useState<number | null>(null);
   const [groupManageOpen, setGroupManageOpen] = useState(false);
+  const [openGroupTaskEditorId, setOpenGroupTaskEditorId] = useState<string | null>(null);
   const [groupModalInitial, setGroupModalInitial] = useState<GroupManagePanel | undefined>(
     undefined,
   );
@@ -204,8 +206,51 @@ export default function ChatDetailScreen() {
   }, [activePollId, pollsList]);
 
   const [joinTaskMut] = useJoinTaskMutation();
+  const [deleteTaskMut] = useDeleteTaskMutation();
   const [votePollMut] = useVotePollMutation();
   const [unvotePollMut] = useUnvotePollMutation();
+
+  const consumeOpenGroupTaskEditor = useCallback(() => {
+    setOpenGroupTaskEditorId(null);
+  }, []);
+
+  const handleEditGroupTask = useCallback((taskId: string) => {
+    const id = String(taskId).trim();
+    if (!id) return;
+    setGroupModalInitial("tasks");
+    setOpenGroupTaskEditorId(id);
+    setGroupManageOpen(true);
+  }, []);
+
+  const handleDeleteGroupTask = useCallback(
+    (taskId: string) => {
+      if (!conversationId) return;
+      const id = String(taskId).trim();
+      if (!id) return;
+      Alert.alert(
+        "Hủy công việc",
+        "Bạn có chắc muốn hủy công việc này? Thành viên sẽ không còn thấy thẻ trong chat.",
+        [
+          { text: "Không", style: "cancel" },
+          {
+            text: "Hủy việc",
+            style: "destructive",
+            onPress: () => {
+              void (async () => {
+                try {
+                  await deleteTaskMut({ groupId: conversationId, taskId: id }).unwrap();
+                  toast.success("Đã hủy công việc");
+                } catch {
+                  toast.error("Không thể hủy công việc");
+                }
+              })();
+            },
+          },
+        ],
+      );
+    },
+    [conversationId, deleteTaskMut],
+  );
 
   const joinTask = useCallback(
     async (taskId: string) => {
@@ -307,12 +352,28 @@ export default function ChatDetailScreen() {
     return {
       conversationId,
       currentUserId,
+      groupMembers: groupMembersForPerm.map((m) => ({
+        userId: m.userId,
+        displayName: String(m.displayName ?? m.userId ?? "").trim() || m.userId,
+      })),
       groupTasks,
       joinTask,
       onTaskJoined,
       onOpenPollVote: (pollId) => setActivePollId(pollId),
+      onEditGroupTask: handleEditGroupTask,
+      onDeleteGroupTask: handleDeleteGroupTask,
     };
-  }, [isGroup, conversationId, currentUserId, groupTasks, joinTask, onTaskJoined]);
+  }, [
+    isGroup,
+    conversationId,
+    currentUserId,
+    groupMembersForPerm,
+    groupTasks,
+    joinTask,
+    onTaskJoined,
+    handleEditGroupTask,
+    handleDeleteGroupTask,
+  ]);
 
   const handleSendMessage = useCallback(
     (content: string) => {
@@ -505,6 +566,7 @@ export default function ChatDetailScreen() {
             isGroup
               ? () => {
                   setGroupModalInitial(undefined);
+                  setOpenGroupTaskEditorId(null);
                   setGroupManageOpen(true);
                 }
               : () => setPersonalSettingsOpen(true)
@@ -522,10 +584,13 @@ export default function ChatDetailScreen() {
           onClose={() => {
             setGroupManageOpen(false);
             setGroupModalInitial(undefined);
+            setOpenGroupTaskEditorId(null);
           }}
           conversation={conversation}
           currentUserId={currentUserId}
           initialPanel={groupModalInitial}
+          initialTaskIdForEditor={openGroupTaskEditorId}
+          onConsumedInitialTaskEditor={consumeOpenGroupTaskEditor}
           onJumpToMessage={handleJumpToMessage}
           onOpenPollVote={(pollId) => setActivePollId(pollId)}
         />

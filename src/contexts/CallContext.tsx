@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, type PropsWithChildren } from "react";
+import { useCallback, useEffect, type PropsWithChildren } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { router, usePathname } from "expo-router";
 
@@ -26,6 +26,9 @@ import {
 import type { CallScope, CallType, IncomingCallData } from "@/types/call.types";
 
 import { useSocketContext } from "./SocketContext";
+import { CallContext, type CallContextValue } from "./callContext.shared";
+
+export { useCallContext, type CallContextValue } from "./callContext.shared";
 
 interface AgoraTokenResponse {
   token: string;
@@ -70,25 +73,6 @@ function conversationIdFromPathname(pathname: string): string | null {
 function canStartNewCall(status: string): boolean {
   return status === "idle" || status === "ended";
 }
-
-interface CallContextValue {
-  initiateCall: (calleeId: string, type: CallType, conversationIdArg?: string) => void;
-  initiateGroupCall: (type: CallType, conversationIdArg?: string) => void;
-  acceptCall: () => void;
-  rejectCall: () => void;
-  endCall: (meta?: { durationSec?: number; result?: "completed" | "missed" | "rejected" }) => void;
-  leaveGroupCall: () => void;
-  endGroupCallForAll: (meta?: { durationSec?: number }) => void;
-  joinActiveGroupCall: () => void;
-  onToggleMic: () => void;
-  onToggleCamera: () => void;
-  requestUpgradeToVideo: () => void;
-  respondUpgradeToVideo: (accepted: boolean) => void;
-  fetchAgoraToken: (channelName: string) => Promise<AgoraTokenResponse>;
-  appId: string;
-}
-
-const CallContext = createContext<CallContextValue | null>(null);
 
 export const CallProvider = ({ children }: PropsWithChildren) => {
   const dispatch = useDispatch<AppDispatch>();
@@ -436,10 +420,4 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
       <IncomingCallModal />
     </CallContext.Provider>
   );
-};
-
-export const useCallContext = (): CallContextValue => {
-  const ctx = useContext(CallContext);
-  if (!ctx) throw new Error("useCallContext phải dùng trong CallProvider");
-  return ctx;
 };

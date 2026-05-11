@@ -86,7 +86,14 @@ function actorWho(
   ctx: SystemMessageFormatContext,
 ): string {
   const actorId = String(actor?.userId ?? message.senderId ?? "");
-  const actorName = String(actor?.name ?? message.senderDisplayName ?? "Ai đó").trim() || "Ai đó";
+  const actorNameRaw = String(actor?.name ?? "").trim();
+  const senderFallback = String(message.senderDisplayName ?? "").trim();
+  const actorName =
+    actorNameRaw &&
+    actorNameRaw.toLowerCase() !== "hệ thống" &&
+    actorNameRaw.toLowerCase() !== "he thong"
+      ? actorNameRaw
+      : senderFallback || "Ai đó";
   if (ctx.currentUserId && actorId && actorId === ctx.currentUserId) return "Bạn";
   return actorName;
 }
@@ -142,6 +149,13 @@ export function buildSystemBubbleView(
       const title = String(obj.task?.title ?? "").trim();
       const line = title ? `${who} đã hủy công việc «${title}»` : `${who} đã hủy một công việc`;
       return { variant: "text", text: line, rowIcon: "alarmOff" };
+    }
+    if (kind === "task_due") {
+      const title = String(obj.task?.title ?? "").trim();
+      const line = title
+        ? `${who} đã đến hạn công việc "${title}"`
+        : `${who} đã đến hạn một công việc`;
+      return { variant: "text", text: line, rowIcon: "pencil" };
     }
 
     if (kind === "poll_created") {
@@ -205,8 +219,15 @@ export function formatSystemLastMessagePreview(
     };
     const kind = String(obj?.kind ?? "");
     const actorId = String(obj?.actor?.userId ?? senderId ?? "");
-    const actorName = String(obj?.actor?.name ?? senderDisplayName ?? "Ai đó").trim() || "Ai đó";
-    const who = currentUserId && actorId === currentUserId ? "Bạn" : actorName;
+    const actorNameRaw = String(obj?.actor?.name ?? "").trim();
+    const senderNameFallback = String(senderDisplayName ?? "").trim();
+    const actorNameResolved =
+      actorNameRaw &&
+      actorNameRaw.toLowerCase() !== "hệ thống" &&
+      actorNameRaw.toLowerCase() !== "he thong"
+        ? actorNameRaw
+        : senderNameFallback || "Ai đó";
+    const who = currentUserId && actorId === currentUserId ? "Bạn" : actorNameResolved;
 
     if (kind === "task_joined") {
       const title = String(obj.task?.title ?? "").trim();
@@ -223,6 +244,10 @@ export function formatSystemLastMessagePreview(
     if (kind === "task_deleted") {
       const title = String(obj.task?.title ?? "").trim();
       return title ? `${who} đã hủy công việc «${title}»` : `${who} đã hủy một công việc`;
+    }
+    if (kind === "task_due") {
+      const title = String(obj.task?.title ?? "").trim();
+      return title ? `${who} đã đến hạn công việc "${title}"` : `${who} đã đến hạn một công việc`;
     }
     if (kind === "poll_created") {
       const question = String(obj.poll?.question ?? "").trim();

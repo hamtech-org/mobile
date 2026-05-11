@@ -5,7 +5,7 @@ import { Phone, PhoneOff, Video } from "lucide-react-native";
 import { useSelector } from "react-redux";
 import { Audio } from "expo-av";
 
-import { useCallContext } from "@/contexts/CallContext";
+import { useCallContext } from "@/contexts/callContext.shared";
 import type { RootState } from "@/store/store";
 
 export function IncomingCallModal() {
