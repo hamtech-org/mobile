@@ -14,5 +14,6 @@ export { CreateGroupModal } from "./CreateGroupModal";
 export { ChatInput } from "./ChatInput";
 export type { PendingAttachment } from "./ChatInput";
 export { ConversationItem } from "./ConversationItem";
+export { ConversationListActionSheet } from "./ConversationListActionSheet";
 export { MessageActionSheet } from "./MessageActionSheet";
 export { TypingIndicator } from "./TypingIndicator";
