@@ -32,10 +32,11 @@ import {
   LogOut,
   Link2,
   ImageIcon,
+  FileText,
   Clock,
   ChevronRight,
   ChevronLeft,
-  CheckSquare,
+  ChevronDown,
   Check,
   Camera,
   BellOff,
@@ -44,18 +45,26 @@ import {
   Search,
   Settings,
   Shield,
+  Sparkles,
   Trash2,
   UserCog,
   User,
   UserPlus,
   Users,
+  Plus,
 } from "lucide-react-native";
 
 import { Avatar } from "@/components/common/Avatar";
 import { MIN_GROUP_MEMBERS } from "@/constants/group";
 import { env } from "@/config/env";
 import { useAppSelector } from "@/hooks/useAppStore";
-import type { IConversation, IGroupMember, IGroupSettings, MemberRole } from "@/types/chat.types";
+import type {
+  IConversation,
+  IGroupMember,
+  IGroupSettings,
+  IMessage,
+  MemberRole,
+} from "@/types/chat.types";
 import {
   useRejectGroupRequestMutation,
   useApproveGroupRequestMutation,
@@ -80,6 +89,8 @@ import { useUploadMediaMutation } from "@/store/api/mediaApi";
 import { useGetFriendsQuery } from "@/store/api/userApi";
 import { prepareLocalFileForUpload } from "@/utils/uploadAttachment";
 import { toast } from "@/utils/appToast";
+import { formatChatPreviewLine } from "@/utils/messageDisplay";
+import { apiClient } from "@/services/api";
 import {
   buildPatchForMutePayload,
   describeMuteSuccess,
@@ -101,12 +112,17 @@ export type GroupManagePanel =
   | "members"
   | "requests"
   | "settings"
-  | "pinned"
+  /** Ghim + bình chọn (tab giống web ConversationInfoPanel). */
+  | "bulletinFeed"
   | "media"
   | "transferOwner"
+  /** @deprecated Dùng bulletinFeed + tab; giữ để initialPanel cũ vẫn mở đúng tab. */
+  | "pinned"
   | "polls"
   | "tasks"
   | "personal";
+
+type BulletinNotesTab = "all" | "pinned" | "polls";
 
 type Panel = GroupManagePanel;
 
@@ -117,6 +133,14 @@ interface GroupManageModalProps {
   currentUserId?: string;
   /** Khi mở modal, nhảy thẳng tới tab (vd. từ thanh ghim → Chỉnh sửa). */
   initialPanel?: Panel;
+  /** Mở sẵn form sửa task (vd. từ thẻ task trong chat). */
+  initialTaskIdForEditor?: string | null;
+  /** Gọi sau khi đã xử lý `initialTaskIdForEditor` (mở editor hoặc bỏ qua). */
+  onConsumedInitialTaskEditor?: () => void;
+  /** Đóng modal nhóm rồi cuộn tới tin trong luồng chat (giống web onJumpToMessage). */
+  onJumpToMessage?: (messageId: string) => void;
+  /** Mở PollVoteModal trên màn chat (giống web onOpenPollVote). */
+  onOpenPollVote?: (pollId: string) => void;
 }
 
 const Z = {
@@ -167,12 +191,61 @@ function taskSummary(raw: unknown): { id: string; title: string; status: string;
   };
 }
 
+/** Giống web `formatBulletinFooterTime` — 28/02/2026 lúc 16:24 */
+function formatBulletinFooterTime(iso?: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const date = d.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const time = d.toLocaleTimeString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  return `${date} lúc ${time}`;
+}
+
+function resolveCreatorLabel(
+  creatorId: string | undefined | null,
+  creatorDisplayName: string | null | undefined,
+  currentUserId: string | undefined,
+  memberNameById: Map<string, string>,
+): string {
+  const fromApi = creatorDisplayName?.trim();
+  if (fromApi) return fromApi;
+  if (creatorId && currentUserId && creatorId === currentUserId) return "Bạn";
+  if (creatorId) {
+    const fromMembers = memberNameById.get(creatorId)?.trim();
+    if (fromMembers) return fromMembers;
+  }
+  if (creatorId) return "Thành viên";
+  return "Không rõ";
+}
+
+function pollOptionsPreview(raw: unknown): string {
+  if (!raw || typeof raw !== "object") return "";
+  const o = raw as Record<string, unknown>;
+  const options = Array.isArray(o.options) ? o.options : [];
+  return options
+    .slice(0, 5)
+    .map((x) => {
+      const opt = x as Record<string, unknown>;
+      return String(opt.text ?? "").trim();
+    })
+    .filter(Boolean)
+    .join(" · ");
+}
+
 export function GroupManageModal({
   visible,
   onClose,
   conversation,
   currentUserId,
   initialPanel,
+  initialTaskIdForEditor,
+  onConsumedInitialTaskEditor,
+  onJumpToMessage,
+  onOpenPollVote,
 }: GroupManageModalProps): ReactElement {
   const groupId = conversation.conversationId;
   const authUserId = useAppSelector((s) => s.auth.user?.userId);
@@ -191,10 +264,29 @@ export function GroupManageModal({
   const [muteNotifOpen, setMuteNotifOpen] = useState(false);
   const [muteNotifMode, setMuteNotifMode] = useState<"create" | "edit">("create");
   const [muteNotifSubmitting, setMuteNotifSubmitting] = useState(false);
+  const [mediaTab, setMediaTab] = useState<"media" | "file" | "link">("media");
+  const [bulletinExpanded, setBulletinExpanded] = useState(true);
+  const [bulletinNotesTab, setBulletinNotesTab] = useState<BulletinNotesTab>("all");
+  const [aiSummaryOpen, setAiSummaryOpen] = useState(false);
+  const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
+  const [aiSummaryResult, setAiSummaryResult] = useState("");
 
   useEffect(() => {
     if (visible) {
-      setPanel(initialPanel ?? "home");
+      const init = initialPanel ?? "home";
+      if (init === "pinned") {
+        setPanel("bulletinFeed");
+        setBulletinNotesTab("pinned");
+      } else if (init === "polls") {
+        setPanel("bulletinFeed");
+        setBulletinNotesTab("polls");
+      } else if (init === "bulletinFeed") {
+        setPanel("bulletinFeed");
+        setBulletinNotesTab("all");
+      } else {
+        setPanel(init);
+        setBulletinNotesTab("all");
+      }
       setEditName(conversation.name ?? "");
       setAddFriendFilter("");
       setPickOwnerForLeave(false);
@@ -203,8 +295,13 @@ export function GroupManageModal({
       setEditingTaskData(null);
       setMuteNotifOpen(false);
       setMuteNotifSubmitting(false);
+      setMediaTab("media");
+      setBulletinExpanded(true);
+      setAiSummaryOpen(false);
+      setAiSummaryLoading(false);
+      setAiSummaryResult("");
     }
-  }, [visible, conversation.name, initialPanel]);
+  }, [visible, conversation.name, conversation.conversationId, initialPanel]);
 
   const {
     data: members = [],
@@ -274,11 +371,11 @@ export function GroupManageModal({
   const [uploadMedia, { isLoading: uploadingAvatar }] = useUploadMediaMutation();
   const [deleteTaskMut] = useDeleteTaskMutation();
 
-  const { data: pollsEnvelope } = useGetPollsQuery(groupId, {
+  const { data: pollsEnvelope, isFetching: pollsFetching } = useGetPollsQuery(groupId, {
     skip: !visible,
   });
 
-  const { data: tasksEnvelope } = useGetTasksQuery(groupId, {
+  const { data: tasksEnvelope, isFetching: tasksFetching } = useGetTasksQuery(groupId, {
     skip: !visible,
   });
 
@@ -328,20 +425,101 @@ export function GroupManageModal({
     [messages],
   );
 
+  const linkGalleryRows = useMemo(() => {
+    const out: { key: string; message: IMessage; url: string }[] = [];
+    for (const m of messages) {
+      if (m.type !== "text" || m.isRecalled || m.isDeleted) continue;
+      const raw = (m.content ?? "").trim();
+      const match = raw.match(/https?:\/\/[^\s<]+/i);
+      if (!match?.[0]) continue;
+      out.push({ key: m.messageId, message: m, url: match[0] });
+    }
+    return out;
+  }, [messages]);
+
   const pinnedList = useMemo(
-    () => messages.filter((m) => m.isPinned && !m.isRecalled && !m.isDeleted),
+    () =>
+      messages
+        .filter((m) => m.isPinned && !m.isRecalled && !m.isDeleted)
+        .slice()
+        .sort((a, b) => {
+          const am = new Date(a.createdAt).getTime();
+          const bm = new Date(b.createdAt).getTime();
+          return (Number.isFinite(bm) ? bm : 0) - (Number.isFinite(am) ? am : 0);
+        }),
     [messages],
   );
+
+  const memberNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const row of members) {
+      if (!row.userId) continue;
+      const label = row.displayName?.trim();
+      if (label) m.set(row.userId, label);
+    }
+    return m;
+  }, [members]);
 
   const pollsList = useMemo(() => {
     const raw = pollsEnvelope?.data;
     return Array.isArray(raw) ? raw : [];
   }, [pollsEnvelope]);
 
+  const pollsSorted = useMemo(() => {
+    const list = pollsList.slice();
+    list.sort((a, b) => {
+      const ax = a as Record<string, unknown>;
+      const bx = b as Record<string, unknown>;
+      const at = Date.parse(String(ax.createdAt ?? "")) || 0;
+      const bt = Date.parse(String(bx.createdAt ?? "")) || 0;
+      if (bt !== at) return bt - at;
+      return String(ax.pollId ?? "").localeCompare(String(bx.pollId ?? ""));
+    });
+    return list;
+  }, [pollsList]);
+
   const tasksList = useMemo(() => {
     const raw = tasksEnvelope?.data;
     return Array.isArray(raw) ? raw : [];
   }, [tasksEnvelope]);
+
+  useEffect(() => {
+    if (!visible || !initialTaskIdForEditor?.trim()) return;
+    if (tasksFetching && tasksList.length === 0) return;
+    const id = initialTaskIdForEditor.trim();
+    const raw = tasksList.find((x) => String((x as Record<string, unknown>).taskId ?? "") === id);
+    if (raw) {
+      setEditingTaskData(raw);
+      setTaskModalOpen(true);
+    }
+    onConsumedInitialTaskEditor?.();
+  }, [visible, initialTaskIdForEditor, tasksList, tasksFetching, onConsumedInitialTaskEditor]);
+
+  const jumpToPinnedMessage = useCallback(
+    (messageId: string) => {
+      if (!onJumpToMessage) {
+        toast.info("Không thể mở tin từ đây.");
+        return;
+      }
+      onClose();
+      setTimeout(() => onJumpToMessage(messageId), 220);
+    },
+    [onClose, onJumpToMessage],
+  );
+
+  const openPollFromBulletin = useCallback(
+    (pollId: string) => {
+      const id = String(pollId).trim();
+      if (!id) return;
+      if (!onOpenPollVote) {
+        toast.info("Không thể mở bình chọn từ đây.");
+        return;
+      }
+      onClose();
+      setTimeout(() => onOpenPollVote(id), 220);
+    },
+    [onClose, onOpenPollVote],
+  );
 
   const navigateOut = useCallback(() => {
     onClose();
@@ -619,6 +797,62 @@ export function GroupManageModal({
     }
   }, [groupId, patchPrefs]);
 
+  const buildAiSummaryText = useCallback((summary: string, highlights: string[]) => {
+    const summaryBlock = summary
+      ? `Tóm tắt\n${summary
+          .split("\n")
+          .map((l) => l.trim())
+          .filter(Boolean)
+          .map((l) => (l.startsWith("-") || l.startsWith("•") ? l : `• ${l}`))
+          .join("\n")}`
+      : "Tóm tắt\n• (Chưa có)";
+    const highlightsBlock =
+      highlights.length > 0
+        ? `Điểm nổi bật\n${highlights.map((h) => `• ${String(h).trim()}`).join("\n")}`
+        : "Điểm nổi bật\n• (Không có)";
+    return [summaryBlock, highlightsBlock].join("\n\n");
+  }, []);
+
+  const runAiSummary = useCallback(
+    async (showSuccessToast: boolean) => {
+      setAiSummaryResult("");
+      setAiSummaryLoading(true);
+      try {
+        const result = await apiClient.post<{
+          success?: boolean;
+          data?: { summary?: string; highlights?: string[] };
+        }>("/ai/group-summary", {
+          conversationId: groupId,
+          limit: 40,
+        });
+        const payload = result.data?.data;
+        const summary = String(payload?.summary ?? "").trim();
+        const highlights = Array.isArray(payload?.highlights)
+          ? (payload.highlights as string[])
+          : [];
+        setAiSummaryResult(buildAiSummaryText(summary, highlights));
+        if (showSuccessToast) {
+          toast.success("Đã tạo tóm tắt AI");
+        }
+      } catch (e) {
+        console.error("AI summary:", e);
+        setAiSummaryResult("Không thể tạo tóm tắt vào lúc này.");
+      } finally {
+        setAiSummaryLoading(false);
+      }
+    },
+    [buildAiSummaryText, groupId],
+  );
+
+  const openAiSummaryModal = useCallback(async () => {
+    setAiSummaryOpen(true);
+    await runAiSummary(false);
+  }, [runAiSummary]);
+
+  const handleRerunAiSummary = useCallback(async () => {
+    await runAiSummary(true);
+  }, [runAiSummary]);
+
   const patchSettingMember = useCallback(
     async (key: keyof IGroupSettings["memberPermissions"], value: boolean) => {
       try {
@@ -698,17 +932,19 @@ export function GroupManageModal({
               ? "Duyệt thành viên"
               : panel === "settings"
                 ? "Cài đặt nhóm"
-                : panel === "pinned"
-                  ? "Tin đã ghim"
-                  : panel === "media"
-                    ? "Ảnh, file, link"
-                    : panel === "polls"
-                      ? "Bình chọn"
-                      : panel === "tasks"
-                        ? "Công việc"
-                        : panel === "personal"
-                          ? "Cài đặt cá nhân"
-                          : "Chuyển quyền";
+                : panel === "media"
+                  ? mediaTab === "media"
+                    ? "Ảnh / Video"
+                    : mediaTab === "file"
+                      ? "File"
+                      : "Link"
+                  : panel === "bulletinFeed"
+                    ? "Tin ghim & Bình chọn"
+                    : panel === "tasks"
+                      ? "Danh sách giao việc & nhắc hẹn"
+                      : panel === "personal"
+                        ? "Cài đặt cá nhân"
+                        : "Chuyển quyền";
 
   const renderHome = () => (
     <ScrollView
@@ -752,104 +988,191 @@ export function GroupManageModal({
             <Pencil size={20} color={Z.primary} strokeWidth={2} />
           </Pressable>
         </View>
+        <Text style={styles.memberCountText}>{conversation.memberCount} thành viên</Text>
       </View>
 
       <View style={styles.quickRow}>
-        <Pressable style={styles.quickCell} onPress={() => setPanel("add")}>
-          <View style={styles.quickIcon}>
-            <UserPlus size={22} color={Z.primary} strokeWidth={1.75} />
-          </View>
-          <Text style={styles.quickLabel}>Thêm thành viên</Text>
-        </Pressable>
-        <Pressable style={styles.quickCell} onPress={() => void toggleMuted(!isMuted)}>
+        <Pressable
+          style={styles.quickCell}
+          onPress={() => {
+            if (isMuted) {
+              void toggleMuted(false);
+            } else {
+              setMuteNotifMode("create");
+              setMuteNotifOpen(true);
+            }
+          }}
+          disabled={busy}
+        >
           <View style={styles.quickIcon}>
             {isMuted ? (
-              <BellOff size={22} color={Z.primary} strokeWidth={1.75} />
+              <BellOff size={20} color={Z.sub} strokeWidth={1.75} />
             ) : (
-              <Bell size={22} color={Z.primary} strokeWidth={1.75} />
+              <Bell size={20} color={Z.sub} strokeWidth={1.75} />
             )}
           </View>
-          <Text style={styles.quickLabel}>{isMuted ? "Bật thông báo" : "Tắt thông báo"}</Text>
+          <Text style={styles.quickLabel}>
+            {isMuted ? <>Bật thông{"\n"}báo</> : <>Tắt thông{"\n"}báo</>}
+          </Text>
+        </Pressable>
+        <Pressable
+          style={styles.quickCell}
+          onPress={() => void togglePinnedConv(!isPinnedToTop)}
+          disabled={busy}
+        >
+          <View style={styles.quickIcon}>
+            <Pin
+              size={20}
+              color={isPinnedToTop ? Z.primary : Z.sub}
+              strokeWidth={isPinnedToTop ? 2.2 : 1.75}
+            />
+          </View>
+          <Text style={styles.quickLabel}>
+            {isPinnedToTop ? <>Bỏ ghim{"\n"}hội thoại</> : <>Ghim hội{"\n"}thoại</>}
+          </Text>
+        </Pressable>
+        <Pressable style={styles.quickCell} onPress={() => setPanel("add")} disabled={busy}>
+          <View style={styles.quickIcon}>
+            <UserPlus size={20} color={Z.sub} strokeWidth={1.75} />
+          </View>
+          <Text style={styles.quickLabel}>Thêm thành{"\n"}viên</Text>
+        </Pressable>
+        <Pressable style={styles.quickCell} onPress={() => setPanel("settings")} disabled={busy}>
+          <View style={styles.quickIcon}>
+            <Settings size={20} color={Z.sub} strokeWidth={1.75} />
+          </View>
+          <Text style={styles.quickLabel}>Quản lý{"\n"}nhóm</Text>
         </Pressable>
       </View>
 
-      <View style={styles.mediaSection}>
-        <View style={styles.mediaHeader}>
-          <ImageIcon size={18} color={Z.text} strokeWidth={1.75} />
-          <Text style={styles.mediaTitle}>Ảnh, file, link</Text>
-        </View>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.mediaStrip}
+      <View style={styles.aiBlock}>
+        <Pressable
+          style={styles.aiButton}
+          onPress={() => void openAiSummaryModal()}
+          disabled={busy}
+          android_ripple={{ color: "rgba(255,255,255,0.2)" }}
         >
-          {mediaMessages.slice(0, 12).map((m) => {
-            const uri = m.thumbnailUrl || m.mediaUrl || undefined;
-            return (
-              <Pressable
-                key={m.messageId}
-                onPress={() => setPanel("media")}
-                style={styles.thumbBox}
-              >
-                {uri && (m.type === "image" || m.type === "video") ? (
-                  <Image source={{ uri }} style={styles.thumbImg} />
-                ) : (
-                  <View style={[styles.thumbImg, styles.thumbPlaceholder]}>
-                    <Text style={{ fontSize: 11, color: Z.sub }}>
-                      {m.type === "file" ? "FILE" : "•"}
-                    </Text>
-                  </View>
-                )}
-              </Pressable>
-            );
-          })}
-          <Pressable onPress={() => setPanel("media")} style={styles.thumbMore}>
-            <ChevronRight size={22} color={Z.primary} />
+          <Sparkles size={18} color="#fff" strokeWidth={2} />
+          <Text style={styles.aiButtonText}>AI tóm tắt toàn bộ tin nhắn</Text>
+        </Pressable>
+        <Text style={styles.aiHint}>Báo cáo siêu tốc những nội dung bị trôi.</Text>
+      </View>
+
+      <View style={styles.memberMgmtCard}>
+        <Pressable
+          style={styles.memberMgmtHeader}
+          onPress={() => setPanel("members")}
+          android_ripple={{ color: "rgba(0,0,0,0.04)" }}
+        >
+          <Text style={styles.memberMgmtTitle}>Quản lý thành viên ({members.length})</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            {joinRequests.length > 0 ? (
+              <View style={styles.requestBadge}>
+                <Text style={styles.requestBadgeText}>
+                  {joinRequests.length > 99 ? "99+" : joinRequests.length}
+                </Text>
+              </View>
+            ) : null}
+            <ChevronRight size={18} color={Z.sub} />
+          </View>
+        </Pressable>
+        {canManageMembers ? (
+          <Pressable
+            style={styles.memberMgmtSubRow}
+            onPress={() => setPanel("requests")}
+            android_ripple={{ color: "rgba(0,104,255,0.08)" }}
+          >
+            <UserPlus size={18} color={Z.sub} strokeWidth={1.75} />
+            <Text style={styles.memberMgmtSubLabel}>Duyệt người vào nhóm</Text>
+            {joinRequests.length > 0 ? (
+              <View style={[styles.requestBadge, { marginLeft: 8 }]}>
+                <Text style={styles.requestBadgeText}>
+                  {joinRequests.length > 99 ? "99+" : joinRequests.length}
+                </Text>
+              </View>
+            ) : null}
           </Pressable>
-        </ScrollView>
+        ) : null}
+        <Pressable
+          style={styles.memberMgmtSubRow}
+          onPress={() => setPanel("members")}
+          android_ripple={{ color: "rgba(220,38,38,0.08)" }}
+        >
+          <Users size={18} color={Z.sub} strokeWidth={1.75} />
+          <Text style={[styles.memberMgmtSubLabel, { color: Z.red }]}>Mời ra khỏi nhóm</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.bulletinOuter}>
+        <Pressable
+          style={styles.bulletinHeader}
+          onPress={() => setBulletinExpanded((v) => !v)}
+          android_ripple={{ color: "rgba(0,0,0,0.04)" }}
+        >
+          <View
+            style={{
+              transform: [{ rotate: bulletinExpanded ? "0deg" : "-90deg" }],
+            }}
+          >
+            <ChevronDown size={18} color={Z.sub} strokeWidth={2} />
+          </View>
+          <Text style={styles.bulletinHeaderTitle}>Bảng tin nhóm</Text>
+        </Pressable>
+        {bulletinExpanded ? (
+          <View style={styles.bulletinBody}>
+            <Pressable
+              style={styles.bulletinRow}
+              onPress={() => setPanel("tasks")}
+              android_ripple={{ color: "rgba(0,0,0,0.04)" }}
+            >
+              <Clock size={18} color={Z.sub} strokeWidth={1.75} />
+              <Text style={[styles.bulletinRowLabel, { flex: 1, marginLeft: 12 }]}>
+                Danh sách giao việc & nhắc hẹn
+              </Text>
+              <ChevronRight size={16} color={Z.sub} />
+            </Pressable>
+            <Pressable
+              style={styles.bulletinRow}
+              onPress={() => {
+                setBulletinNotesTab("all");
+                setPanel("bulletinFeed");
+              }}
+              android_ripple={{ color: "rgba(0,0,0,0.04)" }}
+            >
+              <FileText size={18} color={Z.sub} strokeWidth={1.75} />
+              <Text style={[styles.bulletinRowLabel, { flex: 1, marginLeft: 12 }]}>
+                Tin ghim & Bình chọn
+              </Text>
+              <ChevronRight size={16} color={Z.sub} />
+            </Pressable>
+          </View>
+        ) : null}
       </View>
 
       <MenuBlock
-        onPress={() => setPanel("pinned")}
-        icon={<Pin size={22} color={Z.text} strokeWidth={1.75} />}
-        label="Tin nhắn đã ghim"
-        sub={pinnedList.length ? `${pinnedList.length} tin` : undefined}
+        onPress={() => {
+          setMediaTab("media");
+          setPanel("media");
+        }}
+        icon={<ImageIcon size={22} color={Z.text} strokeWidth={1.75} />}
+        label="Ảnh / Video"
       />
       <MenuBlock
-        onPress={() => setPanel("tasks")}
-        icon={<CheckSquare size={22} color={Z.text} strokeWidth={1.75} />}
-        label="Công việc & nhắc hẹn"
-        sub={tasksList.length ? `${tasksList.length} việc` : undefined}
+        onPress={() => {
+          setMediaTab("file");
+          setPanel("media");
+        }}
+        icon={<FileText size={22} color={Z.text} strokeWidth={1.75} />}
+        label="File"
       />
       <MenuBlock
-        onPress={() => setPanel("polls")}
-        icon={<BarChart2 size={22} color={Z.text} strokeWidth={1.75} />}
-        label="Bình chọn"
-        sub={pollsList.length ? `${pollsList.length} bình chọn` : undefined}
+        onPress={() => {
+          setMediaTab("link");
+          setPanel("media");
+        }}
+        icon={<Link2 size={22} color={Z.text} strokeWidth={1.75} />}
+        label="Link"
       />
-      {canEditGroupSettings ? (
-        <MenuBlock
-          onPress={() => setPanel("settings")}
-          icon={<Settings size={22} color={Z.text} strokeWidth={1.75} />}
-          label="Cài đặt nhóm"
-        />
-      ) : null}
-      <MenuBlock
-        onPress={() => setPanel("members")}
-        icon={<Users size={22} color={Z.text} strokeWidth={1.75} />}
-        label={`Xem thành viên (${members.length})`}
-      />
-
-      <View style={styles.divider} />
-
-      {canManageMembers ? (
-        <MenuBlock
-          onPress={() => setPanel("requests")}
-          icon={<UserCog size={22} color={Z.text} strokeWidth={1.75} />}
-          label="Duyệt thành viên"
-          sub={joinRequests.length ? `${joinRequests.length} yêu cầu` : undefined}
-        />
-      ) : null}
 
       <Pressable
         style={styles.linkBlock}
@@ -872,12 +1195,6 @@ export function GroupManageModal({
         <ChevronRight size={18} color={Z.sub} />
       </Pressable>
 
-      <ToggleRow
-        label="Ghim trò chuyện"
-        value={isPinnedToTop}
-        disabled={busy}
-        onValueChange={(v) => void togglePinnedConv(v)}
-      />
       <MenuBlock
         onPress={() => setPanel("personal")}
         icon={<User size={22} color={Z.text} strokeWidth={1.75} />}
@@ -1194,38 +1511,45 @@ export function GroupManageModal({
     }
     const mp = settings.memberPermissions;
     const ad = settings.adminSettings;
+    const settingsLocked = savingSettings || !canEditGroupSettings;
     return (
       <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: 32 }}>
+        {!canEditGroupSettings ? (
+          <Text style={[styles.help, { paddingHorizontal: 16, paddingTop: 8 }]}>
+            Bạn có thể xem cài đặt nhóm. Chỉ trưởng nhóm hoặc quản trị mới chỉnh được các tùy chọn
+            bên dưới.
+          </Text>
+        ) : null}
         <Text style={styles.sectionCap}>Quyền thành viên</Text>
         <ToggleRow
           label="Đổi tên & ảnh nhóm"
           value={mp.changeNameAvatar}
           onValueChange={(v) => void patchSettingMember("changeNameAvatar", v)}
-          disabled={savingSettings}
+          disabled={settingsLocked}
         />
         <ToggleRow
           label="Ghim tin, bình chọn…"
           value={mp.pinMessages}
           onValueChange={(v) => void patchSettingMember("pinMessages", v)}
-          disabled={savingSettings}
+          disabled={settingsLocked}
         />
         <ToggleRow
           label="Ghi chú, nhắc hẹn"
           value={mp.createNotesReminders}
           onValueChange={(v) => void patchSettingMember("createNotesReminders", v)}
-          disabled={savingSettings}
+          disabled={settingsLocked}
         />
         <ToggleRow
           label="Tạo bình chọn"
           value={mp.createPolls}
           onValueChange={(v) => void patchSettingMember("createPolls", v)}
-          disabled={savingSettings}
+          disabled={settingsLocked}
         />
         <ToggleRow
           label="Gửi tin nhắn"
           value={mp.sendMessages}
           onValueChange={(v) => void patchSettingMember("sendMessages", v)}
-          disabled={savingSettings}
+          disabled={settingsLocked}
         />
 
         <Text style={[styles.sectionCap, { marginTop: 16 }]}>Quản trị</Text>
@@ -1233,23 +1557,27 @@ export function GroupManageModal({
           label="Duyệt thành viên mới"
           value={ad.approvalRequired}
           onValueChange={(v) => void patchSettingAdmin("approvalRequired", v)}
-          disabled={savingSettings}
+          disabled={settingsLocked}
         />
         <ToggleRow
           label="Nổi bật tin trưởng nhóm"
           value={ad.highlightLeaderMessages}
           onValueChange={(v) => void patchSettingAdmin("highlightLeaderMessages", v)}
-          disabled={savingSettings}
+          disabled={settingsLocked}
         />
         <ToggleRow
           label="Link tham gia nhóm"
           value={ad.allowJoinLink}
           onValueChange={(v) => void patchSettingAdmin("allowJoinLink", v)}
-          disabled={savingSettings}
+          disabled={settingsLocked}
         />
 
         <Pressable
-          style={[styles.primaryBtn, { marginHorizontal: 16, marginTop: 16 }]}
+          style={[
+            styles.primaryBtn,
+            { marginHorizontal: 16, marginTop: 16 },
+            settingsLocked && { opacity: 0.45 },
+          ]}
           onPress={() => {
             void (async () => {
               try {
@@ -1261,6 +1589,7 @@ export function GroupManageModal({
               }
             })();
           }}
+          disabled={settingsLocked}
         >
           <Text style={styles.primaryBtnText}>Tạo lại link nhóm</Text>
         </Pressable>
@@ -1268,126 +1597,388 @@ export function GroupManageModal({
     );
   };
 
-  const renderPinned = () => (
-    <View style={{ flex: 1 }}>
-      <FlatList
-        data={pinnedList}
-        keyExtractor={(m) => m.messageId}
-        ListEmptyComponent={
-          <Text style={[styles.help, { textAlign: "center", marginTop: 24 }]}>
-            Chưa có tin ghim.
-          </Text>
-        }
-        renderItem={({ item: m }) => (
-          <View style={styles.searchRow}>
-            <Text style={styles.menuLabel} numberOfLines={2}>
-              {m.content || `[${m.type}]`}
+  const renderPinnedMessageCards = (emptyHint: string) => {
+    if (pinnedList.length === 0) {
+      return (
+        <Text
+          style={[styles.help, { textAlign: "center", paddingVertical: 28, paddingHorizontal: 16 }]}
+        >
+          {emptyHint}
+        </Text>
+      );
+    }
+    return pinnedList.map((m) => {
+      const who = String(m.senderDisplayName ?? "").trim() || "Thành viên";
+      const when = formatBulletinFooterTime(m.createdAt);
+      const rawContent = String(m.content ?? "").trim();
+      const preview = rawContent.length > 180 ? `${rawContent.slice(0, 180)}…` : rawContent || "…";
+      return (
+        <Pressable
+          key={m.messageId}
+          onPress={() => jumpToPinnedMessage(m.messageId)}
+          disabled={!onJumpToMessage}
+          style={({ pressed }) => [
+            styles.bulletinPinCard,
+            pressed && onJumpToMessage ? { opacity: 0.92 } : null,
+            !onJumpToMessage ? { opacity: 0.85 } : null,
+          ]}
+        >
+          <View style={styles.bulletinPinCardTop}>
+            <Pin size={18} color={Z.primary} strokeWidth={2} />
+            <Text style={styles.bulletinPinWho} numberOfLines={1}>
+              {who}
             </Text>
-            <Text style={styles.subSmall}>{new Date(m.createdAt).toLocaleString()}</Text>
+            <Text style={styles.bulletinPinWhen} numberOfLines={1}>
+              {when || "—"}
+            </Text>
           </View>
-        )}
-      />
-    </View>
-  );
+          <Text style={styles.bulletinPinPreview} numberOfLines={8}>
+            {preview}
+          </Text>
+        </Pressable>
+      );
+    });
+  };
 
-  const renderTasks = () => (
-    <ScrollView
-      style={styles.scroll}
-      keyboardShouldPersistTaps="handled"
-      contentContainerStyle={{ paddingBottom: 32 }}
-    >
-      <Text style={styles.sectionCap}>Danh sách</Text>
-      {tasksList.length === 0 ? (
-        <Text style={[styles.help, { paddingHorizontal: 16 }]}>Chưa có công việc.</Text>
-      ) : (
-        tasksList.map((raw, idx) => {
-          const t = taskSummary(raw);
-          const key = t.id || `task-${idx}`;
-          const dueObj = t.due ? new Date(t.due) : null;
-          let dueLine = "";
-          if (dueObj) {
-            dueLine = dueObj.toLocaleString("vi-VN", {
-              day: "2-digit",
-              month: "2-digit",
-              hour: "2-digit",
-              minute: "2-digit",
-            });
-            if (dueObj.getTime() < Date.now()) {
-              dueLine = `Hết hạn: ${dueLine}`;
-            } else {
-              dueLine = `Hạn: ${dueLine}`;
-            }
-          }
-          const subLine = [t.status, dueLine].filter(Boolean).join(" · ");
-          return (
-            <Pressable
-              key={key}
-              style={styles.searchRow}
-              onPress={() => {
-                setEditingTaskData(raw);
-                setTaskModalOpen(true);
-              }}
-            >
-              <Text style={styles.menuLabel} numberOfLines={2}>
-                {t.title}
-              </Text>
-              {subLine ? (
+  const renderPollCards = (emptyHint: string) => {
+    if (pollsSorted.length === 0) {
+      return (
+        <Text
+          style={[styles.help, { textAlign: "center", paddingVertical: 28, paddingHorizontal: 16 }]}
+        >
+          {emptyHint}
+        </Text>
+      );
+    }
+    return pollsSorted.map((raw, idx) => {
+      const o = raw as Record<string, unknown>;
+      const p = pollSummary(raw);
+      const key = p.id || `poll-${idx}`;
+      const preview = pollOptionsPreview(raw);
+      const creator = resolveCreatorLabel(
+        typeof o.creatorId === "string" ? o.creatorId : null,
+        o.creatorDisplayName != null ? String(o.creatorDisplayName) : null,
+        effectiveUserId,
+        memberNameById,
+      );
+      const statusLine = `${p.closed ? "Đã đóng" : "Đang mở"}${creator ? ` · ${creator}` : ""}`;
+      return (
+        <Pressable
+          key={key}
+          onPress={() => openPollFromBulletin(p.id)}
+          disabled={!onOpenPollVote || !p.id}
+          style={({ pressed }) => [
+            styles.bulletinPollCard,
+            pressed && onOpenPollVote ? { opacity: 0.92 } : null,
+            !onOpenPollVote ? { opacity: 0.85 } : null,
+          ]}
+        >
+          <View style={styles.bulletinPollCardTop}>
+            <BarChart2 size={18} color="#f97316" strokeWidth={2} />
+            <Text style={styles.bulletinPollTitle} numberOfLines={3}>
+              {p.title}
+            </Text>
+          </View>
+          {preview ? (
+            <Text style={styles.bulletinPollPreview} numberOfLines={3}>
+              {preview}
+            </Text>
+          ) : null}
+          <Text style={styles.bulletinPollMeta}>{statusLine}</Text>
+        </Pressable>
+      );
+    });
+  };
+
+  /** Thẻ nhắc hẹn — cùng layout với thẻ bình chọn / tin ghim trong modal. */
+  const renderTaskCards = (emptyHint: string) => {
+    if (tasksList.length === 0) {
+      return (
+        <Text
+          style={[styles.help, { textAlign: "center", paddingVertical: 28, paddingHorizontal: 16 }]}
+        >
+          {emptyHint}
+        </Text>
+      );
+    }
+    return tasksList.map((raw, idx) => {
+      const t = taskSummary(raw);
+      const key = t.id || `task-${idx}`;
+      const dueObj = t.due ? new Date(t.due) : null;
+      let dueLine = "";
+      if (dueObj) {
+        dueLine = dueObj.toLocaleString("vi-VN", {
+          day: "2-digit",
+          month: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        if (dueObj.getTime() < Date.now()) {
+          dueLine = `Hết hạn: ${dueLine}`;
+        } else {
+          dueLine = `Hạn: ${dueLine}`;
+        }
+      }
+      const overdue = dueLine.startsWith("Hết hạn");
+      const statusTrim = t.status.trim();
+      return (
+        <Pressable
+          key={key}
+          style={({ pressed }) => [styles.bulletinPollCard, pressed ? { opacity: 0.92 } : null]}
+          onPress={() => {
+            setEditingTaskData(raw);
+            setTaskModalOpen(true);
+          }}
+        >
+          <View style={styles.bulletinPollCardTop}>
+            <Clock size={18} color="#059669" strokeWidth={2} />
+            <Text style={styles.bulletinPollTitle} numberOfLines={3}>
+              {t.title}
+            </Text>
+          </View>
+          {statusTrim ? (
+            <Text style={styles.bulletinPollPreview} numberOfLines={2}>
+              {statusTrim}
+            </Text>
+          ) : null}
+          {dueLine ? (
+            <Text style={[styles.bulletinPollMeta, overdue ? { color: Z.red } : null]}>
+              {dueLine}
+            </Text>
+          ) : null}
+        </Pressable>
+      );
+    });
+  };
+
+  const renderBulletinFeed = () => {
+    const tabDefs: { id: BulletinNotesTab; label: string }[] = [
+      { id: "all", label: "Tất cả" },
+      { id: "pinned", label: "Tin ghim" },
+      { id: "polls", label: "Bình chọn" },
+    ];
+
+    const showPollsLoading =
+      bulletinNotesTab !== "pinned" && pollsFetching && pollsSorted.length === 0;
+    const showAllLoading =
+      bulletinNotesTab === "all" &&
+      (pollsFetching || tasksFetching) &&
+      pinnedList.length === 0 &&
+      pollsSorted.length === 0;
+
+    let body: ReactNode = null;
+    if (bulletinNotesTab === "all") {
+      if (showAllLoading) {
+        body = (
+          <Text style={[styles.help, { textAlign: "center", paddingVertical: 20 }]}>
+            Đang tải...
+          </Text>
+        );
+      } else if (pinnedList.length === 0 && pollsSorted.length === 0) {
+        body = (
+          <Text
+            style={[
+              styles.help,
+              { textAlign: "center", paddingVertical: 28, paddingHorizontal: 16 },
+            ]}
+          >
+            Chưa có tin ghim hay bình chọn.
+          </Text>
+        );
+      } else {
+        body = (
+          <View style={{ paddingBottom: 8 }}>
+            {pinnedList.length > 0 ? (
+              <View style={{ marginBottom: 16 }}>
+                <Text style={styles.bulletinSectionCap}>TIN GHIM</Text>
+                {renderPinnedMessageCards("")}
+              </View>
+            ) : null}
+            {pollsSorted.length > 0 ? (
+              <View>
+                <Text style={styles.bulletinSectionCap}>BÌNH CHỌN</Text>
+                {renderPollCards("")}
+              </View>
+            ) : null}
+          </View>
+        );
+      }
+    } else if (bulletinNotesTab === "pinned") {
+      body = renderPinnedMessageCards("Chưa có tin ghim trong hội thoại.");
+    } else {
+      if (showPollsLoading) {
+        body = (
+          <Text style={[styles.help, { textAlign: "center", paddingVertical: 20 }]}>
+            Đang tải bình chọn...
+          </Text>
+        );
+      } else {
+        body = renderPollCards("Chưa có bình chọn.");
+      }
+    }
+
+    return (
+      <View style={{ flex: 1 }}>
+        <View style={styles.bulletinTabBar}>
+          {tabDefs.map((t) => {
+            const on = bulletinNotesTab === t.id;
+            return (
+              <Pressable
+                key={t.id}
+                onPress={() => setBulletinNotesTab(t.id)}
+                style={styles.bulletinTabBtn}
+              >
                 <Text
-                  style={[
-                    styles.subSmall,
-                    dueLine.includes("Hết hạn")
-                      ? { color: "#DC2626", fontWeight: "600" }
-                      : undefined,
-                  ]}
+                  style={[styles.bulletinTabLabel, on ? styles.bulletinTabLabelActive : null]}
+                  numberOfLines={1}
                 >
-                  {subLine}
+                  {t.label}
                 </Text>
+                {on ? <View style={styles.bulletinTabUnderline} /> : <View style={{ height: 2 }} />}
+              </Pressable>
+            );
+          })}
+        </View>
+        <ScrollView
+          style={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 24 }}
+        >
+          {body}
+          {canCreatePollUi || canCreateTaskUi ? (
+            <View style={{ marginTop: 16, gap: 10 }}>
+              {canCreatePollUi ? (
+                <Pressable
+                  style={[styles.secondaryBtn, (!canCreatePollUi || busy) && { opacity: 0.45 }]}
+                  onPress={() => setPollModalOpen(true)}
+                  disabled={busy || !canCreatePollUi}
+                >
+                  <Text style={styles.secondaryBtnText}>Tạo bình chọn mới</Text>
+                </Pressable>
               ) : null}
-            </Pressable>
-          );
-        })
-      )}
+              {canCreateTaskUi ? (
+                <Pressable
+                  style={[styles.secondaryBtn, (!canCreateTaskUi || busy) && { opacity: 0.45 }]}
+                  onPress={() => {
+                    setEditingTaskData(null);
+                    setTaskModalOpen(true);
+                  }}
+                  disabled={busy || !canCreateTaskUi}
+                >
+                  <Text style={styles.secondaryBtnText}>Tạo công việc / nhắc hẹn</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
+          {!canCreatePollUi ? (
+            <Text style={[styles.help, { marginTop: 14 }]}>
+              Nhóm không cho phép thành viên tạo bình chọn.
+            </Text>
+          ) : null}
+          {!canCreateTaskUi ? (
+            <Text style={[styles.help, { marginTop: 8 }]}>
+              Nhóm không cho phép thành viên tạo công việc / nhắc hẹn.
+            </Text>
+          ) : null}
+        </ScrollView>
+      </View>
+    );
+  };
 
-      {tasksList.length > 0 ? (
-        <Text style={[styles.help, { paddingHorizontal: 16, marginTop: 12 }]}>
-          Có thể chạm vào công việc để xem chi tiết hoặc chỉnh sửa.
-        </Text>
-      ) : null}
-
-      {!canCreateTaskUi ? (
-        <Text style={[styles.help, { paddingHorizontal: 16, marginTop: 12 }]}>
-          Nhóm không cho phép thành viên tạo công việc / nhắc hẹn.
-        </Text>
-      ) : null}
-      <Pressable
-        style={[
-          styles.primaryBtn,
-          { marginHorizontal: 16, marginTop: 12 },
-          (!canCreateTaskUi || busy) && { opacity: 0.45 },
-        ]}
-        onPress={() => {
-          setEditingTaskData(null);
-          setTaskModalOpen(true);
-        }}
-        disabled={busy || !canCreateTaskUi}
+  const renderTasks = () => {
+    const showLoading = tasksFetching && tasksList.length === 0;
+    return (
+      <ScrollView
+        style={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 24 }}
       >
-        <Text style={styles.primaryBtnText}>Tạo công việc / nhắc hẹn</Text>
-      </Pressable>
-    </ScrollView>
-  );
+        {showLoading ? (
+          <Text style={[styles.help, { textAlign: "center", paddingVertical: 20 }]}>
+            Đang tải...
+          </Text>
+        ) : tasksList.length > 0 ? (
+          <View style={{ paddingBottom: 8 }}>
+            <Text style={styles.bulletinSectionCap}>NHẮC HẸN</Text>
+            {renderTaskCards("")}
+          </View>
+        ) : (
+          renderTaskCards("Chưa có nhắc hẹn hay công việc.")
+        )}
+
+        {tasksList.length > 0 ? (
+          <Text style={[styles.help, { marginTop: 14 }]}>
+            Có thể chạm vào công việc để xem chi tiết hoặc chỉnh sửa.
+          </Text>
+        ) : null}
+
+        {!canCreateTaskUi ? (
+          <Text style={[styles.help, { marginTop: 14 }]}>
+            Nhóm không cho phép thành viên tạo công việc / nhắc hẹn.
+          </Text>
+        ) : null}
+      </ScrollView>
+    );
+  };
 
   const renderMedia = () => {
     const w = Dimensions.get("window").width;
     const gap = 6;
     const pad = 12;
     const cell = (w - pad * 2 - gap * 2) / 3;
+
+    const gridMessages = mediaMessages.filter((m) => {
+      if (mediaTab === "media") return m.type === "image" || m.type === "video";
+      return m.type === "file";
+    });
+
+    if (mediaTab === "link") {
+      return (
+        <FlatList
+          data={linkGalleryRows}
+          keyExtractor={(item) => item.key}
+          contentContainerStyle={{ paddingTop: 8, paddingBottom: 24 }}
+          ListEmptyComponent={
+            <Text
+              style={[styles.help, { textAlign: "center", marginTop: 24, paddingHorizontal: 16 }]}
+            >
+              Chưa có link trong tin nhắn gần đây.
+            </Text>
+          }
+          renderItem={({ item }) => (
+            <Pressable
+              style={styles.searchRow}
+              onPress={async () => {
+                await Clipboard.setStringAsync(item.url);
+                toast.success("Đã sao chép link");
+              }}
+            >
+              <Text style={styles.menuLabel} numberOfLines={2}>
+                {item.url}
+              </Text>
+              <Text style={styles.subSmall} numberOfLines={2}>
+                {formatChatPreviewLine(item.message, effectiveUserId ?? "")}
+              </Text>
+            </Pressable>
+          )}
+        />
+      );
+    }
+
     return (
       <FlatList
-        data={mediaMessages}
+        data={gridMessages}
         keyExtractor={(m) => m.messageId}
         numColumns={3}
         columnWrapperStyle={{ gap, paddingHorizontal: pad, marginBottom: gap }}
         contentContainerStyle={{ paddingTop: 8, paddingBottom: 24 }}
+        ListEmptyComponent={
+          <Text
+            style={[styles.help, { textAlign: "center", marginTop: 24, paddingHorizontal: 16 }]}
+          >
+            {mediaTab === "file" ? "Chưa có file được chia sẻ." : "Chưa có ảnh hoặc video."}
+          </Text>
+        }
         renderItem={({ item: m }) => {
           const uri = m.thumbnailUrl || m.mediaUrl;
           return (
@@ -1407,7 +1998,17 @@ export function GroupManageModal({
                     },
                   ]}
                 >
-                  <Text style={{ color: Z.sub, fontSize: 11 }}>{m.type}</Text>
+                  <Text
+                    style={{
+                      color: Z.sub,
+                      fontSize: 11,
+                      textAlign: "center",
+                      paddingHorizontal: 4,
+                    }}
+                    numberOfLines={2}
+                  >
+                    {m.type === "file" ? m.mediaOriginalName?.slice(0, 24) || "FILE" : "•"}
+                  </Text>
                 </View>
               )}
             </View>
@@ -1445,49 +2046,6 @@ export function GroupManageModal({
     const t = new Date(u).getTime();
     return Number.isFinite(t) && t > Date.now() ? u : null;
   }, [conversation.notificationsMutedUntil]);
-
-  const renderPolls = () => (
-    <ScrollView
-      style={styles.scroll}
-      keyboardShouldPersistTaps="handled"
-      contentContainerStyle={{ paddingBottom: 32 }}
-    >
-      <Text style={styles.sectionCap}>Danh sách</Text>
-      {pollsList.length === 0 ? (
-        <Text style={[styles.help, { paddingHorizontal: 16 }]}>Chưa có bình chọn.</Text>
-      ) : (
-        pollsList.map((raw, idx) => {
-          const p = pollSummary(raw);
-          const key = p.id || `poll-${idx}`;
-          return (
-            <View key={key} style={styles.searchRow}>
-              <Text style={styles.menuLabel} numberOfLines={2}>
-                {p.title}
-              </Text>
-              <Text style={styles.subSmall}>{p.closed ? "Đã đóng" : "Đang mở"}</Text>
-            </View>
-          );
-        })
-      )}
-
-      {!canCreatePollUi ? (
-        <Text style={[styles.help, { paddingHorizontal: 16, marginTop: 12 }]}>
-          Nhóm không cho phép thành viên tạo bình chọn.
-        </Text>
-      ) : null}
-      <Pressable
-        style={[
-          styles.primaryBtn,
-          { marginHorizontal: 16, marginTop: 12 },
-          (!canCreatePollUi || busy) && { opacity: 0.45 },
-        ]}
-        onPress={() => setPollModalOpen(true)}
-        disabled={busy || !canCreatePollUi}
-      >
-        <Text style={styles.primaryBtnText}>Tạo bình chọn mới</Text>
-      </Pressable>
-    </ScrollView>
-  );
 
   const renderPersonal = () => {
     return (
@@ -1557,11 +2115,30 @@ export function GroupManageModal({
       >
         <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
           <View style={styles.topBar}>
-            <Pressable onPress={handleBack} style={styles.backBtn} hitSlop={12}>
-              <ChevronLeft size={28} color={Z.text} strokeWidth={1.75} />
-            </Pressable>
-            <Text style={styles.topTitle}>{headerTitle}</Text>
-            <View style={{ width: 40 }} />
+            <View style={styles.topBarSide}>
+              <Pressable onPress={handleBack} style={styles.backBtn} hitSlop={12}>
+                <ChevronLeft size={28} color={Z.text} strokeWidth={1.75} />
+              </Pressable>
+            </View>
+            <Text style={styles.topTitleCenter} numberOfLines={1}>
+              {headerTitle}
+            </Text>
+            <View style={[styles.topBarSide, { alignItems: "flex-end" }]}>
+              {panel === "tasks" && canCreateTaskUi ? (
+                <Pressable
+                  onPress={() => {
+                    setEditingTaskData(null);
+                    setTaskModalOpen(true);
+                  }}
+                  disabled={busy}
+                  style={styles.backBtn}
+                  hitSlop={12}
+                  accessibilityLabel="Tạo công việc hoặc nhắc hẹn"
+                >
+                  <Plus size={26} color={Z.primary} strokeWidth={2.25} />
+                </Pressable>
+              ) : null}
+            </View>
           </View>
 
           <View style={styles.body}>
@@ -1571,11 +2148,10 @@ export function GroupManageModal({
             {panel === "members" && renderMembers()}
             {panel === "requests" && renderRequests()}
             {panel === "settings" && renderSettings()}
-            {panel === "pinned" && renderPinned()}
+            {panel === "bulletinFeed" && renderBulletinFeed()}
             {panel === "media" && renderMedia()}
             {panel === "transferOwner" && renderTransfer()}
             {panel === "tasks" && renderTasks()}
-            {panel === "polls" && renderPolls()}
             {panel === "personal" && renderPersonal()}
           </View>
         </SafeAreaView>
@@ -1663,6 +2239,73 @@ export function GroupManageModal({
         groupId={groupId}
         canCreatePollUi={canCreatePollUi}
       />
+
+      <Modal
+        visible={aiSummaryOpen}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => !aiSummaryLoading && setAiSummaryOpen(false)}
+      >
+        <Pressable
+          style={styles.overlay}
+          onPress={() => !aiSummaryLoading && setAiSummaryOpen(false)}
+        >
+          <Pressable style={styles.aiSheet} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.aiSheetHeader}>
+              <View style={styles.aiSheetIconWrap}>
+                <Sparkles size={18} color="#fff" strokeWidth={2} />
+              </View>
+              <View style={{ flex: 1, marginLeft: 10, minWidth: 0 }}>
+                <Text style={styles.aiSheetTitle}>AI Tóm tắt tin nhắn nhóm</Text>
+                <Text style={styles.aiSheetSub} numberOfLines={1}>
+                  {conversation.name ?? ""}
+                </Text>
+              </View>
+              <Pressable
+                hitSlop={12}
+                onPress={() => !aiSummaryLoading && setAiSummaryOpen(false)}
+                disabled={aiSummaryLoading}
+              >
+                <Text style={{ fontSize: 22, color: Z.sub, fontWeight: "300" }}>×</Text>
+              </Pressable>
+            </View>
+            <ScrollView
+              style={{ maxHeight: Dimensions.get("window").height * 0.62 }}
+              contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
+              keyboardShouldPersistTaps="handled"
+            >
+              {aiSummaryLoading ? (
+                <View style={{ alignItems: "center", paddingVertical: 32 }}>
+                  <ActivityIndicator size="large" color={Z.primary} />
+                  <Text style={[styles.menuLabel, { marginTop: 16 }]}>AI đang phân tích...</Text>
+                  <Text
+                    style={[
+                      styles.subSmall,
+                      { marginTop: 8, textAlign: "center", paddingHorizontal: 12 },
+                    ]}
+                  >
+                    Đang đọc và tóm tắt lịch sử trò chuyện gần đây
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  <Text style={{ fontSize: 14, lineHeight: 22, color: Z.text }}>
+                    {aiSummaryResult}
+                  </Text>
+                  <Pressable
+                    style={[styles.primaryBtn, { marginTop: 16 }]}
+                    onPress={() => void handleRerunAiSummary()}
+                    disabled={aiSummaryLoading}
+                  >
+                    <Text style={styles.primaryBtnText}>Phân tích lại</Text>
+                  </Pressable>
+                </>
+              )}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </>
   );
 }
@@ -1733,7 +2376,14 @@ const styles = StyleSheet.create({
     backgroundColor: Z.bg,
   },
   backBtn: { padding: 8 },
-  topTitle: { fontSize: 17, fontWeight: "700", color: Z.text },
+  topBarSide: { width: 44, justifyContent: "center" },
+  topTitleCenter: {
+    flex: 1,
+    fontSize: 17,
+    fontWeight: "700",
+    color: Z.text,
+    textAlign: "center",
+  },
   body: { flex: 1, backgroundColor: Z.bg },
   scroll: { flex: 1 },
   hero: { alignItems: "center", paddingTop: 12, paddingBottom: 8 },
@@ -1759,53 +2409,169 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   groupTitle: { fontSize: 20, fontWeight: "700", color: Z.text, flexShrink: 1 },
+  memberCountText: {
+    fontSize: 14,
+    color: Z.sub,
+    fontWeight: "600",
+    marginTop: 6,
+    textAlign: "center",
+  },
   quickRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingHorizontal: 8,
+    paddingHorizontal: 4,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Z.line,
   },
-  quickCell: { flex: 1, alignItems: "center", paddingVertical: 4 },
+  quickCell: { flex: 1, alignItems: "center", paddingVertical: 2, minWidth: 0 },
   quickIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: Z.subBg,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 6,
+    marginBottom: 4,
   },
-  quickLabel: { fontSize: 11, color: Z.text, textAlign: "center" },
-  mediaSection: {
-    paddingTop: 12,
-    paddingBottom: 8,
+  quickLabel: { fontSize: 10, color: Z.text, textAlign: "center", lineHeight: 13 },
+  aiBlock: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Z.line,
+    backgroundColor: "#F5F3FF",
   },
-  mediaHeader: {
+  aiButton: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 8,
-    paddingHorizontal: 16,
-    marginBottom: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: Z.primary,
   },
-  mediaTitle: { fontSize: 15, fontWeight: "600", color: Z.text },
-  mediaStrip: { paddingHorizontal: 12, gap: 8, alignItems: "center" },
-  thumbBox: { width: 64, height: 64, borderRadius: 8, overflow: "hidden" },
-  thumbImg: { width: 64, height: 64, borderRadius: 8 },
-  thumbPlaceholder: { backgroundColor: Z.subBg, alignItems: "center", justifyContent: "center" },
-  thumbMore: {
-    width: 64,
-    height: 64,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: Z.border,
+  aiButtonText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  aiHint: {
+    fontSize: 11,
+    color: Z.sub,
+    textAlign: "center",
+    marginTop: 8,
+    fontWeight: "500",
+  },
+  memberMgmtCard: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Z.line,
+    backgroundColor: Z.bg,
+  },
+  memberMgmtHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  memberMgmtTitle: { fontSize: 15, fontWeight: "700", color: Z.text, flex: 1, marginRight: 8 },
+  requestBadge: {
+    minWidth: 22,
+    height: 22,
+    paddingHorizontal: 6,
+    borderRadius: 11,
+    backgroundColor: "#EF4444",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: Z.subBg,
   },
+  requestBadgeText: { color: "#fff", fontSize: 11, fontWeight: "800" },
+  memberMgmtSubRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Z.line,
+    gap: 10,
+  },
+  memberMgmtSubLabel: { fontSize: 14, fontWeight: "600", color: Z.sub, flex: 1 },
+  bulletinOuter: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Z.line,
+    backgroundColor: Z.bg,
+  },
+  bulletinHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+  },
+  bulletinHeaderTitle: { fontSize: 15, fontWeight: "700", color: Z.text },
+  bulletinBody: { paddingBottom: 4 },
+  bulletinRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Z.line,
+  },
+  bulletinRowLabel: { fontSize: 14, fontWeight: "600", color: Z.text },
+  bulletinSplitRow: {
+    flexDirection: "row",
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+    paddingTop: 4,
+  },
+  bulletinSplitBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    backgroundColor: "#EFF6FF",
+  },
+  bulletinSplitBtnText: { fontSize: 13, fontWeight: "700", color: Z.primary },
+  aiSheet: {
+    marginHorizontal: 16,
+    borderRadius: 16,
+    backgroundColor: Z.bg,
+    maxHeight: "88%",
+    overflow: "hidden",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.2,
+        shadowRadius: 16,
+      },
+      android: { elevation: 12 },
+    }),
+  },
+  aiSheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Z.line,
+    backgroundColor: "#F5F3FF",
+  },
+  aiSheetIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: Z.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  aiSheetTitle: { fontSize: 16, fontWeight: "700", color: Z.text },
+  aiSheetSub: { fontSize: 11, color: Z.sub, marginTop: 2, fontWeight: "600" },
+  thumbPlaceholder: { backgroundColor: Z.subBg, alignItems: "center", justifyContent: "center" },
   menuRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1935,6 +2701,111 @@ const styles = StyleSheet.create({
     backgroundColor: "#FEE2E2",
   },
   kickOutBtnText: { fontSize: 14, fontWeight: "700", color: Z.red },
+  bulletinTabBar: {
+    flexDirection: "row",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Z.line,
+    backgroundColor: Z.bg,
+  },
+  bulletinTabBtn: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+  },
+  bulletinTabLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: Z.sub,
+    textAlign: "center",
+  },
+  bulletinTabLabelActive: { color: Z.primary },
+  bulletinTabUnderline: {
+    marginTop: 6,
+    height: 2,
+    alignSelf: "stretch",
+    marginHorizontal: 8,
+    borderRadius: 2,
+    backgroundColor: Z.primary,
+  },
+  bulletinSectionCap: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+    color: Z.sub,
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  bulletinPinCard: {
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.06)",
+    borderRadius: 16,
+    backgroundColor: Z.bg,
+    padding: 12,
+    marginBottom: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  bulletinPinCardTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  bulletinPinWho: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 13,
+    fontWeight: "700",
+    color: Z.text,
+  },
+  bulletinPinWhen: { fontSize: 11, fontWeight: "600", color: Z.sub },
+  bulletinPinPreview: {
+    marginTop: 8,
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#374151",
+    lineHeight: 19,
+  },
+  bulletinPollCard: {
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.06)",
+    borderRadius: 16,
+    backgroundColor: Z.bg,
+    padding: 12,
+    marginBottom: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  bulletinPollCardTop: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
+  bulletinPollTitle: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "800",
+    color: Z.text,
+    lineHeight: 21,
+  },
+  bulletinPollPreview: {
+    marginTop: 8,
+    fontSize: 13,
+    color: "#4b5563",
+    lineHeight: 18,
+  },
+  bulletinPollMeta: { marginTop: 8, fontSize: 12, fontWeight: "600", color: Z.sub },
+  secondaryBtn: {
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    backgroundColor: "#EFF6FF",
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  secondaryBtnText: { fontSize: 15, fontWeight: "700", color: Z.primary },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", padding: 20 },
   sheet: { backgroundColor: Z.bg, borderRadius: 16, paddingTop: 12, maxHeight: "80%" },
   sheetTitle: {
