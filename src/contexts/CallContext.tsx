@@ -25,7 +25,12 @@ import {
   toggleCamera,
   toggleMic,
 } from "@/store/slices/callSlice";
-import type { CallScope, CallType, IncomingCallData } from "@/types/call.types";
+import type {
+  CallScope,
+  CallType,
+  IncomingCallData,
+  IncomingCallDismissedPayload,
+} from "@/types/call.types";
 
 import { useSocketContext } from "./SocketContext";
 
@@ -162,10 +167,21 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
       }
     };
 
+    const onIncomingDismissed = (data: unknown) => {
+      const p = data as IncomingCallDismissedPayload;
+      if (!p?.channelName || !p?.conversationId) return;
+      const st = store.getState().call;
+      if (st.status !== "incoming-ringing") return;
+      if (st.channelName !== p.channelName) return;
+      if (st.conversationId !== p.conversationId) return;
+      dispatch(resetCall());
+    };
+
     socket.on("call:incoming", onIncoming);
     socket.on("call:accepted", onAccepted);
     socket.on("call:rejected", onRejected);
     socket.on("call:ended", onEnded);
+    socket.on("call:incoming-dismissed", onIncomingDismissed);
     socket.on("call:upgrade-request", onUpgradeRequest);
     socket.on("call:upgrade-response", onUpgradeResponse);
 
@@ -174,6 +190,7 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
       socket.off("call:accepted", onAccepted);
       socket.off("call:rejected", onRejected);
       socket.off("call:ended", onEnded);
+      socket.off("call:incoming-dismissed", onIncomingDismissed);
       socket.off("call:upgrade-request", onUpgradeRequest);
       socket.off("call:upgrade-response", onUpgradeResponse);
     };
