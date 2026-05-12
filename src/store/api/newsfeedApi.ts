@@ -73,7 +73,16 @@ export interface ReelCommentsQueryParams {
 export const newsfeedApi = createApi({
   reducerPath: "newsfeedApi",
   baseQuery: baseQueryWithReauth,
-  tagTypes: ["Feed", "Posts", "PostDetail", "Comments", "ReelsFeed", "ReelDetail", "ReelComments"],
+  tagTypes: [
+    "Feed",
+    "Posts",
+    "PostDetail",
+    "Comments",
+    "ReelsFeed",
+    "ReelDetail",
+    "ReelComments",
+    "ReelCommentReplies",
+  ],
   endpoints: (builder) => ({
     getFeed: builder.query<IFeedPage, FeedQueryParams | void>({
       query: (params) => ({
@@ -477,7 +486,10 @@ export const newsfeedApi = createApi({
         body: { content, parentId, mediaUrls },
       }),
       transformResponse: (response: ApiEnvelope<IComment>) => response.data,
-      invalidatesTags: (_res, _err, arg) => [{ type: "ReelComments", id: arg.reelId }],
+      invalidatesTags: (_res, _err, arg) => [
+        { type: "ReelComments", id: arg.reelId },
+        ...(arg.parentId ? [{ type: "ReelCommentReplies" as const, id: arg.parentId }] : []),
+      ],
     }),
 
     reactToReelComment: builder.mutation<
@@ -536,6 +548,7 @@ export const newsfeedApi = createApi({
         nextCursor: response?.data?.nextCursor ?? null,
         hasMore: Boolean(response?.data?.hasMore),
       }),
+      providesTags: (_res, _err, arg) => [{ type: "ReelCommentReplies", id: arg.commentId }],
     }),
   }),
 });

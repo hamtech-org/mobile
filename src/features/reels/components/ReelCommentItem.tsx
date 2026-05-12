@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, Image, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
 import ImageViewing from "react-native-image-viewing";
@@ -7,8 +7,8 @@ import type { IComment } from "@/types/newsfeed.types";
 import type { ReactionType } from "@/types/reaction.types";
 import {
   useReactToReelCommentMutation,
+  useGetReelCommentRepliesQuery,
   useLazyGetReelCommentRepliesQuery,
-  useAddReelCommentMutation,
 } from "@/store/api/newsfeedApi";
 import { ReactionButton } from "@/components/common/ReactionButton";
 import { ReactionSummary } from "@/components/common/ReactionButton/ReactionSummary";
@@ -59,16 +59,26 @@ export const ReelCommentItem = ({ comment, reelId, isNested = false, onReply }: 
   );
   const [localReactionsCount, setLocalReactionsCount] = useState(comment.reactionsCount || {});
   const [showReplies, setShowReplies] = useState(false);
-  const [replies, setReplies] = useState<IComment[]>([]);
+  const [extraReplies, setExtraReplies] = useState<IComment[]>([]);
   const [replyNextCursor, setReplyNextCursor] = useState<string | null>(null);
   const [hasMoreReplies, setHasMoreReplies] = useState(false);
-  const [localRepliesCount, setLocalRepliesCount] = useState(comment.repliesCount ?? 0);
   const [previewOpen, setPreviewOpen] = useState(false);
 
   const [reactToReelComment] = useReactToReelCommentMutation();
-  const [fetchReplies, { isLoading: isLoadingReplies }] = useLazyGetReelCommentRepliesQuery();
-  // addReelComment chỉ dùng bởi parent thông qua onReply callback → input bar ngoài
-  const [addReelComment] = useAddReelCommentMutation();
+  const { data: firstPageData, isLoading: isLoadingReplies } = useGetReelCommentRepliesQuery(
+    { reelId, commentId: comment.commentId, cursor: null },
+    { skip: !showReplies },
+  );
+  const [loadMoreReplies] = useLazyGetReelCommentRepliesQuery();
+
+  // Reset extra pages when first page refetches (cache invalidated by new reply)
+  useEffect(() => {
+    setExtraReplies([]);
+    setReplyNextCursor(firstPageData?.nextCursor ?? null);
+    setHasMoreReplies(firstPageData?.hasMore ?? false);
+  }, [firstPageData]);
+
+  const replies = [...(firstPageData?.items ?? []), ...extraReplies];
 
   const authorName = comment.author?.displayName ?? comment.authorId;
   const authorAvatar = comment.author?.avatar ?? "";
@@ -76,14 +86,15 @@ export const ReelCommentItem = ({ comment, reelId, isNested = false, onReply }: 
   const mediaUrl = comment.mediaUrls?.[0];
   const isVideoMedia = !!mediaUrl && IS_VIDEO.test(mediaUrl);
 
-  const loadReplies = async (cursor?: string | null, append = false) => {
+  const handleLoadMoreReplies = async () => {
+    if (!replyNextCursor) return;
     try {
-      const page = await fetchReplies({
+      const page = await loadMoreReplies({
         reelId,
         commentId: comment.commentId,
-        cursor: cursor ?? null,
+        cursor: replyNextCursor,
       }).unwrap();
-      setReplies((prev) => (append ? [...prev, ...page.items] : page.items));
+      setExtraReplies((prev) => [...prev, ...page.items]);
       setReplyNextCursor(page.nextCursor);
       setHasMoreReplies(page.hasMore);
     } catch {
@@ -91,12 +102,7 @@ export const ReelCommentItem = ({ comment, reelId, isNested = false, onReply }: 
     }
   };
 
-  const handleToggleReplies = async () => {
-    if (!showReplies && replies.length === 0) {
-      await loadReplies(null, false);
-    }
-    setShowReplies((prev) => !prev);
-  };
+  const handleToggleReplies = () => setShowReplies((prev) => !prev);
 
   const handleReact = (type: ReactionType | null) => {
     const prevReaction = localReaction;
@@ -115,7 +121,7 @@ export const ReelCommentItem = ({ comment, reelId, isNested = false, onReply }: 
   };
 
   return (
-    <View style={isNested ? { marginLeft: 36 } : undefined}>
+    <View>
       <View style={s.row}>
         {/* Avatar */}
         <View
@@ -228,20 +234,24 @@ export const ReelCommentItem = ({ comment, reelId, isNested = false, onReply }: 
 
             {!isNested && (
               <Pressable onPress={() => onReply?.(comment.commentId, authorName)}>
-                <Text className="text-[11px] font-semibold text-muted-foreground">Trả lời</Text>
+                <Ionicons
+                  name="chatbubble-outline"
+                  size={14}
+                  color="hsl(var(--muted-foreground))"
+                />
               </Pressable>
             )}
           </View>
 
           {/* "Xem N trả lời" toggle */}
-          {!isNested && localRepliesCount > 0 && (
+          {!isNested && (comment.repliesCount ?? 0) > 0 && (
             <Pressable
-              onPress={() => void handleToggleReplies()}
+              onPress={handleToggleReplies}
               className="mt-1 flex-row items-center gap-1.5 px-1"
             >
               {isLoadingReplies && <ActivityIndicator size={10} color="#60a5fa" />}
               <Text className="text-xs font-semibold text-blue-400">
-                {showReplies ? "Ẩn trả lời" : `Xem ${localRepliesCount} trả lời`}
+                {showReplies ? "Ẩn trả lời" : `Xem ${comment.repliesCount} trả lời`}
               </Text>
             </Pressable>
           )}
@@ -253,10 +263,7 @@ export const ReelCommentItem = ({ comment, reelId, isNested = false, onReply }: 
                 <ReelCommentItem key={reply.commentId} comment={reply} reelId={reelId} isNested />
               ))}
               {hasMoreReplies && (
-                <Pressable
-                  onPress={() => void loadReplies(replyNextCursor, true)}
-                  className="ml-9 py-1"
-                >
+                <Pressable onPress={() => void handleLoadMoreReplies()} className="ml-9 py-1">
                   <Text className="text-xs font-semibold text-muted-foreground">
                     Xem thêm trả lời
                   </Text>
