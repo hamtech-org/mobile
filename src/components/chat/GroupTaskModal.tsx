@@ -13,20 +13,20 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import DateTimePicker, { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
-import {
-  Calendar,
-  Check,
-  CheckSquare,
-  ChevronRight,
-  Plus,
-  Trash2,
-  Users,
-  X,
-} from "lucide-react-native";
+import { Calendar, Check, CheckSquare, Clock, Users, X } from "lucide-react-native";
 
 import { Avatar } from "@/components/common/Avatar";
 import { useCreateTaskMutation, useUpdateTaskMutation } from "@/store/api/chatApi";
 import { toast } from "@/utils/appToast";
+import {
+  deadlineLocalInputToJsonValue,
+  isoUtcToVietnamLocalDatetimeValue,
+  parseDeadlineParts,
+  parseVietnamLocalDeadlineInput,
+  vietnamDateStr,
+  vietnamHmStr,
+  vietnamInstantAtCurrentMinuteStart,
+} from "@/utils/vietnamDeadline";
 
 const Z = {
   bg: "#FFFFFF",
@@ -64,10 +64,10 @@ function labelForMember(currentUserId: string | undefined, m: GroupTaskModalMemb
   return m.displayName?.trim() || m.userId;
 }
 
-/** Giống web `<input type="datetime-local" />` (không gửi giây). */
-function toDatetimeLocalValue(d: Date): string {
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+function isPastDeadline(raw: string): boolean {
+  const picked = parseVietnamLocalDeadlineInput(raw);
+  if (!picked) return false;
+  return picked.getTime() < vietnamInstantAtCurrentMinuteStart().getTime();
 }
 
 export function GroupTaskModal({
@@ -85,50 +85,58 @@ export function GroupTaskModal({
 
   const [taskTitle, setTaskTitle] = useState("");
   const [taskNote, setTaskNote] = useState("");
-  const [deadline, setDeadline] = useState<Date | null>(null);
-  const [deadlinePickerOpen, setDeadlinePickerOpen] = useState(false);
-  const [deadlineDraft, setDeadlineDraft] = useState(() => new Date());
+  /** Chuỗi `YYYY-MM-DDTHH:mm` theo giờ tường VN — giống web TaskModal. */
+  const [taskDeadline, setTaskDeadline] = useState("");
+  const [timeFieldTouched, setTimeFieldTouched] = useState(false);
+  const [vnClockKey, setVnClockKey] = useState(0);
+  const [iosDeadlinePick, setIosDeadlinePick] = useState<null | "date" | "time">(null);
+  const [iosDeadlineDraft, setIosDeadlineDraft] = useState(() => new Date());
   const [assignToAll, setAssignToAll] = useState(false);
   const [assignees, setAssignees] = useState<string[]>([]);
   const [subtaskRows, setSubtaskRows] = useState<{ assigneeId: string; content: string }[]>([]);
-  const [pickAssigneeForRow, setPickAssigneeForRow] = useState<number | null>(null);
 
-  const firstMemberId = members[0]?.userId ?? "";
+  const readVnClock = useCallback(() => {
+    const now = new Date();
+    return { dateStr: vietnamDateStr(now), timeStr: vietnamHmStr(now) };
+  }, []);
 
   const resetForm = useCallback(() => {
+    const { dateStr, timeStr } = readVnClock();
+    const defaultDl = `${dateStr}T${timeStr}`;
     if (existingTask) {
       setTaskTitle(existingTask.title || "");
       setTaskNote(existingTask.description || "");
-      const d = existingTask.dueDate ? new Date(existingTask.dueDate) : null;
-      setDeadline(d);
-      setDeadlineDraft(d || new Date());
-      setDeadlinePickerOpen(false);
+      const vnFromIso = existingTask.dueDate
+        ? isoUtcToVietnamLocalDatetimeValue(String(existingTask.dueDate))
+        : "";
+      let nextDl = vnFromIso.trim() ? vnFromIso : defaultDl;
+      if (isPastDeadline(nextDl)) nextDl = defaultDl;
+      setTaskDeadline(nextDl);
+      setIosDeadlinePick(null);
       setAssignToAll(Boolean(existingTask.assignToAll || existingTask.broadcast));
       setAssignees(Array.isArray(existingTask.assignees) ? existingTask.assignees.map(String) : []);
       const subs = Array.isArray(existingTask.subtasks) ? existingTask.subtasks : [];
       if (subs.length > 0) {
         setSubtaskRows(
           subs.map((s: any) => ({
-            assigneeId: String(s.assigneeId ?? firstMemberId),
+            assigneeId: String(s.assigneeId ?? ""),
             content: String(s.content ?? ""),
           })),
         );
       } else {
-        setSubtaskRows(firstMemberId ? [{ assigneeId: firstMemberId, content: "" }] : []);
+        setSubtaskRows([]);
       }
-      setPickAssigneeForRow(null);
     } else {
       setTaskTitle("");
       setTaskNote("");
-      setDeadline(null);
-      setDeadlinePickerOpen(false);
-      setDeadlineDraft(new Date());
+      setTaskDeadline(defaultDl);
+      setIosDeadlinePick(null);
       setAssignToAll(false);
       setAssignees([]);
-      setSubtaskRows(firstMemberId ? [{ assigneeId: firstMemberId, content: "" }] : []);
-      setPickAssigneeForRow(null);
+      setSubtaskRows([]);
     }
-  }, [existingTask, firstMemberId]);
+    setTimeFieldTouched(false);
+  }, [existingTask, readVnClock]);
 
   useEffect(() => {
     if (visible) {
@@ -136,13 +144,49 @@ export function GroupTaskModal({
     }
   }, [visible, resetForm]);
 
+  useEffect(() => {
+    if (!visible) return;
+    setVnClockKey((k) => k + 1);
+    const t = setInterval(() => setVnClockKey((k) => k + 1), 15_000);
+    return () => clearInterval(t);
+  }, [visible]);
+
+  const todayDateStr = useMemo(() => vietnamDateStr(new Date()), [vnClockKey]);
+  const nowTimeStr = useMemo(() => vietnamHmStr(new Date()), [vnClockKey]);
+
+  const eligibleMembers = useMemo(() => {
+    if (assignToAll) return members;
+    return members.filter((m) => assignees.includes(m.userId));
+  }, [assignToAll, members, assignees]);
+
+  useEffect(() => {
+    if (assignToAll) return;
+    const set = new Set(assignees);
+    setSubtaskRows((prev) => prev.filter((r) => set.has(r.assigneeId)));
+  }, [assignToAll, assignees]);
+
+  const deadlineParts = useMemo(() => parseDeadlineParts(taskDeadline), [taskDeadline]);
+  const selectedDate = deadlineParts.date || "";
+  const selectedTime = deadlineParts.time || "";
+  const hasDeadline = Boolean(taskDeadline.trim());
+  const isEditing = Boolean(existingTask?.taskId);
+  const timeOnTodayNotAfterNow =
+    hasDeadline &&
+    selectedDate === todayDateStr &&
+    Boolean(selectedTime) &&
+    selectedTime <= nowTimeStr &&
+    (isEditing || timeFieldTouched);
+  const deadlineTimeWarning =
+    hasDeadline && (isPastDeadline(taskDeadline) || timeOnTodayNotAfterNow);
+  const deadlineOk = hasDeadline && !deadlineTimeWarning;
+
   const hasSubtasks = useMemo(
     () => subtaskRows.some((r) => r.assigneeId && r.content.trim().length > 0),
     [subtaskRows],
   );
-
+  const hasAssignees = assignToAll || assignees.length > 0;
   const canSubmit =
-    taskTitle.trim().length > 0 && (hasSubtasks || assignToAll || assignees.length > 0);
+    taskTitle.trim().length > 0 && deadlineOk && hasAssignees && (hasSubtasks || hasAssignees);
 
   const toggleAssignee = (id: string) => {
     if (assignToAll) return;
@@ -166,7 +210,7 @@ export function GroupTaskModal({
           description: taskNote.trim() ? taskNote.trim() : undefined,
           assignees: assignToAll ? [] : assignees,
           assignToAll: assignToAll || undefined,
-          dueDate: deadline ? toDatetimeLocalValue(deadline) : undefined,
+          dueDate: deadlineLocalInputToJsonValue(taskDeadline) ?? undefined,
           subtasks: cleanSubtasks.length > 0 ? cleanSubtasks : undefined,
         }).unwrap();
         toast.success("Đã cập nhật công việc");
@@ -177,7 +221,7 @@ export function GroupTaskModal({
           description: taskNote.trim() ? taskNote.trim() : undefined,
           assignees: assignToAll ? [] : assignees,
           assignToAll: assignToAll || undefined,
-          dueDate: deadline ? toDatetimeLocalValue(deadline) : undefined,
+          dueDate: deadlineLocalInputToJsonValue(taskDeadline) ?? undefined,
           subtasks: cleanSubtasks.length > 0 ? cleanSubtasks : undefined,
         }).unwrap();
         toast.success("Đã tạo công việc");
@@ -188,42 +232,85 @@ export function GroupTaskModal({
     }
   };
 
-  const addSubtaskRow = () => {
-    setSubtaskRows((prev) => [...prev, { assigneeId: firstMemberId, content: "" }]);
+  const mergeDateFromPicker = (picked: Date) => {
+    const newDate = vietnamDateStr(picked);
+    const parts = parseDeadlineParts(taskDeadline);
+    let nextTime = parts.time || nowTimeStr;
+    if (newDate === todayDateStr && nextTime < nowTimeStr) nextTime = nowTimeStr;
+    setTaskDeadline(`${newDate}T${nextTime}`);
   };
 
-  const removeSubtaskRow = (idx: number) => {
-    setSubtaskRows((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== idx)));
+  const mergeTimeFromPicker = (picked: Date) => {
+    setTimeFieldTouched(true);
+    const newTime = vietnamHmStr(picked);
+    const parts = parseDeadlineParts(taskDeadline);
+    const d = parts.date || todayDateStr;
+    let fixedTime = newTime;
+    if (d === todayDateStr && fixedTime < nowTimeStr) fixedTime = nowTimeStr;
+    setTaskDeadline(`${d}T${fixedTime}`);
   };
 
-  const openDeadlinePicker = () => {
-    const d = deadline ?? new Date();
-    setDeadlineDraft(d);
+  const openAndroidDatePicker = () => {
+    const base =
+      parseVietnamLocalDeadlineInput(taskDeadline) ?? vietnamInstantAtCurrentMinuteStart();
+    const minD =
+      parseVietnamLocalDeadlineInput(`${todayDateStr}T00:00`) ??
+      vietnamInstantAtCurrentMinuteStart();
+    DateTimePickerAndroid.open({
+      value: base,
+      mode: "date",
+      display: "default",
+      minimumDate: minD,
+      onChange: (event, selectedDate) => {
+        if (event.type !== "set" || !selectedDate) return;
+        mergeDateFromPicker(selectedDate);
+      },
+    });
+  };
 
-    if (Platform.OS === "android") {
-      DateTimePickerAndroid.open({
-        value: d,
-        mode: "date",
-        display: "default",
-        onChange: (event, selectedDate) => {
-          if (event.type === "set" && selectedDate) {
-            // Sau khi chọn Ngày xong, bật tiếp chọn Giờ
-            DateTimePickerAndroid.open({
-              value: selectedDate,
-              mode: "time",
-              display: "default",
-              onChange: (timeEvent, selectedTime) => {
-                if (timeEvent.type === "set" && selectedTime) {
-                  setDeadline(selectedTime);
-                }
-              },
-            });
-          }
-        },
-      });
-    } else {
-      setDeadlinePickerOpen(true);
-    }
+  const openAndroidTimePicker = () => {
+    const base =
+      parseVietnamLocalDeadlineInput(taskDeadline) ?? vietnamInstantAtCurrentMinuteStart();
+    DateTimePickerAndroid.open({
+      value: base,
+      mode: "time",
+      display: "default",
+      is24Hour: true,
+      onChange: (event, selectedTime) => {
+        if (event.type !== "set" || !selectedTime) return;
+        mergeTimeFromPicker(selectedTime);
+      },
+    });
+  };
+
+  const openIosDeadlinePicker = (mode: "date" | "time") => {
+    const base =
+      parseVietnamLocalDeadlineInput(taskDeadline) ?? vietnamInstantAtCurrentMinuteStart();
+    setIosDeadlineDraft(base);
+    setIosDeadlinePick(mode);
+  };
+
+  const commitIosDeadlinePicker = () => {
+    if (!iosDeadlinePick) return;
+    if (iosDeadlinePick === "date") mergeDateFromPicker(iosDeadlineDraft);
+    else mergeTimeFromPicker(iosDeadlineDraft);
+    setIosDeadlinePick(null);
+  };
+
+  const setSubtaskContentForMember = (memberId: string, text: string) => {
+    const id = String(memberId);
+    setSubtaskRows((prev) => {
+      const has = prev.some((r) => String(r.assigneeId) === id);
+      const nextText = text;
+      if (!nextText.trim()) {
+        if (!has) return prev;
+        return prev.filter((r) => String(r.assigneeId) !== id);
+      }
+      if (has) {
+        return prev.map((r) => (String(r.assigneeId) === id ? { ...r, content: nextText } : r));
+      }
+      return [...prev, { assigneeId: id, content: nextText }];
+    });
   };
 
   return (
@@ -234,296 +321,278 @@ export function GroupTaskModal({
         presentationStyle={Platform.OS === "ios" ? "pageSheet" : "fullScreen"}
         onRequestClose={onClose}
       >
-        <SafeAreaView style={styles.safe} edges={["top", "left", "right", "bottom"]}>
-          <View style={styles.topBar}>
-            <Pressable onPress={onClose} style={styles.iconBtn} hitSlop={12} disabled={submitting}>
-              <X size={26} color={Z.text} strokeWidth={1.75} />
-            </Pressable>
-            <View
-              style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8, marginLeft: 4 }}
-            >
-              <View style={styles.titleIcon}>
-                <CheckSquare size={18} color={Z.taskAccentDark} strokeWidth={2} />
-              </View>
-              <Text style={styles.topTitle} numberOfLines={1}>
-                {existingTask ? "Chi tiết công việc" : "Giao việc & Nhắc hẹn"}
-              </Text>
-            </View>
-            <View style={{ width: 40 }} />
-          </View>
-
-          <ScrollView
-            style={styles.scroll}
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={{ paddingBottom: 24 }}
-          >
-            <Text style={styles.fieldLabel}>Tiêu đề công việc</Text>
-            <TextInput
-              value={taskTitle}
-              onChangeText={setTaskTitle}
-              placeholder="Nhập tiêu đề công việc…"
-              placeholderTextColor={Z.sub}
-              style={styles.input}
-              editable={!submitting}
-            />
-
-            <Text style={[styles.fieldLabel, styles.mt]}>Thời hạn / nhắc hẹn (tùy chọn)</Text>
-            <View style={styles.deadlineRow}>
+        {/* flex:1 + nền: Modal RN không luôn cho con full chiều cao; thiếu sẽ đẩy footer xuống dưới viewport khi nội dung dài. */}
+        <View style={styles.modalRoot}>
+          <SafeAreaView style={styles.safe} edges={["top", "left", "right", "bottom"]}>
+            <View style={styles.topBar}>
               <Pressable
-                style={[styles.deadlineCard, submitting && { opacity: 0.55 }]}
-                onPress={openDeadlinePicker}
+                onPress={onClose}
+                style={styles.iconBtn}
+                hitSlop={12}
                 disabled={submitting}
               >
-                <View style={styles.deadlineIconWrap}>
-                  <Calendar size={18} color={Z.taskAccentDark} strokeWidth={2} />
-                </View>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.deadlineMain} numberOfLines={2}>
-                    {deadline
-                      ? deadline.toLocaleString("vi-VN", {
-                          day: "2-digit",
-                          month: "2-digit",
-                          year: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })
-                      : "Chạm để chọn ngày & giờ"}
-                  </Text>
-                  <Text style={styles.helpSmall}>Giống web (lịch datetime-local)</Text>
-                </View>
-                <ChevronRight size={20} color={Z.sub} strokeWidth={2} />
+                <X size={26} color={Z.text} strokeWidth={1.75} />
               </Pressable>
-              {deadline ? (
-                <Pressable
-                  style={styles.deadlineClearBtn}
-                  onPress={() => setDeadline(null)}
-                  disabled={submitting}
-                  hitSlop={8}
-                >
-                  <X size={20} color={Z.sub} strokeWidth={2} />
-                </Pressable>
-              ) : null}
-            </View>
-
-            <Text style={[styles.fieldLabel, styles.mt]}>Giao cho</Text>
-            <Pressable
-              style={[styles.assignAllCard, assignToAll && styles.assignAllOn]}
-              onPress={() => {
-                setAssignToAll((v) => !v);
-                if (!assignToAll) setAssignees([]);
-              }}
-              disabled={submitting}
-            >
-              <View style={styles.assignAllLeft}>
-                <View style={styles.smallIconWrap}>
-                  <Users size={18} color={Z.primary} strokeWidth={2} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.menuLabel}>Giao cho cả nhóm</Text>
-                  <Text style={styles.helpSmall}>
-                    Tự động áp dụng cho tất cả thành viên hiện tại
-                  </Text>
-                </View>
-              </View>
-              <Switch
-                value={assignToAll}
-                onValueChange={(v) => {
-                  setAssignToAll(v);
-                  if (v) setAssignees([]);
+              <View
+                style={{
+                  flex: 1,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                  marginLeft: 4,
                 }}
-                disabled={submitting}
-                trackColor={{ false: "#D1D5DB", true: "#86EFAC" }}
-                thumbColor={assignToAll ? Z.taskAccent : "#f4f4f5"}
-              />
-            </Pressable>
-
-            <View style={[styles.memberBox, assignToAll && { opacity: 0.55 }]}>
-              {members.map((m) => {
-                const on = assignees.includes(m.userId);
-                return (
-                  <Pressable
-                    key={m.userId}
-                    style={styles.memberRow}
-                    onPress={() => toggleAssignee(m.userId)}
-                    disabled={assignToAll || submitting}
-                  >
-                    <View style={[styles.checkOuter, on && styles.checkOuterOn]}>
-                      {on ? <Check size={14} color="#fff" strokeWidth={3} /> : null}
-                    </View>
-                    <Avatar uri={m.avatar || undefined} name={m.displayName} size="sm" />
-                    <View style={{ flex: 1, marginLeft: 10 }}>
-                      <Text style={styles.menuLabel}>{labelForMember(currentUserId, m)}</Text>
-                      <Text style={styles.helpSmall}>{m.role ? String(m.role) : ""}</Text>
-                    </View>
-                  </Pressable>
-                );
-              })}
+              >
+                <View style={styles.titleIcon}>
+                  <CheckSquare size={18} color={Z.taskAccentDark} strokeWidth={2} />
+                </View>
+                <Text style={styles.topTitle} numberOfLines={1}>
+                  {existingTask ? "Chi tiết công việc" : "Giao việc & Nhắc hẹn"}
+                </Text>
+              </View>
+              <View style={{ width: 40 }} />
             </View>
 
-            <Text style={[styles.fieldLabel, styles.mt]}>Ghi chú thêm</Text>
-            <TextInput
-              value={taskNote}
-              onChangeText={setTaskNote}
-              placeholder="Mô tả hoặc ghi chú…"
-              placeholderTextColor={Z.sub}
-              style={[styles.input, styles.textArea]}
-              multiline
-              editable={!submitting}
-            />
-
-            <Text style={[styles.fieldLabel, styles.mt]}>Công việc cụ thể theo từng người</Text>
-            {subtaskRows.map((row, idx) => (
-              <View key={`sub-${idx}`} style={styles.subRow}>
-                <Pressable
-                  style={styles.subAssignee}
-                  onPress={() => setPickAssigneeForRow(idx)}
-                  disabled={submitting}
-                >
-                  <Text style={styles.subAssigneeText} numberOfLines={1}>
-                    {members.find((x) => x.userId === row.assigneeId)
-                      ? labelForMember(
-                          currentUserId,
-                          members.find((x) => x.userId === row.assigneeId)!,
-                        )
-                      : "Chọn người"}
-                  </Text>
-                </Pressable>
+            {/* minHeight:0 — flex con co lại để ScrollView cuộn trong vùng còn lại; footer giống web (shrink-0) luôn dính đáy. */}
+            <View style={styles.scrollRegion}>
+              <ScrollView
+                style={styles.scroll}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={styles.scrollContent}
+              >
+                <Text style={styles.fieldLabel}>Tiêu đề công việc</Text>
                 <TextInput
-                  value={row.content}
-                  onChangeText={(t) => {
-                    setSubtaskRows((prev) => {
-                      const next = [...prev];
-                      next[idx] = { ...next[idx]!, content: t };
-                      return next;
-                    });
-                  }}
-                  placeholder="Nội dung (VD: Thiết kế UI)"
+                  value={taskTitle}
+                  onChangeText={setTaskTitle}
+                  placeholder="Nhập tiêu đề công việc…"
                   placeholderTextColor={Z.sub}
-                  style={[styles.input, { flex: 1, marginTop: 0 }]}
+                  style={styles.input}
                   editable={!submitting}
                 />
-                <Pressable
-                  onPress={() => removeSubtaskRow(idx)}
-                  disabled={submitting || subtaskRows.length <= 1}
-                  style={{ padding: 8, opacity: subtaskRows.length <= 1 ? 0.35 : 1 }}
-                >
-                  <Trash2 size={20} color={Z.red} strokeWidth={2} />
-                </Pressable>
-              </View>
-            ))}
-            <Pressable style={styles.addSubBtn} onPress={addSubtaskRow} disabled={submitting}>
-              <Plus size={20} color={Z.primary} strokeWidth={2} />
-              <Text style={[styles.menuLabel, { marginLeft: 8, color: Z.primary }]}>
-                Thêm công việc
-              </Text>
-            </Pressable>
-          </ScrollView>
 
-          <View style={styles.footer}>
-            {!existingTask ? (
-              <Pressable style={styles.btnGhost} onPress={onClose} disabled={submitting}>
-                <Text style={styles.btnGhostText}>Đóng</Text>
-              </Pressable>
-            ) : onDelete && existingTask.creatorId && existingTask.creatorId === currentUserId ? (
-              <Pressable style={styles.btnGhost} onPress={onDelete} disabled={submitting}>
-                <Text style={[styles.btnGhostText, { color: Z.red }]}>Hủy công việc</Text>
-              </Pressable>
-            ) : (
-              <Pressable style={styles.btnGhost} onPress={onClose} disabled={submitting}>
-                <Text style={styles.btnGhostText}>Đóng</Text>
-              </Pressable>
-            )}
-            <Pressable
-              style={[styles.btnPrimary, (!canSubmit || submitting) && styles.btnPrimaryDisabled]}
-              onPress={() => void submit()}
-              disabled={!canSubmit || submitting}
-            >
-              {submitting ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                  <CheckSquare size={18} color="#fff" strokeWidth={2} />
-                  <Text style={styles.btnPrimaryText}>
-                    {existingTask ? "Lưu thay đổi" : "Giao việc"}
-                  </Text>
+                <Text style={[styles.fieldLabel, styles.mt]}>Thời hạn</Text>
+                <View style={styles.deadlineTwoCol}>
+                  <Pressable
+                    style={[styles.deadlineHalfCard, submitting && { opacity: 0.55 }]}
+                    onPress={() =>
+                      Platform.OS === "android"
+                        ? openAndroidDatePicker()
+                        : openIosDeadlinePicker("date")
+                    }
+                    disabled={submitting}
+                  >
+                    <Text style={styles.deadlineHalfLabel}>Ngày</Text>
+                    <View style={styles.deadlineHalfInner}>
+                      <Calendar size={18} color={Z.taskAccentDark} strokeWidth={2} />
+                      <Text style={styles.deadlineHalfValue} numberOfLines={1}>
+                        {selectedDate || "—"}
+                      </Text>
+                    </View>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.deadlineHalfCard, submitting && { opacity: 0.55 }]}
+                    onPress={() =>
+                      Platform.OS === "android"
+                        ? openAndroidTimePicker()
+                        : openIosDeadlinePicker("time")
+                    }
+                    disabled={submitting}
+                  >
+                    <Text style={styles.deadlineHalfLabel}>Thời gian</Text>
+                    <View style={styles.deadlineHalfInner}>
+                      <Clock size={18} color={Z.taskAccentDark} strokeWidth={2} />
+                      <Text style={styles.deadlineHalfValue} numberOfLines={1}>
+                        {selectedTime || "—"}
+                      </Text>
+                    </View>
+                  </Pressable>
                 </View>
+                {deadlineTimeWarning ? (
+                  <Text style={styles.deadlineWarn}>
+                    Thời gian đã chọn phải sau thời điểm hiện tại (giờ Việt Nam).
+                  </Text>
+                ) : (
+                  <Text style={[styles.helpSmall, styles.deadlineVnHint]}>
+                    Ngày và giờ theo múi Việt Nam (đồng bộ web).
+                  </Text>
+                )}
+
+                <Text style={[styles.fieldLabel, styles.mt]}>Giao cho</Text>
+                <Pressable
+                  style={[styles.assignAllCard, assignToAll && styles.assignAllOn]}
+                  onPress={() => {
+                    setAssignToAll((v) => !v);
+                    if (!assignToAll) setAssignees([]);
+                  }}
+                  disabled={submitting}
+                >
+                  <View style={styles.assignAllLeft}>
+                    <View style={styles.smallIconWrap}>
+                      <Users size={18} color={Z.primary} strokeWidth={2} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.menuLabel}>Giao cho cả nhóm</Text>
+                      <Text style={styles.helpSmall}>Tự động áp dụng cho tất cả thành viên</Text>
+                    </View>
+                  </View>
+                  <Switch
+                    value={assignToAll}
+                    onValueChange={(v) => {
+                      setAssignToAll(v);
+                      if (v) setAssignees([]);
+                    }}
+                    disabled={submitting}
+                    trackColor={{ false: "#D1D5DB", true: "#86EFAC" }}
+                    thumbColor={assignToAll ? Z.taskAccent : "#f4f4f5"}
+                  />
+                </Pressable>
+
+                <View style={[styles.memberBox, assignToAll && { opacity: 0.55 }]}>
+                  {members.map((m) => {
+                    const on = assignees.includes(m.userId);
+                    return (
+                      <Pressable
+                        key={m.userId}
+                        style={styles.memberRow}
+                        onPress={() => toggleAssignee(m.userId)}
+                        disabled={assignToAll || submitting}
+                      >
+                        <View style={[styles.checkOuter, on && styles.checkOuterOn]}>
+                          {on ? <Check size={14} color="#fff" strokeWidth={3} /> : null}
+                        </View>
+                        <Avatar uri={m.avatar || undefined} name={m.displayName} size="sm" />
+                        <View style={{ flex: 1, marginLeft: 10 }}>
+                          <Text style={styles.menuLabel}>{labelForMember(currentUserId, m)}</Text>
+                          <Text style={styles.helpSmall}>{m.role ? String(m.role) : ""}</Text>
+                        </View>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                <Text style={[styles.fieldLabel, styles.mt]}>Ghi chú thêm</Text>
+                <TextInput
+                  value={taskNote}
+                  onChangeText={setTaskNote}
+                  placeholder="Nhập mô tả hoặc ghi chú cho công việc…"
+                  placeholderTextColor={Z.sub}
+                  style={[styles.input, styles.textArea]}
+                  multiline
+                  editable={!submitting}
+                />
+
+                <View style={styles.subtaskLabelRow}>
+                  <Text style={styles.subtaskSectionTitle}>Công việc chi tiết từng người</Text>
+                  {!assignToAll && eligibleMembers.length > 0 ? (
+                    <View style={styles.subtaskOptionalPill}>
+                      <Text style={styles.subtaskOptionalPillText}>Tùy chọn</Text>
+                    </View>
+                  ) : null}
+                </View>
+                <View style={styles.subtaskMemberBox}>
+                  {!assignToAll && eligibleMembers.length === 0 ? (
+                    <Text style={styles.subtaskEmptyHint}>
+                      Vui lòng chọn người ở mục{" "}
+                      <Text style={styles.subtaskEmptyBold}>Giao cho</Text> để thêm công việc chi
+                      tiết.
+                    </Text>
+                  ) : (
+                    (assignToAll ? members : eligibleMembers).map((m) => {
+                      const value =
+                        subtaskRows.find((r) => String(r.assigneeId) === m.userId)?.content ?? "";
+                      return (
+                        <View key={m.userId} style={styles.subtaskMemberBlock}>
+                          <View style={styles.subtaskMemberHead}>
+                            <Avatar uri={m.avatar || undefined} name={m.displayName} size="sm" />
+                            <Text style={styles.subtaskMemberName} numberOfLines={1}>
+                              {labelForMember(currentUserId, m)}
+                            </Text>
+                          </View>
+                          <TextInput
+                            value={value}
+                            onChangeText={(t) => setSubtaskContentForMember(m.userId, t)}
+                            placeholder="Nhập nội dung chi tiết…"
+                            placeholderTextColor={Z.sub}
+                            style={styles.subtaskTextarea}
+                            multiline
+                            editable={!submitting}
+                          />
+                        </View>
+                      );
+                    })
+                  )}
+                </View>
+              </ScrollView>
+            </View>
+
+            <View style={styles.footer}>
+              {!existingTask ? (
+                <Pressable style={styles.btnGhost} onPress={onClose} disabled={submitting}>
+                  <Text style={styles.btnGhostText}>Đóng</Text>
+                </Pressable>
+              ) : onDelete && existingTask.creatorId && existingTask.creatorId === currentUserId ? (
+                <Pressable style={styles.btnGhost} onPress={onDelete} disabled={submitting}>
+                  <Text style={[styles.btnGhostText, { color: Z.red }]}>Hủy công việc</Text>
+                </Pressable>
+              ) : (
+                <Pressable style={styles.btnGhost} onPress={onClose} disabled={submitting}>
+                  <Text style={styles.btnGhostText}>Đóng</Text>
+                </Pressable>
               )}
-            </Pressable>
-          </View>
-        </SafeAreaView>
+              <Pressable
+                style={[styles.btnPrimary, (!canSubmit || submitting) && styles.btnPrimaryDisabled]}
+                onPress={() => void submit()}
+                disabled={!canSubmit || submitting}
+              >
+                {submitting ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <CheckSquare size={18} color="#fff" strokeWidth={2} />
+                    <Text style={styles.btnPrimaryText}>
+                      {existingTask ? "Lưu thay đổi" : "Giao việc ngay"}
+                    </Text>
+                  </View>
+                )}
+              </Pressable>
+            </View>
+          </SafeAreaView>
+        </View>
       </Modal>
 
       <Modal
-        visible={Platform.OS === "ios" && deadlinePickerOpen}
+        visible={Platform.OS === "ios" && iosDeadlinePick !== null}
         transparent
         animationType="fade"
-        onRequestClose={() => setDeadlinePickerOpen(false)}
+        onRequestClose={() => setIosDeadlinePick(null)}
       >
-        <Pressable style={styles.overlay} onPress={() => setDeadlinePickerOpen(false)}>
+        <Pressable style={styles.overlay} onPress={() => setIosDeadlinePick(null)}>
           <Pressable style={styles.deadlineIosSheet} onPress={(e) => e.stopPropagation()}>
             <View style={styles.deadlineIosBar}>
-              <Pressable onPress={() => setDeadlinePickerOpen(false)} hitSlop={12}>
+              <Pressable onPress={() => setIosDeadlinePick(null)} hitSlop={12}>
                 <Text style={styles.deadlineIosBarBtn}>Hủy</Text>
               </Pressable>
-              <Text style={styles.deadlineIosTitle}>Thời hạn</Text>
-              <Pressable
-                onPress={() => {
-                  setDeadline(deadlineDraft);
-                  setDeadlinePickerOpen(false);
-                }}
-                hitSlop={12}
-              >
+              <Text style={styles.deadlineIosTitle}>
+                {iosDeadlinePick === "time" ? "Thời gian" : "Ngày"}
+              </Text>
+              <Pressable onPress={commitIosDeadlinePicker} hitSlop={12}>
                 <Text style={[styles.deadlineIosBarBtn, { color: Z.primary }]}>Xong</Text>
               </Pressable>
             </View>
             <DateTimePicker
-              value={deadlineDraft}
-              mode="datetime"
+              value={iosDeadlineDraft}
+              mode={iosDeadlinePick === "time" ? "time" : "date"}
               display="spinner"
               onChange={(_, d) => {
-                if (d) setDeadlineDraft(d);
+                if (d) setIosDeadlineDraft(d);
               }}
               textColor={Z.text}
+              timeZoneName={Platform.OS === "ios" ? "Asia/Ho_Chi_Minh" : undefined}
+              minimumDate={
+                iosDeadlinePick === "date"
+                  ? (parseVietnamLocalDeadlineInput(`${todayDateStr}T00:00`) ?? undefined)
+                  : undefined
+              }
             />
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      <Modal
-        visible={pickAssigneeForRow !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setPickAssigneeForRow(null)}
-      >
-        <Pressable style={styles.overlay} onPress={() => setPickAssigneeForRow(null)}>
-          <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.sheetTitle}>Chọn người</Text>
-            <ScrollView style={{ maxHeight: 360 }} keyboardShouldPersistTaps="handled">
-              {members.map((m) => (
-                <Pressable
-                  key={m.userId}
-                  style={styles.sheetRow}
-                  onPress={() => {
-                    const idx = pickAssigneeForRow;
-                    if (idx === null) return;
-                    setSubtaskRows((prev) => {
-                      const next = [...prev];
-                      if (next[idx]) next[idx] = { ...next[idx]!, assigneeId: m.userId };
-                      return next;
-                    });
-                    setPickAssigneeForRow(null);
-                  }}
-                >
-                  <Avatar uri={m.avatar || undefined} name={m.displayName} size="sm" />
-                  <Text style={[styles.menuLabel, { flex: 1, marginLeft: 12 }]}>
-                    {labelForMember(currentUserId, m)}
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-            <Pressable style={styles.sheetCancel} onPress={() => setPickAssigneeForRow(null)}>
-              <Text style={{ color: Z.sub, fontWeight: "600" }}>Hủy</Text>
-            </Pressable>
           </Pressable>
         </Pressable>
       </Modal>
@@ -532,7 +601,11 @@ export function GroupTaskModal({
 }
 
 const styles = StyleSheet.create({
+  modalRoot: { flex: 1, backgroundColor: Z.bg },
   safe: { flex: 1, backgroundColor: Z.bg },
+  /** Vùng giữa co trong flex để ScrollView không đẩy footer ra khỏi màn hình. */
+  scrollRegion: { flex: 1, minHeight: 0 },
+  scrollContent: { paddingBottom: 24 },
   topBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -626,38 +699,119 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   checkOuterOn: { backgroundColor: "#22C55E", borderColor: "#22C55E" },
-  subRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginHorizontal: 16,
-    marginTop: 10,
-  },
-  subAssignee: {
-    minWidth: 100,
-    maxWidth: 120,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 10,
+  deadlineTwoCol: { flexDirection: "row", gap: 12, marginHorizontal: 16 },
+  deadlineHalfCard: {
+    flex: 1,
     borderWidth: 1,
     borderColor: Z.border,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
     backgroundColor: Z.subBg,
   },
-  subAssigneeText: { fontSize: 13, fontWeight: "600", color: Z.primary },
-  addSubBtn: {
+  deadlineHalfLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Z.sub,
+    marginBottom: 8,
+  },
+  deadlineHalfInner: { flexDirection: "row", alignItems: "center", gap: 8 },
+  deadlineHalfValue: { flex: 1, fontSize: 15, fontWeight: "600", color: Z.text, minWidth: 0 },
+  deadlineWarn: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#EA580C",
+  },
+  deadlineVnHint: { marginHorizontal: 16, marginTop: 8 },
+  subtaskLabelRow: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 8,
+    gap: 8,
+  },
+  subtaskSectionTitle: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: "700",
+    color: Z.sub,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  subtaskOptionalPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: "#E0E7FF",
+  },
+  subtaskOptionalPillText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#4338CA",
+    textTransform: "lowercase",
+    letterSpacing: 0,
+  },
+  subtaskMemberBox: {
     marginHorizontal: 16,
-    marginTop: 12,
+    borderWidth: 1,
+    borderColor: Z.border,
+    borderRadius: 14,
+    overflow: "hidden",
+    backgroundColor: Z.subBg,
+  },
+  subtaskEmptyHint: {
+    paddingHorizontal: 16,
+    paddingVertical: 22,
+    fontSize: 13,
+    fontWeight: "600",
+    color: Z.sub,
+    textAlign: "center",
+  },
+  subtaskEmptyBold: { fontWeight: "800", color: Z.primary, textTransform: "uppercase" },
+  subtaskMemberBlock: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Z.line,
+    backgroundColor: Z.bg,
+  },
+  subtaskMemberHead: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
+  subtaskMemberName: { flex: 1, fontSize: 13, fontWeight: "800", color: Z.text },
+  subtaskTextarea: {
+    minHeight: 72,
+    textAlignVertical: "top",
+    borderWidth: 1,
+    borderColor: Z.border,
+    borderRadius: 12,
+    paddingHorizontal: 12,
     paddingVertical: 10,
+    fontSize: 13,
+    fontWeight: "500",
+    color: Z.text,
+    backgroundColor: Z.subBg,
   },
   footer: {
+    flexShrink: 0,
     flexDirection: "row",
     gap: 10,
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: Z.line,
+    backgroundColor: Z.bg,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: -2 },
+        shadowOpacity: 0.06,
+        shadowRadius: 4,
+      },
+      android: { elevation: 8 },
+    }),
   },
   btnGhost: {
     paddingVertical: 12,
@@ -678,62 +832,6 @@ const styles = StyleSheet.create({
   btnPrimaryDisabled: { backgroundColor: "#D1D5DB" },
   btnPrimaryText: { fontWeight: "700", color: "#fff", fontSize: 15 },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", padding: 20 },
-  sheet: { backgroundColor: Z.bg, borderRadius: 16, paddingTop: 12, maxHeight: "80%" },
-  sheetTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: Z.text,
-    paddingHorizontal: 16,
-    marginBottom: 8,
-  },
-  sheetRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Z.line,
-  },
-  sheetCancel: {
-    paddingVertical: 14,
-    alignItems: "center",
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: Z.line,
-  },
-  deadlineRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginHorizontal: 16,
-    gap: 8,
-  },
-  deadlineCard: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: Z.border,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    backgroundColor: Z.subBg,
-    gap: 10,
-  },
-  deadlineIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: "#DCFCE7",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  deadlineMain: { fontSize: 15, fontWeight: "600", color: Z.text },
-  deadlineClearBtn: {
-    padding: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Z.border,
-    backgroundColor: Z.bg,
-  },
   deadlineIosSheet: {
     backgroundColor: Z.bg,
     borderTopLeftRadius: 16,

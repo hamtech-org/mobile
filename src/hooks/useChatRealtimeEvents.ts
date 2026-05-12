@@ -16,9 +16,11 @@ import {
   typingStopped,
 } from "@/store/slices/chatSlice";
 import { store, type AppDispatch } from "@/store/store";
+import type { ChatFrameBannerVariant } from "@/store/slices/chatSlice";
 import type { IConversation, IGroupSettings, IMessage } from "@/types/chat.types";
 import { toast } from "@/utils/appToast";
 import { formatChatPreviewLine, getMessageTypeLabel } from "@/utils/messageDisplay";
+import { formatSystemLastMessagePreview } from "@/utils/systemMessage";
 
 /** Toast khi không mở hội thoại — tránh trùng poll. */
 const pollToastDedupe = new Set<string>();
@@ -46,8 +48,19 @@ function roleVi(role: string): string {
   return "thành viên";
 }
 
-/** Tin system JSON (bình chọn, …) → banner trong khung chat. */
-function bannerFromSystemMessage(msg: IMessage): { text: string; atIso: string } | null {
+/** Giống web `useChatGroupFrameNotices`: poll / task_assigned / task_joined (màu + icon). */
+function bannerVariantFromSystemKind(kind: string): ChatFrameBannerVariant | null {
+  if (kind.startsWith("poll")) return "poll";
+  if (kind === "task_joined") return "task_joined";
+  if (kind.startsWith("task")) return "task_assigned";
+  return null;
+}
+
+/** Tin system JSON — nội dung khớp sidebar/web `lastMessageLineFromSystemJson`. */
+function bannerFromSystemMessage(
+  msg: IMessage,
+  viewerUserId: string,
+): { text: string; atIso: string; variant: ChatFrameBannerVariant } | null {
   if (msg.type !== "system") return null;
   const raw = String(msg.content ?? "").trim();
   if (!raw.startsWith("{")) return null;
@@ -58,71 +71,13 @@ function bannerFromSystemMessage(msg: IMessage): { text: string; atIso: string }
     return null;
   }
   const kind = String(parsed.kind ?? "");
-  const actor = (parsed.actor ?? {}) as { name?: string };
-  const actorName = String(actor.name ?? "Thành viên").trim();
-  const poll = (parsed.poll ?? {}) as Record<string, unknown>;
-  const question = String(poll.question ?? "").trim();
+  const variant = bannerVariantFromSystemKind(kind);
+  if (!variant) return null;
   const atIso = normalizeIso(String(parsed.createdAt ?? msg.createdAt ?? ""));
-  const task = (parsed.task ?? {}) as Record<string, unknown>;
-  const taskTitle = String(task.title ?? "").trim();
-
-  switch (kind) {
-    case "task_assigned":
-      return {
-        text: taskTitle ? `Có công việc mới: ${taskTitle}` : "Có công việc mới",
-        atIso,
-      };
-    case "task_joined":
-      return {
-        text: taskTitle
-          ? `${actorName || "Thành viên"} đã tham gia công việc: ${taskTitle}`
-          : `${actorName || "Thành viên"} đã tham gia công việc`,
-        atIso,
-      };
-    case "poll_created":
-      return {
-        text: question
-          ? `${actorName} đã tạo bình chọn: ${question}`
-          : `${actorName} đã tạo bình chọn mới`,
-        atIso,
-      };
-    case "poll_voted": {
-      const opt = String(poll.optionText ?? "").trim();
-      return {
-        text: opt ? `${actorName} đã bình chọn: ${opt}` : `${actorName} đã tham gia bình chọn`,
-        atIso,
-      };
-    }
-    case "poll_vote_changed": {
-      const opt = String(poll.optionText ?? "").trim();
-      const prev = String(poll.prevOptionText ?? "").trim();
-      return {
-        text:
-          prev && opt
-            ? `${actorName} đổi bình chọn (${prev} → ${opt})`
-            : `${actorName} đã đổi lựa chọn bình chọn`,
-        atIso,
-      };
-    }
-    case "poll_unvoted":
-      return { text: `${actorName} đã bỏ chọn bình chọn`, atIso };
-    case "poll_option_added": {
-      const ot = String(poll.optionText ?? "").trim();
-      return {
-        text: ot
-          ? `${actorName} đã thêm lựa chọn: ${ot}`
-          : `${actorName} đã thêm lựa chọn bình chọn`,
-        atIso,
-      };
-    }
-    case "poll_closed":
-      return {
-        text: question ? `Bình chọn đã đóng: ${question}` : "Một bình chọn đã được đóng",
-        atIso,
-      };
-    default:
-      return null;
-  }
+  const text =
+    formatSystemLastMessagePreview(raw, msg.senderId, viewerUserId, msg.senderDisplayName) ??
+    "Thông báo nhóm";
+  return { text, atIso, variant };
 }
 
 /**
@@ -151,13 +106,19 @@ export function useChatRealtimeEvents({
       delete timers[key];
     };
 
-    const emitFrameBanner = (conversationId: string, message: string, atIso?: string) => {
+    const emitFrameBanner = (
+      conversationId: string,
+      message: string,
+      atIso?: string,
+      variant?: ChatFrameBannerVariant,
+    ) => {
       if (conversationId !== activeConvRef.current) return;
       dispatch(
         showChatFrameBanner({
           conversationId,
           message,
           atIso: normalizeIso(atIso),
+          ...(variant ? { variant } : {}),
         }),
       );
     };
@@ -224,50 +185,36 @@ export function useChatRealtimeEvents({
       );
 
       if (msg.type === "system") {
-        const banner = bannerFromSystemMessage(msg);
+        const banner = bannerFromSystemMessage(msg, viewerId);
         if (banner && msg.conversationId === activeConvRef.current) {
-          emitFrameBanner(msg.conversationId, banner.text, banner.atIso);
-          dispatch(chatApi.util.invalidateTags([{ type: "Polls", id: msg.conversationId }]));
+          emitFrameBanner(msg.conversationId, banner.text, banner.atIso, banner.variant);
+          try {
+            const raw = String(msg.content ?? "").trim();
+            const p = JSON.parse(raw) as { kind?: string };
+            const k = String(p.kind ?? "");
+            const tags: { type: "Polls" | "Tasks"; id: string }[] = [];
+            if (k.startsWith("poll")) tags.push({ type: "Polls", id: msg.conversationId });
+            if (k.startsWith("task")) tags.push({ type: "Tasks", id: msg.conversationId });
+            if (tags.length) dispatch(chatApi.util.invalidateTags(tags));
+          } catch {
+            dispatch(chatApi.util.invalidateTags([{ type: "Polls", id: msg.conversationId }]));
+          }
         } else if (banner && msg.conversationId !== activeConvRef.current) {
           try {
             const raw = String(msg.content ?? "").trim();
             const parsed = JSON.parse(raw) as {
               kind?: string;
-              poll?: { pollId?: string; question?: string };
-              task?: { title?: string };
-              actor?: { name?: string };
+              poll?: { pollId?: string };
             };
-            if (parsed.kind === "poll_created" && parsed.poll?.pollId) {
-              const pollId = String(parsed.poll.pollId);
-              const dedupeKey = `poll-created-${pollId}`;
-              if (!pollToastDedupe.has(dedupeKey)) {
-                pollToastDedupe.add(dedupeKey);
-                setTimeout(() => pollToastDedupe.delete(dedupeKey), 8000);
-                const question = String(parsed.poll.question ?? "").trim();
-                toast.info(question ? `Có bình chọn mới: ${question}` : "Có bình chọn mới", 7000);
-              }
-            } else if (parsed.kind === "task_assigned") {
-              const title = String(parsed.task?.title ?? "").trim();
-              const dedupeKey = `task-assigned-${msg.messageId}`;
-              if (!pollToastDedupe.has(dedupeKey)) {
-                pollToastDedupe.add(dedupeKey);
-                setTimeout(() => pollToastDedupe.delete(dedupeKey), 7000);
-                toast.info(title ? `Có công việc mới: ${title}` : "Có công việc mới", 6500);
-              }
-            } else if (parsed.kind === "task_joined") {
-              const title = String(parsed.task?.title ?? "").trim();
-              const actor = String(parsed.actor?.name ?? "Thành viên").trim();
-              const dedupeKey = `task-joined-${msg.messageId}`;
-              if (!pollToastDedupe.has(dedupeKey)) {
-                pollToastDedupe.add(dedupeKey);
-                setTimeout(() => pollToastDedupe.delete(dedupeKey), 6000);
-                toast.info(
-                  title
-                    ? `${actor} đã tham gia công việc: ${title}`
-                    : `${actor} đã tham gia công việc`,
-                  5500,
-                );
-              }
+            const kind = String(parsed.kind ?? "");
+            let dedupeKey = `sys-toast-${kind}-${msg.messageId}`;
+            if (kind === "poll_created" && parsed.poll?.pollId) {
+              dedupeKey = `poll-created-${String(parsed.poll.pollId)}`;
+            }
+            if (!pollToastDedupe.has(dedupeKey)) {
+              pollToastDedupe.add(dedupeKey);
+              setTimeout(() => pollToastDedupe.delete(dedupeKey), 8000);
+              toast.info(banner.text, 7000);
             }
           } catch {
             /* ignore */
@@ -442,14 +389,13 @@ export function useChatRealtimeEvents({
       const gid = groupIdFromPayload(payload);
       if (!gid) return;
       invalidateGroupData(gid, ["tasks"]);
-      emitFrameBanner(gid, "Có công việc nhóm mới");
+      /** Giống web `useChatGroupFrameNotices`: chỉ refetch; banner từ tin system JSON. */
     };
 
     const handleGroupTaskUpdated = (payload: Record<string, unknown>) => {
       const gid = groupIdFromPayload(payload);
       if (!gid) return;
       invalidateGroupData(gid, ["tasks"]);
-      emitFrameBanner(gid, "Công việc nhóm đã được cập nhật");
     };
 
     const handleGroupMemberJoined = (payload: Record<string, unknown>) => {

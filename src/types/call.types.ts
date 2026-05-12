@@ -35,7 +35,7 @@ export interface CallState {
   upgradeStatus: UpgradeStatus;
   isScreenSharing: boolean;
   returnTo: string | null;
-  endReason: "missed" | "rejected" | null;
+  endReason: "missed" | "rejected" | "busy" | null;
   activeGroupCall: ActiveGroupCallSession | null;
 }
 
@@ -48,4 +48,11 @@ export interface IncomingCallData {
   scope?: CallScope;
   hostId?: string;
   sessionId?: string;
+}
+
+/** Server → callee: một thiết bị khác của cùng user đã accept/reject — tắt chuông đồng bộ. */
+export interface IncomingCallDismissedPayload {
+  channelName: string;
+  conversationId: string;
+  reason: "accepted" | "rejected";
 }

@@ -1,6 +1,8 @@
-import { createContext, useCallback, useContext, useEffect, type PropsWithChildren } from "react";
+import { useCallback, useEffect, type PropsWithChildren } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { router, usePathname } from "expo-router";
+import { Alert } from "react-native";
+import { Audio } from "expo-av";
 
 import { IncomingCallModal } from "@/components/call/IncomingCallModal";
 import { env } from "@/config/env";
@@ -23,9 +25,17 @@ import {
   toggleCamera,
   toggleMic,
 } from "@/store/slices/callSlice";
-import type { CallScope, CallType, IncomingCallData } from "@/types/call.types";
+import type {
+  CallScope,
+  CallType,
+  IncomingCallData,
+  IncomingCallDismissedPayload,
+} from "@/types/call.types";
 
 import { useSocketContext } from "./SocketContext";
+import { CallContext, type CallContextValue } from "./callContext.shared";
+
+export { useCallContext, type CallContextValue } from "./callContext.shared";
 
 interface AgoraTokenResponse {
   token: string;
@@ -71,24 +81,25 @@ function canStartNewCall(status: string): boolean {
   return status === "idle" || status === "ended";
 }
 
-interface CallContextValue {
-  initiateCall: (calleeId: string, type: CallType, conversationIdArg?: string) => void;
-  initiateGroupCall: (type: CallType, conversationIdArg?: string) => void;
-  acceptCall: () => void;
-  rejectCall: () => void;
-  endCall: (meta?: { durationSec?: number; result?: "completed" | "missed" | "rejected" }) => void;
-  leaveGroupCall: () => void;
-  endGroupCallForAll: (meta?: { durationSec?: number }) => void;
-  joinActiveGroupCall: () => void;
-  onToggleMic: () => void;
-  onToggleCamera: () => void;
-  requestUpgradeToVideo: () => void;
-  respondUpgradeToVideo: (accepted: boolean) => void;
-  fetchAgoraToken: (channelName: string) => Promise<AgoraTokenResponse>;
-  appId: string;
+async function playCuocGoiNhoTone(): Promise<void> {
+  try {
+    await Audio.setAudioModeAsync({
+      playsInSilentModeIOS: true,
+      shouldDuckAndroid: true,
+      staysActiveInBackground: false,
+    });
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const src = require("../../assets/ringtones/CuocGoiNho.mp3");
+    const { sound } = await Audio.Sound.createAsync(src, { shouldPlay: true, volume: 1 });
+    sound.setOnPlaybackStatusUpdate((st) => {
+      if (st.isLoaded && st.didJustFinish) {
+        void sound.unloadAsync();
+      }
+    });
+  } catch {
+    /* ignore */
+  }
 }
-
-const CallContext = createContext<CallContextValue | null>(null);
 
 export const CallProvider = ({ children }: PropsWithChildren) => {
   const dispatch = useDispatch<AppDispatch>();
@@ -111,6 +122,7 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
     };
 
     const onRejected = () => {
+      void playCuocGoiNhoTone();
       dispatch(setEndReason("rejected"));
       dispatch(setCallEnded());
     };
@@ -136,10 +148,21 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
       }
     };
 
+    const onIncomingDismissed = (data: unknown) => {
+      const p = data as IncomingCallDismissedPayload;
+      if (!p?.channelName || !p?.conversationId) return;
+      const st = store.getState().call;
+      if (st.status !== "incoming-ringing") return;
+      if (st.channelName !== p.channelName) return;
+      if (st.conversationId !== p.conversationId) return;
+      dispatch(resetCall());
+    };
+
     socket.on("call:incoming", onIncoming);
     socket.on("call:accepted", onAccepted);
     socket.on("call:rejected", onRejected);
     socket.on("call:ended", onEnded);
+    socket.on("call:incoming-dismissed", onIncomingDismissed);
     socket.on("call:upgrade-request", onUpgradeRequest);
     socket.on("call:upgrade-response", onUpgradeResponse);
 
@@ -148,6 +171,7 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
       socket.off("call:accepted", onAccepted);
       socket.off("call:rejected", onRejected);
       socket.off("call:ended", onEnded);
+      socket.off("call:incoming-dismissed", onIncomingDismissed);
       socket.off("call:upgrade-request", onUpgradeRequest);
       socket.off("call:upgrade-response", onUpgradeResponse);
     };
@@ -185,9 +209,22 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
       if (!conversationId) return;
 
       dispatch(setReturnTo(pathname));
-      socket.emit("call:initiate", { calleeId, type, conversationId, scope: "direct" });
 
-      socket.once("call:channel-ready", (data: unknown) => {
+      const detachInitiateListeners = () => {
+        socket.off("call:channel-ready", onChannelReady);
+        socket.off("call:busy", onBusy);
+      };
+
+      const onBusy = (raw: unknown) => {
+        const p = raw as { conversationId?: string };
+        if (p?.conversationId !== conversationId) return;
+        detachInitiateListeners();
+        void playCuocGoiNhoTone();
+        Alert.alert("Đang bận", "Người nhận đang trong cuộc gọi khác.");
+      };
+
+      const onChannelReady = (data: unknown) => {
+        detachInitiateListeners();
         const payload = data as ChannelReadyPayload;
         dispatch(
           setOutgoingCall({
@@ -208,7 +245,11 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
           payload.scope ?? "direct",
           payload.hostId,
         );
-      });
+      };
+
+      socket.on("call:busy", onBusy);
+      socket.on("call:channel-ready", onChannelReady);
+      socket.emit("call:initiate", { calleeId, type, conversationId, scope: "direct" });
     },
     [callState.status, dispatch, navigateToCall, pathname, socket],
   );
@@ -297,7 +338,10 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
   }, [callState, dispatch, socket]);
 
   const endCall = useCallback(
-    (meta?: { durationSec?: number; result?: "completed" | "missed" | "rejected" }) => {
+    (meta?: {
+      durationSec?: number;
+      result?: "completed" | "missed" | "rejected" | "cancelled";
+    }) => {
       if (!socket || callState.callScope === "group") return;
       const peerId = callState.callerId || callState.calleeId;
       if (!callState.channelName || !peerId || !callState.conversationId) return;
@@ -436,10 +480,4 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
       <IncomingCallModal acceptCall={acceptCall} rejectCall={rejectCall} />
     </CallContext.Provider>
   );
-};
-
-export const useCallContext = (): CallContextValue => {
-  const ctx = useContext(CallContext);
-  if (!ctx) throw new Error("useCallContext phải dùng trong CallProvider");
-  return ctx;
 };

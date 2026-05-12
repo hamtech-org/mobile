@@ -1,366 +1,376 @@
-import { useCallback, useMemo, useState, type ReactElement } from "react";
+import { useCallback, useMemo, useRef, useState, type ReactElement } from "react";
 import { Dimensions, Image, Modal, Pressable, ScrollView, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { CalendarClock, ChevronDown, ChevronUp, Pin, Pencil } from "lucide-react-native";
+import {
+  BarChart2,
+  ChevronDown,
+  ChevronUp,
+  FileText,
+  Image as ImageIcon,
+  Link2,
+  MessageSquare,
+  MoreHorizontal,
+  PinOff,
+  Video as VideoIcon,
+} from "lucide-react-native";
 
-import { useCalendarNow } from "@/contexts/CalendarClockContext";
 import { useIconColors } from "@/hooks/useIconColors";
 import type { IMessage } from "@/types/chat.types";
-import { formatChatPreviewLine, truncatePreview } from "@/utils/messageDisplay";
-import { formatConversationListActivityTime } from "@/utils/time";
+import { formatChatPreviewLine } from "@/utils/messageDisplay";
 import { normalizeMediaUrl } from "@/utils/url";
 
-function isHttpUrl(s: string): boolean {
-  return /^https?:\/\//i.test(s.trim());
+const ACCENT_BLUE = "#0068FF";
+const ACCENT_GREEN = "#10b981";
+
+function extractFirstHttpUrl(content: string): string | null {
+  const m = (content ?? "").trim().match(/https?:\/\/[^\s<]+/);
+  return m ? m[0] : null;
 }
 
-export interface GroupTaskRow {
-  taskId: string;
-  title: string;
-  dueDate?: string;
-  status: string;
+function truncateUrl(url: string, max = 42): string {
+  if (url.length <= max) return url;
+  return `${url.slice(0, 28)}…${url.slice(-8)}`;
 }
 
-function parseGroupTasks(raw: unknown[]): GroupTaskRow[] {
-  return raw
-    .map((t) => {
-      const o = t as Record<string, unknown>;
-      return {
-        taskId: String(o.taskId ?? "").trim(),
-        title: String(o.title ?? "Công việc").trim() || "Công việc",
-        dueDate: o.dueDate ? String(o.dueDate) : undefined,
-        status: String(o.status ?? "todo"),
-      };
-    })
-    .filter((x) => x.taskId);
+function mediaThumbForPinnedRow(msg: IMessage): string | undefined {
+  if (msg.type === "image" || msg.type === "video") {
+    return normalizeMediaUrl(msg.thumbnailUrl ?? msg.mediaUrl);
+  }
+  return undefined;
 }
 
-function upcomingTasksSorted(tasks: GroupTaskRow[]): GroupTaskRow[] {
-  const open = tasks.filter((t) => t.status !== "done");
-  return open.sort((a, b) => {
-    const ta = a.dueDate ? new Date(a.dueDate).getTime() : Number.POSITIVE_INFINITY;
-    const tb = b.dueDate ? new Date(b.dueDate).getTime() : Number.POSITIVE_INFINITY;
-    if (Number.isNaN(ta) && Number.isNaN(tb)) return 0;
-    if (Number.isNaN(ta)) return 1;
-    if (Number.isNaN(tb)) return -1;
-    return ta - tb;
-  });
+function pollQuestionFromMsg(msg: IMessage): string | null {
+  if ((msg as { type?: string }).type !== "system") return null;
+  const raw = String((msg as { content?: string }).content ?? "").trim();
+  if (!raw.startsWith("{")) return null;
+  try {
+    const obj = JSON.parse(raw) as { kind?: string; poll?: { question?: string } };
+    if (obj?.kind !== "poll_created") return null;
+    const q = String(obj?.poll?.question ?? "").trim();
+    return q || null;
+  } catch {
+    return null;
+  }
 }
 
-function formatDueVi(iso?: string): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleString("vi-VN", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-export function parseTasksEnvelope(raw: unknown[] | undefined): GroupTaskRow[] {
-  if (!raw || !Array.isArray(raw)) return [];
-  return parseGroupTasks(raw);
-}
-
-/** Dòng chính + phụ cho một tin ghim (gần với Zalo). */
-export function pinnedMessageDisplay(
-  msg: IMessage,
-  viewerId: string,
-): { primary: string; subtitle: string; thumbUri?: string } {
+/** Một dòng preview cho hàng pinned (đồng bộ web `PinnedRowPreview`). */
+function PinnedRowPreview({
+  msg,
+  viewerUserId,
+  mutedColor,
+}: {
+  msg: IMessage;
+  viewerUserId: string;
+  mutedColor: string;
+}): ReactElement {
   const sender = msg.senderDisplayName?.trim() || "Người dùng";
-  const subtitle = `Tin nhắn của ${sender}`;
+  const thumb = mediaThumbForPinnedRow(msg);
 
-  if (msg.isRecalled) {
-    return { primary: "Tin nhắn đã được thu hồi", subtitle };
-  }
   if (msg.type === "image") {
-    const thumb = normalizeMediaUrl(msg.thumbnailUrl ?? msg.mediaUrl);
-    return { primary: "[Hình ảnh]", subtitle, thumbUri: thumb };
+    return (
+      <View className="flex-row items-center" style={{ flexShrink: 1 }}>
+        <Text className="text-[13px] font-semibold text-foreground" numberOfLines={1}>
+          {sender}:{" "}
+        </Text>
+        {thumb ? (
+          <Image
+            source={{ uri: thumb }}
+            style={{
+              width: 20,
+              height: 20,
+              borderRadius: 4,
+              marginRight: 6,
+              backgroundColor: "#e2e8f0",
+            }}
+            resizeMode="cover"
+          />
+        ) : (
+          <ImageIcon size={14} color={mutedColor} style={{ marginRight: 4 }} />
+        )}
+        <Text className="text-[13px] text-muted-foreground" numberOfLines={1}>
+          Ảnh
+        </Text>
+      </View>
+    );
   }
+
   if (msg.type === "video") {
-    const thumb = normalizeMediaUrl(msg.thumbnailUrl ?? msg.mediaUrl);
-    return { primary: "[Video]", subtitle, thumbUri: thumb };
+    return (
+      <View className="flex-row items-center" style={{ flexShrink: 1 }}>
+        <Text className="text-[13px] font-semibold text-foreground" numberOfLines={1}>
+          {sender}:{" "}
+        </Text>
+        {thumb ? (
+          <Image
+            source={{ uri: thumb }}
+            style={{
+              width: 20,
+              height: 20,
+              borderRadius: 4,
+              marginRight: 6,
+              backgroundColor: "#0a0a0a",
+            }}
+            resizeMode="cover"
+          />
+        ) : (
+          <VideoIcon size={14} color={mutedColor} style={{ marginRight: 4 }} />
+        )}
+        <Text className="text-[13px] text-muted-foreground" numberOfLines={1}>
+          Video
+        </Text>
+      </View>
+    );
   }
+
   if (msg.type === "file") {
-    const name = msg.mediaOriginalName?.trim() || formatChatPreviewLine(msg, viewerId);
-    return { primary: `[File] ${truncatePreview(name, 56)}`, subtitle };
+    const name = msg.mediaOriginalName?.trim() || "Tệp tin";
+    return (
+      <View className="flex-row items-center" style={{ flexShrink: 1 }}>
+        <Text className="text-[13px] font-semibold text-foreground" numberOfLines={1}>
+          {sender}:{" "}
+        </Text>
+        <FileText size={14} color={mutedColor} style={{ marginRight: 4 }} />
+        <Text className="text-[13px] text-muted-foreground" numberOfLines={1}>
+          {name}
+        </Text>
+      </View>
+    );
   }
-  const raw = (msg.content ?? "").trim();
-  if (isHttpUrl(raw)) {
-    return { primary: `[Link] ${truncatePreview(raw, 52)}`, subtitle };
+
+  if (msg.type === "text") {
+    const url = extractFirstHttpUrl(msg.content ?? "");
+    if (url) {
+      return (
+        <View className="flex-row items-center" style={{ flexShrink: 1 }}>
+          <Text className="text-[13px] font-semibold text-foreground" numberOfLines={1}>
+            {sender}:{" "}
+          </Text>
+          <Link2 size={13} color={mutedColor} style={{ marginRight: 4 }} />
+          <Text className="text-[13px] text-muted-foreground" numberOfLines={1}>
+            Link · {truncateUrl(url)}
+          </Text>
+        </View>
+      );
+    }
   }
-  return { primary: formatChatPreviewLine(msg, viewerId), subtitle };
+
+  const line = formatChatPreviewLine(msg, viewerUserId);
+  return (
+    <View className="flex-row items-center" style={{ flexShrink: 1 }}>
+      <Text className="text-[13px] font-semibold text-foreground" numberOfLines={1}>
+        {sender}:{" "}
+      </Text>
+      <Text className="flex-1 text-[13px] text-muted-foreground" numberOfLines={1}>
+        {line}
+      </Text>
+    </View>
+  );
+}
+
+interface PinnedRowProps {
+  msg: IMessage;
+  viewerUserId: string;
+  onPress: () => void;
+  onUnpin?: () => void | Promise<void>;
+}
+
+function PinnedRow({ msg, viewerUserId, onPress, onUnpin }: PinnedRowProps): ReactElement {
+  const { muted } = useIconColors();
+  const moreBtnRef = useRef<View>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const pollQuestion = useMemo(() => pollQuestionFromMsg(msg), [msg]);
+
+  const openMenu = useCallback(() => {
+    moreBtnRef.current?.measureInWindow((x, y, _w, h) => {
+      const screenW = Dimensions.get("window").width;
+      const menuW = 168;
+      const left = Math.max(8, Math.min(x - menuW + 28, screenW - menuW - 8));
+      setMenuPos({ top: y + h + 6, left });
+    });
+  }, []);
+
+  const closeMenu = useCallback(() => setMenuPos(null), []);
+
+  return (
+    <>
+      <View className="flex-row items-stretch gap-2 border-b border-border bg-card">
+        <Pressable
+          className="min-w-0 flex-1 flex-row items-start gap-3 px-3 py-2.5 active:bg-muted/40"
+          onPress={onPress}
+          android_ripple={{ color: "rgba(0,0,0,0.04)" }}
+        >
+          <View
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: pollQuestion ? ACCENT_GREEN : ACCENT_BLUE,
+            }}
+          >
+            {pollQuestion ? (
+              <BarChart2 size={18} color="#fff" strokeWidth={2} />
+            ) : (
+              <MessageSquare size={18} color="#fff" strokeWidth={2} />
+            )}
+          </View>
+          <View className="min-w-0 flex-1 pt-0.5">
+            <Text className="text-[13px] font-bold text-foreground" numberOfLines={1}>
+              {pollQuestion ? "Bình chọn" : "Tin nhắn"}
+            </Text>
+            <View className="mt-0.5">
+              {pollQuestion ? (
+                <Text className="text-[13px] text-muted-foreground" numberOfLines={1}>
+                  {pollQuestion}
+                </Text>
+              ) : (
+                <PinnedRowPreview msg={msg} viewerUserId={viewerUserId} mutedColor={muted} />
+              )}
+            </View>
+          </View>
+        </Pressable>
+
+        {onUnpin ? (
+          <View ref={moreBtnRef} collapsable={false} className="items-center justify-center pr-2">
+            <Pressable
+              onPress={openMenu}
+              hitSlop={8}
+              className="h-8 w-8 items-center justify-center rounded-lg active:bg-muted"
+              android_ripple={{ color: "rgba(0,0,0,0.06)", borderless: true }}
+            >
+              <MoreHorizontal size={18} color={muted} />
+            </Pressable>
+          </View>
+        ) : null}
+      </View>
+
+      <Modal
+        visible={menuPos !== null}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={closeMenu}
+      >
+        <Pressable style={{ flex: 1 }} onPress={closeMenu}>
+          {menuPos ? (
+            <View
+              className="overflow-hidden rounded-lg border border-border bg-card"
+              style={{
+                position: "absolute",
+                top: menuPos.top,
+                left: menuPos.left,
+                minWidth: 168,
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.18,
+                shadowRadius: 14,
+                elevation: 8,
+              }}
+              pointerEvents="box-none"
+            >
+              <Pressable
+                onPress={() => {
+                  closeMenu();
+                  void onUnpin?.();
+                }}
+                className="flex-row items-center gap-2 px-3 py-2.5 active:bg-muted/60"
+                android_ripple={{ color: "rgba(0,0,0,0.06)" }}
+              >
+                <PinOff size={16} color={muted} />
+                <Text className="text-[13px] text-foreground">Bỏ ghim</Text>
+              </Pressable>
+            </View>
+          ) : null}
+        </Pressable>
+      </Modal>
+    </>
+  );
 }
 
 export interface ChatPinnedReminderBarProps {
   pinnedMessages: IMessage[];
-  /** Dữ liệu thô từ GET /groups/:id/tasks (chỉ nhóm). */
-  tasksRaw?: unknown[];
-  isGroup: boolean;
   currentUserId: string;
   onJumpToMessage: (messageId: string) => void;
-  /** Mở quản lý tin ghim (vd. modal nhóm → tab ghim). */
-  onManagePins?: () => void;
+  /** Mở menu "Bỏ ghim" cho hàng nếu được cung cấp. */
+  onTogglePin?: (msg: IMessage) => void | Promise<void>;
 }
 
 /**
- * Thanh ghim + mở rộng: nhắc hẹn / task nhóm + danh sách ghim (layout tham chiếu Zalo).
+ * Thanh "Danh sách ghim" (đồng bộ web `PinnedMessagesBar`):
+ * collapsed → 1 dòng "Danh sách ghim (N)"; expanded → list inline có scroll.
  */
 export function ChatPinnedReminderBar({
   pinnedMessages,
-  tasksRaw,
-  isGroup,
   currentUserId,
   onJumpToMessage,
-  onManagePins,
+  onTogglePin,
 }: ChatPinnedReminderBarProps): ReactElement | null {
-  const insets = useSafeAreaInsets();
-  const { primary, muted } = useIconColors();
-  const calendarNow = useCalendarNow();
+  const { muted } = useIconColors();
+  const total = pinnedMessages.length;
   const [expanded, setExpanded] = useState(false);
 
-  const tasks = useMemo(
-    () => (isGroup ? upcomingTasksSorted(parseTasksEnvelope(tasksRaw)) : []),
-    [isGroup, tasksRaw],
-  );
+  if (total === 0) return null;
 
-  /** Nhóm: luôn có thanh vào panel; chat đôi: chỉ khi có ghim/task. */
-  const showBar = isGroup || pinnedMessages.length > 0 || tasks.length > 0;
-  const latestPin = pinnedMessages[0];
-  const extraPinCount = Math.max(0, pinnedMessages.length - 1);
-
-  const collapse = useCallback(() => setExpanded(false), []);
-
-  const openManage = useCallback(() => {
-    setExpanded(false);
-    onManagePins?.();
-  }, [onManagePins]);
-
-  if (!showBar) return null;
-
-  const emptyGroupStrip = isGroup && !latestPin && tasks.length === 0;
-  const collapsedPrimary = emptyGroupStrip
-    ? "Nhắc hẹn & tin ghim"
-    : latestPin
-      ? pinnedMessageDisplay(latestPin, currentUserId).primary
-      : tasks[0]
-        ? tasks[0].title
-        : "";
-  const collapsedSecondary = emptyGroupStrip
-    ? "Chạm để xem công việc và tin đã ghim"
-    : latestPin
-      ? pinnedMessageDisplay(latestPin, currentUserId).subtitle
-      : tasks[0]
-        ? formatDueVi(tasks[0].dueDate)
-          ? `Hạn: ${formatDueVi(tasks[0].dueDate)}`
-          : "Công việc nhóm"
-        : "";
-
-  const pinTimeLine =
-    latestPin && !emptyGroupStrip
-      ? formatConversationListActivityTime(latestPin.createdAt, calendarNow)
-      : null;
-
-  const winH = Dimensions.get("window").height;
-  const sheetTop = insets.top + 52;
-  const sheetMaxH = winH * 0.88 - sheetTop;
-
-  const collapsedIcon =
-    latestPin && !emptyGroupStrip ? (
-      <Pin size={18} color={primary} strokeWidth={2.2} />
-    ) : tasks[0] && !latestPin ? (
-      <CalendarClock size={18} color={primary} strokeWidth={2.2} />
-    ) : (
-      <Pin size={18} color={primary} strokeWidth={2.2} />
+  if (!expanded) {
+    return (
+      <View className="w-full border-b border-border bg-muted/70">
+        <Pressable
+          className="w-full flex-row items-center gap-2 px-3 py-2.5 active:bg-muted"
+          onPress={() => setExpanded(true)}
+          android_ripple={{ color: "rgba(0,0,0,0.04)" }}
+        >
+          <View
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: 14,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: ACCENT_BLUE,
+            }}
+          >
+            <MessageSquare size={14} color="#fff" strokeWidth={2} />
+          </View>
+          <Text className="text-[14px] font-semibold text-foreground" numberOfLines={1}>
+            Danh sách ghim ({total})
+          </Text>
+          <View style={{ flex: 1 }} />
+          <Text className="text-[13px] text-muted-foreground">Mở rộng</Text>
+          <ChevronDown size={16} color={muted} />
+        </Pressable>
+      </View>
     );
+  }
+
+  const listMaxH = Math.min(Dimensions.get("window").height * 0.5, 320);
 
   return (
-    <>
-      <Pressable
-        onPress={() => setExpanded(true)}
-        className="flex-row items-center gap-2.5 border-b border-border bg-muted/90 px-3 py-2.5 active:bg-muted"
-        android_ripple={{ color: "rgba(0,0,0,0.06)" }}
-      >
-        {collapsedIcon}
-        <View className="min-w-0 flex-1">
-          <Text className="text-[14px] font-semibold text-foreground" numberOfLines={1}>
-            {collapsedPrimary}
-          </Text>
-          {collapsedSecondary ? (
-            <View className="mt-0.5">
-              <Text className="text-[12px] text-muted-foreground" numberOfLines={1}>
-                {collapsedSecondary}
-              </Text>
-              {pinTimeLine ? (
-                <Text
-                  className="mt-0.5 text-[11px] font-medium text-muted-foreground/90"
-                  numberOfLines={1}
-                >
-                  {pinTimeLine}
-                </Text>
-              ) : null}
-            </View>
-          ) : null}
-        </View>
-        {extraPinCount > 0 ? (
-          <View className="rounded-lg border border-border bg-card px-2 py-0.5">
-            <Text className="text-[12px] font-bold text-primary">+{extraPinCount}</Text>
-          </View>
-        ) : null}
-        <ChevronDown size={20} color={muted} strokeWidth={2} />
-      </Pressable>
-
-      <Modal
-        visible={expanded}
-        animationType="fade"
-        transparent
-        statusBarTranslucent
-        onRequestClose={collapse}
-      >
-        <View className="flex-1 justify-start">
-          <Pressable className="absolute inset-0" onPress={collapse}>
-            <View className="absolute inset-0 bg-black/45" />
-          </Pressable>
-
-          <View
-            className="absolute left-0 right-0 overflow-hidden rounded-b-2xl border-b border-border bg-card px-4"
-            style={{ top: sheetTop, maxHeight: sheetMaxH, paddingTop: 12 }}
-          >
-            <View style={{ flex: 1, minHeight: 200 }}>
-              <ScrollView
-                keyboardShouldPersistTaps="handled"
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ paddingBottom: 12 }}
-              >
-                <Text className="mb-2.5 mt-1 text-base font-bold text-foreground">
-                  Nhắc hẹn sắp tới
-                </Text>
-                {tasks.length === 0 ? (
-                  <Text className="py-4 text-center text-sm text-muted-foreground">
-                    Chưa có nhắc hẹn nào
-                  </Text>
-                ) : (
-                  tasks.map((t) => {
-                    const due = formatDueVi(t.dueDate);
-                    return (
-                      <View
-                        key={t.taskId}
-                        className="flex-row items-start border-b border-border py-2.5"
-                      >
-                        <CalendarClock size={18} color={primary} strokeWidth={2} />
-                        <View className="ml-2.5 min-w-0 flex-1">
-                          <Text
-                            className="text-[15px] font-semibold text-foreground"
-                            numberOfLines={2}
-                          >
-                            {t.title}
-                          </Text>
-                          {due ? (
-                            <Text
-                              className="mt-1 text-[12px] text-muted-foreground"
-                              numberOfLines={1}
-                            >
-                              Hạn: {due}
-                            </Text>
-                          ) : (
-                            <Text
-                              className="mt-1 text-[12px] text-muted-foreground"
-                              numberOfLines={1}
-                            >
-                              {t.status === "in_progress" ? "Đang thực hiện" : "Chưa hoàn thành"}
-                            </Text>
-                          )}
-                        </View>
-                      </View>
-                    );
-                  })
-                )}
-
-                <Text className="mb-2.5 mt-5 text-base font-bold text-foreground">
-                  Danh sách ghim
-                </Text>
-                {pinnedMessages.length === 0 ? (
-                  <Text className="py-4 text-center text-sm text-muted-foreground">
-                    Chưa có tin nhắn ghim
-                  </Text>
-                ) : (
-                  pinnedMessages.map((m) => {
-                    const row = pinnedMessageDisplay(m, currentUserId);
-                    const thumb = row.thumbUri ? normalizeMediaUrl(row.thumbUri) : undefined;
-                    const sentAt = formatConversationListActivityTime(m.createdAt, calendarNow);
-                    return (
-                      <Pressable
-                        key={m.messageId}
-                        className="flex-row items-center border-b border-border py-2.5 active:bg-muted/60"
-                        onPress={() => {
-                          collapse();
-                          onJumpToMessage(m.messageId);
-                        }}
-                      >
-                        <Pin size={18} color={primary} strokeWidth={2} />
-                        <View className="ml-2.5 min-w-0 flex-1">
-                          <Text
-                            className="text-[15px] font-semibold text-foreground"
-                            numberOfLines={2}
-                          >
-                            {row.primary}
-                          </Text>
-                          <Text
-                            className="mt-1 text-[12px] text-muted-foreground"
-                            numberOfLines={1}
-                          >
-                            {row.subtitle}
-                            {sentAt ? ` · ${sentAt}` : ""}
-                          </Text>
-                        </View>
-                        {thumb ? (
-                          <Image
-                            source={{ uri: thumb }}
-                            className="h-12 w-12 rounded-lg bg-muted"
-                            resizeMode="cover"
-                          />
-                        ) : (
-                          <View className="h-12 w-12" />
-                        )}
-                      </Pressable>
-                    );
-                  })
-                )}
-              </ScrollView>
-            </View>
-
-            <View
-              className="mt-1 flex-row items-center border-t border-border pt-3"
-              style={{
-                paddingBottom: Math.max(insets.bottom, 10),
-                justifyContent: onManagePins ? "space-between" : "flex-end",
-              }}
-            >
-              {onManagePins ? (
-                <Pressable
-                  className="flex-row items-center gap-2 px-1 py-1.5 active:opacity-80"
-                  onPress={openManage}
-                  hitSlop={6}
-                >
-                  <Pencil size={18} color={primary} strokeWidth={2} />
-                  <Text className="text-[15px] font-semibold text-primary">Chỉnh sửa</Text>
-                </Pressable>
-              ) : null}
-              <Pressable
-                className="flex-row items-center gap-2 px-1 py-1.5 active:opacity-80"
-                onPress={collapse}
-                hitSlop={6}
-              >
-                <ChevronUp size={20} color={primary} strokeWidth={2} />
-                <Text className="text-[15px] font-semibold text-primary">Thu gọn</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </>
+    <View className="w-full border-b border-border bg-card">
+      <View className="flex-row items-center justify-between gap-2 border-b border-border bg-muted/70 px-3 py-2">
+        <Text className="text-[14px] font-bold text-foreground" numberOfLines={1}>
+          Danh sách ghim ({total})
+        </Text>
+        <Pressable
+          className="flex-row items-center gap-1 rounded-md px-1.5 py-1 active:bg-muted"
+          onPress={() => setExpanded(false)}
+          android_ripple={{ color: "rgba(0,0,0,0.06)" }}
+          hitSlop={6}
+        >
+          <Text className="text-[13px] font-medium text-muted-foreground">Thu gọn</Text>
+          <ChevronUp size={16} color={muted} />
+        </Pressable>
+      </View>
+      <ScrollView style={{ maxHeight: listMaxH }} nestedScrollEnabled showsVerticalScrollIndicator>
+        {pinnedMessages.map((msg) => (
+          <PinnedRow
+            key={msg.messageId}
+            msg={msg}
+            viewerUserId={currentUserId}
+            onPress={() => onJumpToMessage(msg.messageId)}
+            onUnpin={onTogglePin ? () => onTogglePin(msg) : undefined}
+          />
+        ))}
+      </ScrollView>
+    </View>
   );
 }
