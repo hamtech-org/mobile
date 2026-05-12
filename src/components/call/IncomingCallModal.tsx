@@ -3,19 +3,22 @@ import { Modal, Pressable, Text, Vibration, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Phone, PhoneOff, Video } from "lucide-react-native";
 import { useSelector } from "react-redux";
-import { Audio } from "expo-av";
+import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from "expo-audio";
 
-import { useCallContext } from "@/contexts/CallContext";
 import type { RootState } from "@/store/store";
 
-export function IncomingCallModal() {
-  const { acceptCall, rejectCall } = useCallContext();
+interface Props {
+  acceptCall: () => void;
+  rejectCall: () => void;
+}
+
+export function IncomingCallModal({ acceptCall, rejectCall }: Props) {
   const { status, callType, callerName, callerId, callScope } = useSelector(
     (state: RootState) => state.call,
   );
   const insets = useSafeAreaInsets();
   const patternRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const playerRef = useRef<AudioPlayer | null>(null);
 
   const isVisible = status === "incoming-ringing";
 
@@ -26,10 +29,10 @@ export function IncomingCallModal() {
         patternRef.current = null;
       }
       Vibration.cancel();
-      if (soundRef.current) {
-        void soundRef.current.stopAsync().catch(() => undefined);
-        void soundRef.current.unloadAsync().catch(() => undefined);
-        soundRef.current = null;
+      if (playerRef.current) {
+        playerRef.current.pause();
+        playerRef.current.remove();
+        playerRef.current = null;
       }
       return;
     }
@@ -43,19 +46,18 @@ export function IncomingCallModal() {
     // Nếu không có file (chưa add vào repo), app vẫn rung như cũ.
     const startRingtone = async () => {
       try {
-        await Audio.setAudioModeAsync({
-          playsInSilentModeIOS: true,
-          shouldDuckAndroid: true,
-          staysActiveInBackground: false,
+        await setAudioModeAsync({
+          playsInSilentMode: true,
+          interruptionMode: "duckOthers",
+          shouldPlayInBackground: false,
         });
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const src = require("../../../assets/ringtones/amThanhNhan.mp3");
-        const { sound } = await Audio.Sound.createAsync(src, {
-          shouldPlay: true,
-          isLooping: true,
-          volume: 1.0,
-        });
-        soundRef.current = sound;
+        const player = createAudioPlayer(src);
+        player.loop = true;
+        player.volume = 1.0;
+        player.play();
+        playerRef.current = player;
       } catch {
         // ignore: chưa có asset hoặc không phát được trên thiết bị hiện tại
       }
@@ -66,10 +68,10 @@ export function IncomingCallModal() {
       if (patternRef.current) clearInterval(patternRef.current);
       patternRef.current = null;
       Vibration.cancel();
-      if (soundRef.current) {
-        void soundRef.current.stopAsync().catch(() => undefined);
-        void soundRef.current.unloadAsync().catch(() => undefined);
-        soundRef.current = null;
+      if (playerRef.current) {
+        playerRef.current.pause();
+        playerRef.current.remove();
+        playerRef.current = null;
       }
     };
   }, [isVisible]);
