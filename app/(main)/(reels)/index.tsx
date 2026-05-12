@@ -15,9 +15,19 @@ export default function ReelsFeedScreen() {
   const [visibleIndex, setVisibleIndex] = useState(0);
   const [commentsReelId, setCommentsReelId] = useState<string | null>(null);
   const [itemHeight, setItemHeight] = useState(0);
+  const [replyTo, setReplyTo] = useState<{ commentId: string; authorName: string } | null>(null);
 
   const handleLayout = useCallback((e: LayoutChangeEvent) => {
     setItemHeight(e.nativeEvent.layout.height);
+  }, []);
+
+  const handleCloseComments = useCallback(() => {
+    setCommentsReelId(null);
+    setReplyTo(null);
+  }, []);
+
+  const handleReply = useCallback((commentId: string, authorName: string) => {
+    setReplyTo({ commentId, authorName });
   }, []);
 
   const { data, isLoading, isFetching } = useGetReelsFeedQuery({
@@ -64,6 +74,14 @@ export default function ReelsFeedScreen() {
       })
       .catch(() => {});
   }, [hasMore, nextCursor, isFetching, fetchMore]);
+
+  // Auto-update commentsReelId khi user scroll sang reel khác (nếu panel đang mở)
+  useEffect(() => {
+    if (commentsReelId !== null && allReels[visibleIndex]) {
+      setCommentsReelId(allReels[visibleIndex].reelId);
+      setReplyTo(null); // reset reply khi đổi reel
+    }
+  }, [visibleIndex, allReels]);
 
   const renderItem = useCallback(
     ({ item, index }: { item: IReel; index: number }) => (
@@ -138,15 +156,19 @@ export default function ReelsFeedScreen() {
         />
       )}
 
-      {/* Comments Sheet — chỉ hiển thị danh sách bình luận */}
       <ReelCommentsSheet
         reelId={commentsReelId ?? ""}
         visible={!!commentsReelId}
-        onClose={() => setCommentsReelId(null)}
+        onClose={handleCloseComments}
+        onReply={handleReply}
       />
-
-      {/* Input bar — fixed phía trên tab bar, tách hoàn toàn khỏi sheet */}
-      {commentsReelId && <ReelCommentInputBar reelId={commentsReelId} />}
+      {commentsReelId && (
+        <ReelCommentInputBar
+          reelId={commentsReelId}
+          replyTo={replyTo}
+          onClearReply={() => setReplyTo(null)}
+        />
+      )}
     </View>
   );
 }

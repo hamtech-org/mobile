@@ -1,141 +1,144 @@
-import { useCallback, useMemo, useRef } from "react";
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from "react-native";
-import BottomSheet, {
-  BottomSheetBackdrop,
-  BottomSheetFlatList,
-  BottomSheetView,
-  type BottomSheetBackdropProps,
-} from "@gorhom/bottom-sheet";
-import { Ionicons } from "@expo/vector-icons";
-import { useGetReelCommentsQuery } from "@/store/api/newsfeedApi";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import BottomSheet, { BottomSheetFlatList } from "@gorhom/bottom-sheet";
 import type { IComment } from "@/types/newsfeed.types";
+import { useGetReelCommentsQuery, useLazyGetReelCommentsQuery } from "@/store/api/newsfeedApi";
+import { useIconColors } from "@/hooks/useIconColors";
+import { ReelCommentItem } from "./ReelCommentItem";
 
 interface Props {
   reelId: string;
   visible: boolean;
   onClose: () => void;
+  onReply?: (commentId: string, authorName: string) => void;
 }
 
-export const ReelCommentsSheet = ({ reelId, visible, onClose }: Props) => {
-  const bottomSheetRef = useRef<BottomSheet>(null);
-  const snapPoints = useMemo(() => ["70%"], []);
+export const ReelCommentsSheet = ({ reelId, visible, onClose, onReply }: Props) => {
+  const sheetRef = useRef<BottomSheet>(null);
+  const { isDark, muted } = useIconColors();
 
-  const { data, isLoading } = useGetReelCommentsQuery({ reelId, limit: 30 }, { skip: !visible });
-  const comments = data?.items ?? [];
+  // Chuyển đổi mã màu trực tiếp cho BottomSheet
+  const sheetBg = isDark ? "hsl(224 30% 10%)" : "hsl(0 0% 97%)";
+  const indicatorColor = isDark ? "hsl(220 15% 58%)" : "hsl(220 10% 46%)";
 
-  const renderBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        disappearsOnIndex={-1}
-        appearsOnIndex={0}
-        opacity={0.4}
-        pressBehavior="close"
-      />
-    ),
-    [],
+  const { data, isLoading } = useGetReelCommentsQuery(
+    { reelId, limit: 20 },
+    { skip: !visible || !reelId },
   );
+  const [fetchMore] = useLazyGetReelCommentsQuery();
 
-  const renderComment = useCallback(
+  const [extraComments, setExtraComments] = useState<IComment[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const prevReelIdRef = useRef(reelId);
+
+  // Reset extra khi reelId thay đổi
+  if (prevReelIdRef.current !== reelId) {
+    prevReelIdRef.current = reelId;
+    setExtraComments([]);
+    setNextCursor(null);
+    setHasMore(false);
+  }
+
+  const baseComments = data?.items ?? [];
+  const baseCursor = data?.nextCursor ?? null;
+  const baseHasMore = data?.hasMore ?? false;
+
+  const allComments = [...baseComments, ...extraComments];
+  const effectiveNextCursor = extraComments.length > 0 ? nextCursor : baseCursor;
+  const effectiveHasMore = extraComments.length > 0 ? hasMore : baseHasMore;
+
+  const handleLoadMore = useCallback(async () => {
+    const cursor = effectiveNextCursor;
+    if (!cursor || isFetchingMore) return;
+    setIsFetchingMore(true);
+    try {
+      const page = await fetchMore({ reelId, limit: 20, cursor }).unwrap();
+      setExtraComments((prev) => [...prev, ...page.items]);
+      setNextCursor(page.nextCursor);
+      setHasMore(page.hasMore);
+    } catch {
+      // no-op
+    } finally {
+      setIsFetchingMore(false);
+    }
+  }, [effectiveNextCursor, isFetchingMore, fetchMore, reelId]);
+
+  const renderItem = useCallback(
     ({ item }: { item: IComment }) => (
-      <View style={s.commentRow}>
-        {item.author?.avatar ? (
-          <Image source={{ uri: item.author.avatar }} style={s.avatar} />
-        ) : (
-          <View style={s.avatarFallback}>
-            <Text style={s.avatarFallbackText}>
-              {item.author?.displayName?.charAt(0)?.toUpperCase() ?? "?"}
-            </Text>
-          </View>
-        )}
-        <View style={{ flex: 1 }}>
-          <Text style={s.authorName} numberOfLines={1}>
-            {item.author?.displayName ?? "Người dùng"}
-          </Text>
-          {item.content ? <Text style={s.commentText}>{item.content}</Text> : null}
-        </View>
-      </View>
+      <ReelCommentItem comment={item} reelId={reelId} onReply={onReply} />
     ),
-    [],
+    [reelId, onReply],
   );
+
+  const keyExtractor = useCallback((item: IComment) => item.commentId, []);
+
+  const snapPoints = useMemo(() => ["65%"], []);
 
   if (!visible) return null;
 
   return (
     <BottomSheet
-      ref={bottomSheetRef}
+      ref={sheetRef}
       index={0}
       snapPoints={snapPoints}
-      enableDynamicSizing={false}
       enablePanDownToClose
       onClose={onClose}
-      backdropComponent={renderBackdrop}
-      backgroundStyle={s.sheetBg}
-      handleIndicatorStyle={s.handle}
+      backgroundStyle={{ backgroundColor: sheetBg }}
+      handleIndicatorStyle={{ backgroundColor: indicatorColor, opacity: 0.5, width: 40 }}
+      style={s.sheet}
     >
-      <BottomSheetView style={s.sheetContent}>
-        {/* Header */}
-        <View style={s.header}>
-          <Text style={s.headerTitle}>Bình luận ({comments.length})</Text>
-          <Pressable onPress={onClose} hitSlop={10}>
-            <Ionicons name="close" size={22} color="rgba(255,255,255,0.6)" />
-          </Pressable>
-        </View>
+      {/* Header */}
+      <View className="border-b border-border px-4 pb-3">
+        <Text className="text-base font-bold text-foreground">
+          Bình luận ({allComments.length})
+        </Text>
+      </View>
 
-        {/* Comments list */}
-        {isLoading ? (
-          <View style={s.centered}>
-            <ActivityIndicator color="rgba(255,255,255,0.5)" />
-          </View>
-        ) : comments.length === 0 ? (
-          <View style={s.centered}>
-            <Text style={s.emptyText}>Chưa có bình luận nào</Text>
-            <Text style={s.emptySubText}>Hãy là người đầu tiên bình luận!</Text>
-          </View>
-        ) : (
-          <BottomSheetFlatList
-            data={comments}
-            keyExtractor={(item) => item.commentId}
-            renderItem={renderComment}
-            style={{ flex: 1 }}
-            // paddingBottom đủ để comment cuối không bị input bar che
-            contentContainerStyle={{ paddingVertical: 8, paddingBottom: 80 }}
-            showsVerticalScrollIndicator={false}
-          />
-        )}
-      </BottomSheetView>
+      {isLoading ? (
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator color={muted} />
+        </View>
+      ) : allComments.length === 0 ? (
+        <View className="flex-1 items-center justify-center">
+          <Text className="text-base font-semibold text-muted-foreground">
+            Chưa có bình luận nào
+          </Text>
+          <Text className="mt-1 text-xs text-muted-foreground opacity-60">
+            Hãy là người đầu tiên bình luận!
+          </Text>
+        </View>
+      ) : (
+        <BottomSheetFlatList
+          data={allComments}
+          keyExtractor={keyExtractor}
+          renderItem={renderItem}
+          contentContainerStyle={s.listContent}
+          ItemSeparatorComponent={() => <View style={{ height: 16 }} />}
+          onEndReached={() => void handleLoadMore()}
+          onEndReachedThreshold={0.4}
+          ListFooterComponent={
+            isFetchingMore ? (
+              <View className="items-center py-3">
+                <ActivityIndicator size="small" color={muted} />
+              </View>
+            ) : effectiveHasMore ? (
+              <Text
+                className="py-3 text-center text-sm font-semibold text-blue-400"
+                onPress={() => void handleLoadMore()}
+              >
+                Xem thêm bình luận
+              </Text>
+            ) : null
+          }
+        />
+      )}
     </BottomSheet>
   );
 };
 
 const s = StyleSheet.create({
-  sheetBg: { backgroundColor: "hsl(0, 0%, 7%)" },
-  handle: { backgroundColor: "rgba(255,255,255,0.3)", width: 40 },
-  sheetContent: { flex: 1 },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "rgba(255,255,255,0.1)",
-  },
-  headerTitle: { color: "#fff", fontSize: 16, fontWeight: "bold" },
-  centered: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 48 },
-  emptyText: { color: "rgba(255,255,255,0.5)", fontSize: 14 },
-  emptySubText: { color: "rgba(255,255,255,0.3)", fontSize: 12, marginTop: 4 },
-  commentRow: { flexDirection: "row", gap: 10, paddingHorizontal: 16, paddingVertical: 8 },
-  avatar: { width: 32, height: 32, borderRadius: 16 },
-  avatarFallback: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.2)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarFallbackText: { color: "#fff", fontSize: 12, fontWeight: "bold" },
-  authorName: { color: "#fff", fontSize: 14, fontWeight: "600" },
-  commentText: { color: "rgba(255,255,255,0.8)", fontSize: 14, marginTop: 2, lineHeight: 20 },
+  sheet: { zIndex: 999 },
+  listContent: { padding: 16, paddingBottom: 80 },
 });
