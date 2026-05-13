@@ -2,7 +2,15 @@ import { useMemo, useState, useCallback, useEffect } from "react";
 import { router } from "expo-router";
 import { FlatList, Pressable, Text, View, RefreshControl, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { CloudOff, MessageCircle, MessageSquare, Pin, Search, Users } from "lucide-react-native";
+import {
+  CloudOff,
+  MessageCircle,
+  MessageSquare,
+  Pin,
+  Search,
+  UserPlus,
+  Users,
+} from "lucide-react-native";
 
 import { Loading } from "@/components/common/Loading";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -18,6 +26,8 @@ import {
   useGetConversationsQuery,
   usePatchConversationPreferencesMutation,
 } from "@/store/api/chatApi";
+import { useAppSelector } from "@/hooks/useAppStore";
+import { useActiveChatRouteConversationId } from "@/hooks/useActiveChatRouteConversationId";
 import { useIconColors } from "@/hooks/useIconColors";
 import type { IConversation } from "@/types/chat.types";
 import { toast } from "@/utils/appToast";
@@ -27,6 +37,7 @@ import {
   type MuteNotificationsApplyPayload,
 } from "@/utils/muteNotifications";
 import { MAX_PINNED_CHATS_TO_TOP } from "@/constants/chatPin";
+import { formatConversationListLastPreview } from "@/utils/conversationListPreview";
 import { sortConversationsForSidebar } from "@/utils/conversationListSort";
 import { formatUnreadBadge } from "@/utils/chatBadge";
 
@@ -41,6 +52,8 @@ type ChatListRow =
   | { kind: "conversation"; key: string; conversation: IConversation };
 
 export default function ChatListScreen() {
+  const currentUserId = useAppSelector((s) => s.auth.user?.userId ?? "");
+  const activeOpenConversationId = useActiveChatRouteConversationId();
   const { data, isLoading, isError, refetch, isFetching } = useGetConversationsQuery();
   const [patchPrefs] = usePatchConversationPreferencesMutation();
   const [searchText, setSearchText] = useState("");
@@ -102,88 +115,105 @@ export default function ChatListScreen() {
     setQuickMenuConversation(item);
   }, []);
 
-  const { listRows, mutedConversations, totalUnread, mutedUnreadTotal, listableCount } =
-    useMemo(() => {
-      const raw = data ?? [];
-      const listable = raw.filter((c) => !(c.type === "group" && c.isDeleted));
-      const sorted = sortConversationsForSidebar(listable);
-      const q = searchText.trim().toLowerCase();
+  const {
+    listRows,
+    mutedConversations,
+    totalUnread,
+    mutedUnreadTotal,
+    listableCount,
+    searchOnlyInMuted,
+  } = useMemo(() => {
+    const raw = data ?? [];
+    const listable = raw.filter((c) => !(c.type === "group" && c.isDeleted));
+    const q = searchText.trim().toLowerCase();
 
-      const totalUnread = listable.reduce((s, c) => s + (c.unreadCount ?? 0), 0);
+    const totalUnread = listable.reduce((s, c) => s + (c.unreadCount ?? 0), 0);
 
-      const pinned = sorted.filter((c) => c.isPinnedToTop).slice(0, MAX_PINNED_CHATS_TO_TOP);
-      const normal = sorted.filter((c) => !c.isPinnedToTop && !c.isMuted);
-      const muted = sorted.filter((c) => !c.isPinnedToTop && c.isMuted);
-      const mutedUnreadTotal = muted.reduce((s, c) => s + (c.unreadCount ?? 0), 0);
+    /** Cùng quy tắc web `sidebarBaseConversations`: lọc rồi sort. */
+    const sidebarBase = !q
+      ? sortConversationsForSidebar(listable)
+      : sortConversationsForSidebar(
+          listable.filter((c) => {
+            const name = (c.name ?? "").toLowerCase();
+            const preview = formatConversationListLastPreview(c, currentUserId).toLowerCase();
+            return (
+              name.includes(q) || preview.includes(q) || c.conversationId.toLowerCase().includes(q)
+            );
+          }),
+        );
 
-      const rows: ChatListRow[] = [];
+    const pinned = sidebarBase.filter((c) => c.isPinnedToTop).slice(0, MAX_PINNED_CHATS_TO_TOP);
+    const normal = sidebarBase.filter((c) => !c.isPinnedToTop && !c.isMuted);
+    const muted = sidebarBase.filter((c) => !c.isPinnedToTop && c.isMuted);
+    const mutedUnreadTotal = muted.reduce((s, c) => s + (c.unreadCount ?? 0), 0);
 
-      if (q) {
-        const hit = sorted.filter((c) => {
-          const name = (c.name ?? "").toLowerCase();
-          const preview = (c.lastMessage?.content ?? "").toLowerCase();
-          return name.includes(q) || preview.includes(q);
-        });
-        for (const c of sortConversationsForSidebar(hit)) {
-          rows.push({ kind: "conversation", key: `c:${c.conversationId}`, conversation: c });
-        }
-        return {
-          listRows: rows,
-          mutedConversations: muted,
-          totalUnread,
-          mutedUnreadTotal,
-          listableCount: listable.length,
-        };
-      }
+    const rows: ChatListRow[] = [];
 
-      if (listable.length === 0) {
-        return {
-          listRows: [],
-          mutedConversations: muted,
-          totalUnread: 0,
-          mutedUnreadTotal: 0,
-          listableCount: 0,
-        };
-      }
+    if (listable.length === 0) {
+      return {
+        listRows: rows,
+        mutedConversations: muted,
+        totalUnread: 0,
+        mutedUnreadTotal: 0,
+        listableCount: 0,
+        searchOnlyInMuted: false,
+      };
+    }
 
-      if (pinned.length > 0) {
-        rows.push({
-          kind: "header",
-          key: "h:pinned",
-          title: "Ghim",
-          count: pinned.length,
-          variant: "pinned",
-        });
-        for (const c of pinned) {
-          rows.push({ kind: "conversation", key: `c:${c.conversationId}`, conversation: c });
-        }
-      }
-      rows.push({
-        kind: "header",
-        key: "h:chats",
-        title: "Tin nhắn",
-        count: normal.length,
-        variant: "chats",
-      });
-      for (const c of normal) {
-        rows.push({ kind: "conversation", key: `c:${c.conversationId}`, conversation: c });
-      }
-
+    if (q && sidebarBase.length === 0) {
       return {
         listRows: rows,
         mutedConversations: muted,
         totalUnread,
         mutedUnreadTotal,
         listableCount: listable.length,
+        searchOnlyInMuted: false,
       };
-    }, [data, searchText]);
+    }
+
+    if (pinned.length > 0) {
+      rows.push({
+        kind: "header",
+        key: "h:pinned",
+        title: "GHIM",
+        count: pinned.length,
+        variant: "pinned",
+      });
+      for (const c of pinned) {
+        rows.push({ kind: "conversation", key: `c:${c.conversationId}`, conversation: c });
+      }
+    }
+    rows.push({
+      kind: "header",
+      key: "h:chats",
+      title: "TIN NHẮN",
+      count: normal.length,
+      variant: "chats",
+    });
+    for (const c of normal) {
+      rows.push({ kind: "conversation", key: `c:${c.conversationId}`, conversation: c });
+    }
+
+    const searchOnlyInMuted = Boolean(
+      q && pinned.length === 0 && normal.length === 0 && muted.length > 0,
+    );
+
+    return {
+      listRows: rows,
+      mutedConversations: muted,
+      totalUnread,
+      mutedUnreadTotal,
+      listableCount: listable.length,
+      searchOnlyInMuted,
+    };
+  }, [data, searchText, currentUserId]);
 
   const conversationRowCount = useMemo(
     () => listRows.filter((r) => r.kind === "conversation").length,
     [listRows],
   );
 
-  const showMutedFooter = !searchText.trim() && mutedConversations.length > 0;
+  const showMutedFooter = mutedConversations.length > 0;
 
   useEffect(() => {
     if (mutedConversations.length === 0) setMutedExpanded(false);
@@ -206,8 +236,22 @@ export default function ChatListScreen() {
             </View>
           ) : null}
         </View>
+      </View>
+
+      <View className="flex-row items-center gap-2 px-4 pb-3">
+        <View className="min-w-0 flex-1">
+          <SearchBar value={searchText} onChangeText={setSearchText} placeholder="Tìm kiếm" />
+        </View>
         <Pressable
-          className="size-10 items-center justify-center rounded-full active:bg-muted/50"
+          className="size-10 shrink-0 items-center justify-center rounded-lg active:bg-muted/60"
+          hitSlop={6}
+          onPress={() => toast.info("Thêm bạn — sắp có")}
+          accessibilityLabel="Thêm bạn bè"
+        >
+          <UserPlus size={20} color={primary} strokeWidth={1.75} />
+        </Pressable>
+        <Pressable
+          className="size-10 shrink-0 items-center justify-center rounded-lg active:bg-muted/60"
           hitSlop={6}
           onPress={() =>
             Alert.alert("Tạo mới", undefined, [
@@ -215,20 +259,10 @@ export default function ChatListScreen() {
               { text: "Hủy", style: "cancel" },
             ])
           }
+          accessibilityLabel="Tạo nhóm"
         >
-          <Users size={22} color={primary} strokeWidth={1.5} />
+          <Users size={20} color={primary} strokeWidth={1.5} />
         </Pressable>
-      </View>
-
-      <View className="px-4 pb-3">
-        <SearchBar
-          value={searchText}
-          onChangeText={(t) => {
-            setSearchText(t);
-            if (t.trim()) setMutedExpanded(false);
-          }}
-          placeholder="Tìm kiếm tin nhắn, bạn bè..."
-        />
       </View>
 
       <View className="flex-1">
@@ -298,6 +332,10 @@ export default function ChatListScreen() {
                   {showSep ? <View className="ml-[76px] h-px bg-border/30" /> : null}
                   <ConversationItem
                     conversation={item.conversation}
+                    isActive={
+                      Boolean(activeOpenConversationId) &&
+                      item.conversation.conversationId === activeOpenConversationId
+                    }
                     onPress={() =>
                       router.push(`/(main)/(chat)/${item.conversation.conversationId}`)
                     }
@@ -307,13 +345,16 @@ export default function ChatListScreen() {
               );
             }}
             ListEmptyComponent={
-              listableCount === 0 || (searchText.trim() && conversationRowCount === 0) ? (
+              listableCount === 0 ||
+              (searchText.trim() &&
+                conversationRowCount === 0 &&
+                mutedConversations.length === 0) ? (
                 <EmptyState
                   icon={searchText.trim() ? Search : MessageSquare}
-                  title={searchText.trim() ? "Không tìm thấy" : "Chưa có tin nhắn"}
+                  title={searchText.trim() ? "Không tìm thấy kết quả" : "Chưa có tin nhắn"}
                   description={
                     searchText.trim()
-                      ? `Không có hội thoại nào khớp với "${searchText.trim()}"`
+                      ? `Thử tên hội thoại, dòng cuối hoặc mã — "${searchText.trim()}"`
                       : "Bắt đầu nhắn tin với bạn bè ngay!"
                   }
                 />
@@ -321,14 +362,23 @@ export default function ChatListScreen() {
             }
             ListFooterComponent={
               showMutedFooter ? (
-                <MutedConversationsFooter
-                  conversations={mutedConversations}
-                  expanded={mutedExpanded}
-                  onToggleExpanded={() => setMutedExpanded((v) => !v)}
-                  mutedUnreadTotal={mutedUnreadTotal}
-                  onOpenConversation={(id) => router.push(`/(main)/(chat)/${id}`)}
-                  onLongPressMenu={openConversationQuickMenu}
-                />
+                <View>
+                  {searchOnlyInMuted ? (
+                    <View className="border-t border-border/60 px-4 py-3">
+                      <Text className="text-center text-[13px] text-muted-foreground">
+                        Không có trong mục Tin nhắn — kết quả nằm ở Đã tắt thông báo bên dưới.
+                      </Text>
+                    </View>
+                  ) : null}
+                  <MutedConversationsFooter
+                    conversations={mutedConversations}
+                    expanded={mutedExpanded}
+                    onToggleExpanded={() => setMutedExpanded((v) => !v)}
+                    mutedUnreadTotal={mutedUnreadTotal}
+                    onOpenConversation={(id) => router.push(`/(main)/(chat)/${id}`)}
+                    onLongPressMenu={openConversationQuickMenu}
+                  />
+                </View>
               ) : null
             }
             showsVerticalScrollIndicator={false}
