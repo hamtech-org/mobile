@@ -22,6 +22,7 @@ import {
   FileText,
   MapPin,
   Pencil,
+  Pin,
   Phone,
   Trash2,
   Users,
@@ -43,7 +44,13 @@ import {
   isCenterPositionMessage,
   type SystemTextRowIcon,
 } from "@/utils/systemMessage";
-import { formatDateLabel, formatTimestamp, isSameDay } from "@/utils/time";
+import {
+  formatChatFrameDate,
+  formatGroupBubbleFooterTime,
+  formatTimestamp,
+  isSameCalendarMinute,
+  isSameDay,
+} from "@/utils/time";
 import { toast } from "@/utils/appToast";
 import { TaskDeadlineChipMobile } from "@/utils/taskDeadlineDisplay";
 import { isTaskJoinDeadlinePassed } from "@/utils/taskJoin";
@@ -95,7 +102,17 @@ interface ChatBubbleProps {
 
 // ── Call Log Message ────────────────────────────────────────────────────
 
-function CallLogMessage({ message, isOwn }: { message: IMessage; isOwn: boolean }) {
+function CallLogMessage({
+  message,
+  isOwn,
+  showTimestampFooter,
+  calendarNow,
+}: {
+  message: IMessage;
+  isOwn: boolean;
+  showTimestampFooter?: boolean;
+  calendarNow?: Date;
+}) {
   const { primary } = useIconColors();
   let kind = "completed";
   let callType = "audio";
@@ -135,6 +152,12 @@ function CallLogMessage({ message, isOwn }: { message: IMessage; isOwn: boolean 
   const IconComponent = callType === "video" ? Video : Phone;
   const iconColor = kind === "missed" || (kind === "cancelled" && !isOwn) ? "#ef4444" : primary;
 
+  const now = calendarNow ?? new Date();
+  const footerTime =
+    showTimestampFooter && message.createdAt
+      ? formatGroupBubbleFooterTime(message.createdAt, now)
+      : "";
+
   return (
     <View className={`my-3 px-4 ${isOwn ? "items-end" : "items-start"}`}>
       <View
@@ -150,18 +173,21 @@ function CallLogMessage({ message, isOwn }: { message: IMessage; isOwn: boolean 
           <Text className="text-xs text-muted-foreground">{durationLabel}</Text>
         ) : null}
       </View>
+      {footerTime ? (
+        <View className={`mt-0.5 px-1 ${isOwn ? "self-end" : "self-start"}`}>
+          <Text className="text-[11px] text-muted-foreground">{footerTime}</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
 
-/** Pill giờ phía trên thẻ — giống web `ChatMessageList` (vd. "01:19 Hôm nay"). */
+/** Pill giờ phía trên thẻ system — giờ (HH:mm) + ngày DD/MM/YYYY (không «Hôm nay»). */
 function SystemNotifyTimePill({
   createdAt,
-  now,
   prevMessage,
 }: {
   createdAt?: string | null;
-  now: Date;
   prevMessage?: IMessage;
 }) {
   const iso = createdAt?.trim();
@@ -170,10 +196,8 @@ function SystemNotifyTimePill({
   const prevDate = prevMessage?.createdAt?.trim().slice(0, 10);
   const showDate = !prevMessage || prevDate !== currDate;
   const timeLabel = formatTimestamp(iso);
-  const todayStr = now.toISOString().slice(0, 10);
-  const isToday = currDate === todayStr;
-  const dateLabel = showDate ? (isToday ? "Hôm nay" : formatDateLabel(iso, now)) : "";
-  const label = (showDate ? `${timeLabel} ${dateLabel}`.trim() : timeLabel).trim();
+  const datePart = showDate ? formatChatFrameDate(iso) : "";
+  const label = (showDate && datePart ? `${timeLabel} · ${datePart}` : timeLabel).trim();
   if (!label) return null;
   return (
     <View className="mb-2 self-center rounded-full bg-black/10 px-3 py-1 dark:bg-white/10">
@@ -188,8 +212,12 @@ function SystemRowLeadingIcon({ kind }: { kind: SystemTextRowIcon }) {
   switch (kind) {
     case "pencil":
       return <Pencil size={16} color="#60a5fa" strokeWidth={2} />;
+    case "pin":
+      return <Pin size={16} color="#3b82f6" strokeWidth={2} />;
     case "checkCheck":
       return <CheckCheck size={16} color="#16a34a" strokeWidth={2} />;
+    case "alarmClock":
+      return <AlarmClock size={16} color="#f97316" strokeWidth={2} />;
     case "alarmOff":
       return <AlarmClockOff size={16} color="#737373" strokeWidth={1.75} />;
     case "barChartBlue":
@@ -253,16 +281,12 @@ function SystemCenterBlock({
     const rowIcon: SystemTextRowIcon = view.rowIcon ?? "pencil";
     return (
       <View className="my-3 w-full items-center px-4">
-        <SystemNotifyTimePill
-          createdAt={message.createdAt}
-          now={calendarNow}
-          prevMessage={prevMessage}
-        />
-        <View className="w-full max-w-[92%] flex-row items-center gap-2 rounded-2xl border border-black/[0.06] bg-card px-3 py-2.5 shadow-sm dark:border-white/10">
+        <SystemNotifyTimePill createdAt={message.createdAt} prevMessage={prevMessage} />
+        <View className="w-full max-w-[92%] flex-row flex-wrap items-center justify-center gap-2 rounded-2xl border border-black/[0.06] bg-card px-3 py-2.5 shadow-sm dark:border-white/10">
           <View className="shrink-0 pt-0.5">
             <SystemRowLeadingIcon kind={rowIcon} />
           </View>
-          <Text className="min-w-0 flex-1 text-left text-[12px] font-medium leading-[18px] text-[#666666] dark:text-zinc-300">
+          <Text className="max-w-[90%] text-center text-[12px] font-medium leading-[18px] text-[#666666] dark:text-zinc-300">
             {view.text}
           </Text>
         </View>
@@ -274,11 +298,7 @@ function SystemCenterBlock({
     const showVoteCta = Boolean(view.pollId && groupExtras?.onOpenPollVote);
     return (
       <View className="my-3 w-full items-center px-4">
-        <SystemNotifyTimePill
-          createdAt={message.createdAt}
-          now={calendarNow}
-          prevMessage={prevMessage}
-        />
+        <SystemNotifyTimePill createdAt={message.createdAt} prevMessage={prevMessage} />
         <View className="w-full max-w-[92%] overflow-hidden rounded-2xl border border-black/[0.06] bg-card px-3 py-2.5 shadow-sm dark:border-white/10">
           <View className="flex-row flex-wrap items-center justify-center gap-2">
             <BarChart2 size={16} color="#f97316" strokeWidth={2} />
@@ -393,11 +413,7 @@ function SystemCenterBlock({
 
   return (
     <View className="my-3 w-full items-center px-4">
-      <SystemNotifyTimePill
-        createdAt={message.createdAt}
-        now={calendarNow}
-        prevMessage={prevMessage}
-      />
+      <SystemNotifyTimePill createdAt={message.createdAt} prevMessage={prevMessage} />
       <View className="w-full max-w-[92%] overflow-hidden rounded-2xl border border-black/[0.06] bg-card shadow-sm dark:border-white/10">
         <View className="px-3 py-3">
           <View className="mb-2 flex-row flex-wrap items-center gap-1.5">
@@ -721,7 +737,7 @@ export const ChatBubble = ({
   if (message.type === "system" || isCenterPositionMessage(message)) {
     return (
       <>
-        {showDateSeparator && <DateSeparator date={message.createdAt} now={calendarNow} />}
+        {showDateSeparator && <DateSeparator date={message.createdAt} />}
         <SystemCenterBlock
           message={message}
           isOwn={isOwn}
@@ -735,10 +751,18 @@ export const ChatBubble = ({
   }
 
   if (message.type === "call") {
+    const isSameMinuteAsNextCall =
+      !!nextMessage && isSameCalendarMinute(message.createdAt, nextMessage.createdAt);
+    const showCallTimestampFooter = Boolean(isGroup && !isSameMinuteAsNextCall);
     return (
       <>
-        {showDateSeparator && <DateSeparator date={message.createdAt} now={calendarNow} />}
-        <CallLogMessage message={message} isOwn={isOwn} />
+        {showDateSeparator && <DateSeparator date={message.createdAt} />}
+        <CallLogMessage
+          message={message}
+          isOwn={isOwn}
+          showTimestampFooter={showCallTimestampFooter}
+          calendarNow={calendarNow}
+        />
       </>
     );
   }
@@ -752,7 +776,10 @@ export const ChatBubble = ({
     nextMessage.senderId === message.senderId &&
     isSameDay(nextMessage.createdAt, message.createdAt);
   const showSenderName = !isOwn && isGroup && !isSameSenderAsPrev;
-  const showTimestamp = !isSameSenderAsNext;
+  const isSameMinuteAsNext =
+    !!nextMessage && isSameCalendarMinute(message.createdAt, nextMessage.createdAt);
+  /** Nhóm: một dòng giờ/ngày cho cả phút — chỉ tin cuối trong cùng phút lịch; 1-1: tin cuối chuỗi cùng người gửi (cùng ngày). */
+  const showTimestamp = isGroup ? !isSameMinuteAsNext : !isSameSenderAsNext;
 
   const rawMedia = message.mediaUrl?.trim();
   const isLocalMedia = Boolean(
@@ -805,7 +832,7 @@ export const ChatBubble = ({
 
   return (
     <>
-      {showDateSeparator && <DateSeparator date={message.createdAt} now={calendarNow} />}
+      {showDateSeparator && <DateSeparator date={message.createdAt} />}
 
       <View
         className={`w-full ${isSameSenderAsPrev ? "mt-0.5" : "mt-2"} ${isOwn ? "items-end" : "items-start"}`}
@@ -1021,7 +1048,9 @@ export const ChatBubble = ({
             className={`mt-0.5 flex-row items-center gap-1 px-1 ${isOwn ? "flex-row-reverse" : "flex-row"}`}
           >
             <Text className="text-[11px] text-muted-foreground">
-              {formatTimestamp(message.createdAt)}
+              {isGroup
+                ? formatGroupBubbleFooterTime(message.createdAt, calendarNow)
+                : formatTimestamp(message.createdAt)}
             </Text>
             {isOwn && !isRecalled && !isDeleted && (
               <StatusIcon status={message.status} primary={primary} muted={muted} />
@@ -1060,12 +1089,12 @@ function ChatBubbleVideoPlayer({ playUri }: { playUri: string }) {
   );
 }
 
-function DateSeparator({ date, now }: { date: string; now: Date }) {
+function DateSeparator({ date }: { date: string }) {
   return (
     <View className="my-3 items-center">
       <View className="rounded-full bg-muted/50 px-3 py-1">
         <Text className="text-[11px] font-medium text-muted-foreground">
-          {formatDateLabel(date, now)}
+          {formatChatFrameDate(date)}
         </Text>
       </View>
     </View>
