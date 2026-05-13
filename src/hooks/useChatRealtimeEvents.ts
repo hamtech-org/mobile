@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { Socket } from "socket.io-client";
 
-import { chatApi } from "@/store/api/chatApi";
+import { chatApi, CHAT_MESSAGES_QUERY_LIMIT } from "@/store/api/chatApi";
 import { groupApi } from "@/store/api/endpoints/groupApi";
 import { conversationApi } from "@/store/api/endpoints/conversationApi";
 import {
@@ -20,6 +20,7 @@ import type { ChatFrameBannerVariant } from "@/store/slices/chatSlice";
 import type { IConversation, IGroupSettings, IMessage } from "@/types/chat.types";
 import { toast } from "@/utils/appToast";
 import { formatChatPreviewLine, getMessageTypeLabel } from "@/utils/messageDisplay";
+import { sortConversationsForSidebar } from "@/utils/conversationListSort";
 import { formatSystemLastMessagePreview } from "@/utils/systemMessage";
 
 /** Toast khi không mở hội thoại — tránh trùng poll. */
@@ -57,10 +58,11 @@ function bannerVariantFromSystemKind(kind: string): ChatFrameBannerVariant | nul
 }
 
 /** Tin system JSON — nội dung khớp sidebar/web `lastMessageLineFromSystemJson`. */
-function bannerFromSystemMessage(
-  msg: IMessage,
-  viewerUserId: string,
-): { text: string; atIso: string; variant: ChatFrameBannerVariant } | null {
+function bannerFromSystemMessage(msg: IMessage): {
+  text: string;
+  atIso: string;
+  variant: ChatFrameBannerVariant;
+} | null {
   if (msg.type !== "system") return null;
   const raw = String(msg.content ?? "").trim();
   if (!raw.startsWith("{")) return null;
@@ -74,8 +76,9 @@ function bannerFromSystemMessage(
   const variant = bannerVariantFromSystemKind(kind);
   if (!variant) return null;
   const atIso = normalizeIso(String(parsed.createdAt ?? msg.createdAt ?? ""));
+  /** Giống web `useChatGroupFrameNotices`: `lastMessageLineFromSystemJson` với `currentUserId` không set. */
   const text =
-    formatSystemLastMessagePreview(raw, msg.senderId, viewerUserId, msg.senderDisplayName) ??
+    formatSystemLastMessagePreview(raw, msg.senderId, "", msg.senderDisplayName) ??
     "Thông báo nhóm";
   return { text, atIso, variant };
 }
@@ -91,6 +94,9 @@ export function useChatRealtimeEvents({
 }: UseChatRealtimeEventsParams): void {
   const activeConvRef = useRef<string | null>(activeConversationId);
   const typingIndicatorTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  /** Tránh xử lý `message:new` trùng cùng messageId (vd: backend/lỗi emit đúp) — banner khung chat không lặp. */
+  const recentMessageSocketRef = useRef<Map<string, number>>(new Map());
+  const frameBannerDedupeMapRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
     activeConvRef.current = activeConversationId;
@@ -106,13 +112,27 @@ export function useChatRealtimeEvents({
       delete timers[key];
     };
 
+    const frameDedupe = frameBannerDedupeMapRef.current;
+
     const emitFrameBanner = (
+      dedupeKey: string,
       conversationId: string,
       message: string,
       atIso?: string,
       variant?: ChatFrameBannerVariant,
+      dedupeMs = 2500,
     ) => {
       if (conversationId !== activeConvRef.current) return;
+      const now = Date.now();
+      const fullKey = `${conversationId}:${dedupeKey}`;
+      const last = frameDedupe.get(fullKey) ?? 0;
+      if (now - last < dedupeMs) return;
+      frameDedupe.set(fullKey, now);
+      if (frameDedupe.size > 200) {
+        for (const [k, ts] of frameDedupe.entries()) {
+          if (now - ts > 60_000) frameDedupe.delete(k);
+        }
+      }
       dispatch(
         showChatFrameBanner({
           conversationId,
@@ -138,6 +158,31 @@ export function useChatRealtimeEvents({
       if (tags.length) dispatch(chatApi.util.invalidateTags(tags));
     };
 
+    /** Đồng bộ sidebar với web: `memberCount` cập nhật ngay, không chỉ invalidate. */
+    const patchConversationMemberCount = (gid: string, payload: Record<string, unknown>) => {
+      const id = gid.trim();
+      if (!id) return;
+      const mc = payload.memberCount;
+      if (typeof mc !== "number" || !Number.isFinite(mc)) return;
+      dispatch(
+        conversationApi.util.updateQueryData("getConversations", undefined, (draft) => {
+          const conv = draft?.find((x: IConversation) => x.conversationId === id);
+          if (conv) conv.memberCount = mc;
+        }),
+      );
+    };
+
+    const removeConversationFromListCache = (gid: string) => {
+      const id = gid.trim();
+      if (!id) return;
+      dispatch(
+        conversationApi.util.updateQueryData("getConversations", undefined, (draft) => {
+          const idx = draft?.findIndex((c: IConversation) => c.conversationId === id) ?? -1;
+          if (idx >= 0) draft.splice(idx, 1);
+        }),
+      );
+    };
+
     /**
      * `useGetGroupMembersQuery` thường `skip` khi modal quản lý nhóm đóng — invalidateTags
      * không refetch nếu không có subscriber, cache danh sách thành viên vẫn cũ.
@@ -149,6 +194,21 @@ export function useChatRealtimeEvents({
     };
 
     const handleNewMessage = (msg: IMessage) => {
+      const cid = String(msg.conversationId ?? "").trim();
+      const mid = String(msg.messageId ?? "").trim();
+      if (cid && mid) {
+        const sig = `${cid}:${mid}`;
+        const now = Date.now();
+        const prev = recentMessageSocketRef.current.get(sig);
+        if (prev != null && now - prev < 5000) return;
+        recentMessageSocketRef.current.set(sig, now);
+        if (recentMessageSocketRef.current.size > 400) {
+          for (const [k, ts] of recentMessageSocketRef.current.entries()) {
+            if (now - ts > 60_000) recentMessageSocketRef.current.delete(k);
+          }
+        }
+      }
+
       dispatch(messageReceived(msg));
 
       const viewerId = store.getState().auth.user?.userId ?? "";
@@ -169,6 +229,11 @@ export function useChatRealtimeEvents({
             (item: IConversation) => item.conversationId === msg.conversationId,
           );
           if (!conv) return;
+          const alreadySamePreview =
+            conv.lastMessage &&
+            conv.lastMessage.content === listPreview &&
+            conv.lastMessage.senderId === msg.senderId &&
+            conv.lastMessage.createdAt === msg.createdAt;
           conv.lastMessage = {
             messageId: msg.messageId,
             content: listPreview,
@@ -177,17 +242,26 @@ export function useChatRealtimeEvents({
             createdAt: msg.createdAt,
             senderDisplayName: msg.senderDisplayName,
           };
+          conv.lastMessageAt = msg.createdAt;
           conv.updatedAt = msg.createdAt;
-          if (msg.conversationId !== activeConvRef.current) {
+          if (msg.conversationId !== activeConvRef.current && !alreadySamePreview) {
             conv.unreadCount = (conv.unreadCount ?? 0) + 1;
           }
+          const sorted = sortConversationsForSidebar([...(draft as IConversation[])]);
+          draft.splice(0, draft.length, ...sorted);
         }),
       );
 
       if (msg.type === "system") {
-        const banner = bannerFromSystemMessage(msg, viewerId);
+        const banner = bannerFromSystemMessage(msg);
         if (banner && msg.conversationId === activeConvRef.current) {
-          emitFrameBanner(msg.conversationId, banner.text, banner.atIso, banner.variant);
+          emitFrameBanner(
+            `sys-banner:${msg.messageId}`,
+            msg.conversationId,
+            banner.text,
+            banner.atIso,
+            banner.variant,
+          );
           try {
             const raw = String(msg.content ?? "").trim();
             const p = JSON.parse(raw) as { kind?: string };
@@ -232,7 +306,11 @@ export function useChatRealtimeEvents({
       if (payload.conversationId === activeConvRef.current) {
         const list = store.getState().chat.messages[payload.conversationId];
         if (list?.some((m) => m.messageId === payload.messageId)) {
-          emitFrameBanner(payload.conversationId, "Tin nhắn đã được chỉnh sửa");
+          emitFrameBanner(
+            `edited:${payload.messageId}`,
+            payload.conversationId,
+            "Tin nhắn đã được chỉnh sửa",
+          );
         }
       }
       const viewerId = store.getState().auth.user?.userId ?? "";
@@ -263,11 +341,53 @@ export function useChatRealtimeEvents({
 
     const handleRecalled = (payload: { messageId: string; conversationId: string }) => {
       dispatch(messageRecalled(payload));
-      emitFrameBanner(payload.conversationId, "Tin nhắn đã được thu hồi");
+      emitFrameBanner(
+        `recall:${payload.messageId}`,
+        payload.conversationId,
+        "Tin nhắn đã được thu hồi",
+      );
+      const mid = String(payload.messageId);
+      const cid = payload.conversationId;
+      dispatch(
+        (chatApi.util as { updateQueryData: (...args: unknown[]) => unknown }).updateQueryData(
+          "getMessages",
+          { conversationId: cid, limit: CHAT_MESSAGES_QUERY_LIMIT },
+          (draft: IMessage[]) => {
+            const m = draft.find((x) => String(x.messageId) === mid);
+            if (m) {
+              m.isRecalled = true;
+              m.content = "Tin nhắn đã được thu hồi";
+              m.isPinned = false;
+            }
+          },
+        ) as never,
+      );
+      dispatch(
+        conversationApi.util.updateQueryData("getConversations", undefined, (draft) => {
+          const conv = draft?.find((item: IConversation) => item.conversationId === cid);
+          const lm = conv?.lastMessage;
+          if (!conv || !lm || String(lm.messageId) !== mid) return;
+          lm.content = "Tin nhắn đã được thu hồi";
+        }),
+      );
+      dispatch(chatApi.util.invalidateTags(["Conversations"]));
     };
 
     const handleHiddenForMe = (payload: { messageId: string; conversationId: string }) => {
       dispatch(messageHiddenForMe(payload));
+      dispatch(
+        (chatApi.util as { updateQueryData: (...args: unknown[]) => unknown }).updateQueryData(
+          "getMessages",
+          {
+            conversationId: payload.conversationId,
+            limit: CHAT_MESSAGES_QUERY_LIMIT,
+          },
+          (draft: IMessage[]) => {
+            const idx = draft.findIndex((x) => x.messageId === payload.messageId);
+            if (idx >= 0) draft.splice(idx, 1);
+          },
+        ) as never,
+      );
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
     };
 
@@ -277,11 +397,27 @@ export function useChatRealtimeEvents({
       isPinned: boolean;
     }) => {
       dispatch(messagePinUpdated(payload));
+      const mid = String(payload.messageId);
+      dispatch(
+        (chatApi.util as { updateQueryData: (...args: unknown[]) => unknown }).updateQueryData(
+          "getMessages",
+          {
+            conversationId: payload.conversationId,
+            limit: CHAT_MESSAGES_QUERY_LIMIT,
+          },
+          (draft: IMessage[]) => {
+            const m = draft.find((x) => String(x.messageId) === mid);
+            if (m) m.isPinned = payload.isPinned;
+          },
+        ) as never,
+      );
+      dispatch(chatApi.util.invalidateTags(["Conversations"]));
       if (payload.conversationId !== activeConvRef.current) return;
       const list = store.getState().chat.messages[payload.conversationId];
       const msg = list?.find((m) => m.messageId === payload.messageId);
       if (!payload.isPinned && msg?.isRecalled) return;
       emitFrameBanner(
+        `pin:${payload.messageId}:${payload.isPinned ? "1" : "0"}`,
         payload.conversationId,
         payload.isPinned ? "Tin nhắn đã được ghim" : "Đã bỏ ghim tin nhắn",
       );
@@ -293,6 +429,20 @@ export function useChatRealtimeEvents({
       reactions: Record<string, string[]>;
     }) => {
       dispatch(messageReacted(payload));
+      const mid = String(payload.messageId);
+      dispatch(
+        (chatApi.util as { updateQueryData: (...args: unknown[]) => unknown }).updateQueryData(
+          "getMessages",
+          {
+            conversationId: payload.conversationId,
+            limit: CHAT_MESSAGES_QUERY_LIMIT,
+          },
+          (draft: IMessage[]) => {
+            const m = draft.find((x) => String(x.messageId) === mid);
+            if (m) m.reactions = payload.reactions;
+          },
+        ) as never,
+      );
     };
 
     const handleTyping = (payload: {
@@ -329,6 +479,8 @@ export function useChatRealtimeEvents({
         typeof payload.avatar === "string" && payload.avatar.trim()
           ? payload.avatar.trim()
           : undefined;
+      const memberCount = payload.memberCount;
+      const hasMemberCount = typeof memberCount === "number" && Number.isFinite(memberCount);
 
       dispatch(
         conversationApi.util.updateQueryData("getConversations", undefined, (draft) => {
@@ -336,6 +488,7 @@ export function useChatRealtimeEvents({
           if (!conv) return;
           if (name) conv.name = name;
           if (avatar) conv.avatar = avatar;
+          if (hasMemberCount) conv.memberCount = memberCount as number;
         }),
       );
 
@@ -345,7 +498,7 @@ export function useChatRealtimeEvents({
         if (avatar) bits.push("Ảnh đại diện nhóm đã đổi");
         const message = bits.length > 0 ? bits.join(" · ") : "Thông tin nhóm đã được cập nhật";
         const atIso = typeof payload.updatedAt === "string" ? payload.updatedAt : undefined;
-        emitFrameBanner(conversationId, message, atIso);
+        emitFrameBanner(`group:updated:${conversationId}`, conversationId, message, atIso);
       } else if (name) {
         toast.info(`Nhóm '${name}' vừa cập nhật thông tin`);
       }
@@ -368,7 +521,7 @@ export function useChatRealtimeEvents({
         );
       }
       invalidateGroupData(gid, ["settings"]);
-      emitFrameBanner(gid, "Cài đặt nhóm đã được cập nhật");
+      emitFrameBanner(`group:settings:${gid}`, gid, "Cài đặt nhóm đã được cập nhật");
     };
 
     const handleGroupPollNew = (payload: Record<string, unknown>) => {
@@ -398,32 +551,55 @@ export function useChatRealtimeEvents({
       invalidateGroupData(gid, ["tasks"]);
     };
 
+    const handleGroupTaskDeleted = (payload: Record<string, unknown>) => {
+      const gid = groupIdFromPayload(payload);
+      if (!gid) return;
+      invalidateGroupData(gid, ["tasks"]);
+      dispatch(chatApi.util.invalidateTags([{ type: "Messages", id: gid }]));
+    };
+
     const handleGroupMemberJoined = (payload: Record<string, unknown>) => {
       const gid = groupIdFromPayload(payload);
       if (!gid) return;
+      patchConversationMemberCount(gid, payload);
       invalidateGroupData(gid, ["members", "requests"]);
       prefetchGroupMembers(gid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
-      emitFrameBanner(gid, "Có thành viên mới tham gia nhóm");
+      emitFrameBanner(
+        `member_joined:${gid}:${String((payload as { userId?: string }).userId ?? "")}`,
+        gid,
+        "Có thành viên mới tham gia nhóm",
+      );
     };
 
     const handleGroupMemberLeft = (payload: Record<string, unknown>) => {
       const gid = groupIdFromPayload(payload);
       if (!gid) return;
+      patchConversationMemberCount(gid, payload);
       invalidateGroupData(gid, ["members"]);
       prefetchGroupMembers(gid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
       const leftAt = typeof payload.leftAt === "string" ? payload.leftAt : undefined;
-      emitFrameBanner(gid, "Có thành viên đã rời nhóm", leftAt);
+      emitFrameBanner(
+        `member_left:${gid}:${String((payload as { userId?: string }).userId ?? "")}`,
+        gid,
+        "Có thành viên đã rời nhóm",
+        leftAt,
+      );
     };
 
     const handleGroupMemberRemoved = (payload: Record<string, unknown>) => {
       const gid = groupIdFromPayload(payload);
       if (!gid) return;
+      patchConversationMemberCount(gid, payload);
       invalidateGroupData(gid, ["members"]);
       prefetchGroupMembers(gid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
-      emitFrameBanner(gid, "Một thành viên đã bị xóa khỏi nhóm");
+      emitFrameBanner(
+        `member_removed:${gid}:${String((payload as { userId?: string }).userId ?? "")}`,
+        gid,
+        "Một thành viên đã bị xóa khỏi nhóm",
+      );
     };
 
     const handleGroupRoleChanged = (payload: Record<string, unknown>) => {
@@ -436,7 +612,11 @@ export function useChatRealtimeEvents({
       const msg = role
         ? `Vai trò trong nhóm đã đổi (${roleVi(role)})`
         : "Vai trò trong nhóm đã được cập nhật";
-      emitFrameBanner(gid, msg);
+      emitFrameBanner(
+        `role:${gid}:${String((payload as { userId?: string }).userId ?? "")}:${role}`,
+        gid,
+        msg,
+      );
     };
 
     const handleGroupJoinRequestNew = (payload: Record<string, unknown>) => {
@@ -446,6 +626,7 @@ export function useChatRealtimeEvents({
       const mids = payload.memberIds;
       const isInvite = Array.isArray(mids) && mids.length > 0;
       emitFrameBanner(
+        isInvite ? `join_invite:${gid}` : `join_request:${gid}`,
         gid,
         isInvite ? "Đã gửi lời mời tham gia nhóm" : "Có yêu cầu tham gia nhóm mới",
       );
@@ -455,21 +636,35 @@ export function useChatRealtimeEvents({
       const gid = groupIdFromPayload(payload);
       if (!gid) return;
       invalidateGroupData(gid, ["requests"]);
-      emitFrameBanner(gid, "Danh sách chờ duyệt đã cập nhật");
+      emitFrameBanner(`join_request_updated:${gid}`, gid, "Danh sách chờ duyệt đã cập nhật");
     };
 
     const handleGroupDisbanded = (payload: Record<string, unknown>) => {
       const gid = groupIdFromPayload(payload);
       if (!gid) return;
-      emitFrameBanner(gid, "Nhóm đã được giải tán");
+      emitFrameBanner(`disband:${gid}`, gid, "Nhóm đã được giải tán", undefined, undefined, 10_000);
+      removeConversationFromListCache(gid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
     };
 
     const handleGroupDeleted = (payload: Record<string, unknown>) => {
-      const gid = String((payload as { groupId?: string }).groupId ?? "").trim();
+      const gid = groupIdFromPayload(payload);
       if (!gid) return;
-      emitFrameBanner(gid, "Nhóm đã bị xóa");
+      emitFrameBanner(`deleted:${gid}`, gid, "Nhóm đã bị xóa", undefined, undefined, 10_000);
+      removeConversationFromListCache(gid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
+    };
+
+    const handleGroupRequestApproved = (payload: Record<string, unknown>) => {
+      const gid = String((payload as { groupId?: string }).groupId ?? "").trim();
+      patchConversationMemberCount(gid, payload);
+      dispatch(chatApi.util.invalidateTags(["Conversations"]));
+      toast.info("Bạn đã được duyệt vào nhóm", 5000);
+    };
+
+    const handleGroupRequestRejected = () => {
+      dispatch(chatApi.util.invalidateTags(["Conversations"]));
+      toast.info("Yêu cầu tham gia nhóm đã bị từ chối", 5000);
     };
 
     const handleGroupRecapNew = (payload: Record<string, unknown>) => {
@@ -477,7 +672,11 @@ export function useChatRealtimeEvents({
       if (!gid) return;
       const summary = typeof payload.summary === "string" ? payload.summary.trim() : "";
       const short = summary.length > 80 ? `${summary.slice(0, 80)}…` : summary;
-      emitFrameBanner(gid, short ? `Tóm tắt AI mới: ${short}` : "Có tóm tắt AI mới cho nhóm");
+      emitFrameBanner(
+        `recap:${gid}:${short || "empty"}`,
+        gid,
+        short ? `Tóm tắt AI mới: ${short}` : "Có tóm tắt AI mới cho nhóm",
+      );
     };
 
     const handleTypingIndicator = (payload: {
@@ -508,6 +707,7 @@ export function useChatRealtimeEvents({
     socket.on("message:hidden_for_me", handleHiddenForMe);
     socket.on("message:pin_updated", handlePinUpdated);
     socket.on("message:reacted", handleReaction);
+    socket.on("message:reaction", handleReaction);
     socket.on("message:typing", handleTyping);
     socket.on("message:typing_indicator", handleTypingIndicator);
     socket.on("group:updated", handleGroupUpdated);
@@ -516,7 +716,9 @@ export function useChatRealtimeEvents({
     socket.on("group:poll_updated", handleGroupPollUpdated);
     socket.on("group:task_new", handleGroupTaskNew);
     socket.on("group:task_updated", handleGroupTaskUpdated);
+    socket.on("group:task_deleted", handleGroupTaskDeleted);
     socket.on("group:member_joined", handleGroupMemberJoined);
+    socket.on("group:members_added", handleGroupMemberJoined);
     socket.on("group:member_left", handleGroupMemberLeft);
     socket.on("group:member_removed", handleGroupMemberRemoved);
     socket.on("group:role_changed", handleGroupRoleChanged);
@@ -524,6 +726,8 @@ export function useChatRealtimeEvents({
     socket.on("group:join_request_updated", handleGroupJoinRequestUpdated);
     socket.on("group:disbanded", handleGroupDisbanded);
     socket.on("group:deleted", handleGroupDeleted);
+    socket.on("group:request_approved", handleGroupRequestApproved);
+    socket.on("group:request_rejected", handleGroupRequestRejected);
     socket.on("group:recap_new", handleGroupRecapNew);
 
     return () => {
@@ -538,6 +742,7 @@ export function useChatRealtimeEvents({
       socket.off("message:hidden_for_me", handleHiddenForMe);
       socket.off("message:pin_updated", handlePinUpdated);
       socket.off("message:reacted", handleReaction);
+      socket.off("message:reaction", handleReaction);
       socket.off("message:typing", handleTyping);
       socket.off("message:typing_indicator", handleTypingIndicator);
       socket.off("group:updated", handleGroupUpdated);
@@ -546,7 +751,9 @@ export function useChatRealtimeEvents({
       socket.off("group:poll_updated", handleGroupPollUpdated);
       socket.off("group:task_new", handleGroupTaskNew);
       socket.off("group:task_updated", handleGroupTaskUpdated);
+      socket.off("group:task_deleted", handleGroupTaskDeleted);
       socket.off("group:member_joined", handleGroupMemberJoined);
+      socket.off("group:members_added", handleGroupMemberJoined);
       socket.off("group:member_left", handleGroupMemberLeft);
       socket.off("group:member_removed", handleGroupMemberRemoved);
       socket.off("group:role_changed", handleGroupRoleChanged);
@@ -554,6 +761,8 @@ export function useChatRealtimeEvents({
       socket.off("group:join_request_updated", handleGroupJoinRequestUpdated);
       socket.off("group:disbanded", handleGroupDisbanded);
       socket.off("group:deleted", handleGroupDeleted);
+      socket.off("group:request_approved", handleGroupRequestApproved);
+      socket.off("group:request_rejected", handleGroupRequestRejected);
       socket.off("group:recap_new", handleGroupRecapNew);
     };
   }, [dispatch, socket]);
