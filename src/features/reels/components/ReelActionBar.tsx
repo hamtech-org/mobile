@@ -1,13 +1,20 @@
 import { useCallback, useRef, useState } from "react";
-import { Image, Modal, Pressable, Text, View } from "react-native";
+import { Alert, Image, Modal, Pressable, Share, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { ThumbsUp } from "lucide-react-native";
 import LottieView from "lottie-react-native";
+import { useSelector } from "react-redux";
+import { useRouter } from "expo-router";
 import { EmojiPicker } from "@/components/common/ReactionButton/EmojiPicker";
-import { useReactToReelMutation, useToggleSaveReelMutation } from "@/store/api/newsfeedApi";
+import {
+  useReactToReelMutation,
+  useToggleSaveReelMutation,
+  useDeleteReelMutation,
+} from "@/store/api/newsfeedApi";
 import { REACTION_META } from "@/types/reaction.types";
 import type { ReactionType } from "@/types/reaction.types";
 import type { IReel } from "@/types/newsfeed.types";
+import type { RootState } from "@/store/store";
 
 interface Props {
   reel: IReel;
@@ -28,6 +35,10 @@ function formatCount(n: number): string {
 export const ReelActionBar = ({ reel, onOpenComments, onOpenReport }: Props) => {
   const [reactToReel] = useReactToReelMutation();
   const [toggleSave] = useToggleSaveReelMutation();
+  const [deleteReel] = useDeleteReelMutation();
+  const currentUserId = useSelector((state: RootState) => state.auth.user?.userId);
+  const router = useRouter();
+  const isAuthor = reel.author?.userId === currentUserId;
 
   const [liked, setLiked] = useState<ReactionType | null>(reel.currentUserReaction ?? null);
   const [likeCount, setLikeCount] = useState(totalReactions(reel.reactionsCount));
@@ -93,6 +104,30 @@ export const ReelActionBar = ({ reel, onOpenComments, onOpenReport }: Props) => 
     }
   }, [saved, saveCount, reel.reelId, toggleSave]);
 
+  const handleShare = useCallback(async () => {
+    await Share.share({
+      message: `${reel.caption ?? "Xem reel này"}\nhttps://zalogram.app/reels/${reel.reelId}`,
+    });
+  }, [reel.reelId, reel.caption]);
+
+  const handleDelete = useCallback(() => {
+    Alert.alert("Xóa reel", "Bạn có chắc muốn xóa reel này? Hành động không thể hoàn tác.", [
+      { text: "Hủy", style: "cancel" },
+      {
+        text: "Xóa",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteReel(reel.reelId).unwrap();
+            router.back();
+          } catch {
+            Alert.alert("Lỗi", "Không thể xóa reel. Vui lòng thử lại.");
+          }
+        },
+      },
+    ]);
+  }, [reel.reelId, deleteReel, router]);
+
   const currentMeta = liked ? REACTION_META[liked] : null;
 
   return (
@@ -154,7 +189,7 @@ export const ReelActionBar = ({ reel, onOpenComments, onOpenReport }: Props) => 
         </Pressable>
 
         {/* Share */}
-        <Pressable className="items-center gap-1" hitSlop={8}>
+        <Pressable onPress={() => void handleShare()} className="items-center gap-1" hitSlop={8}>
           <Ionicons name="arrow-redo-outline" size={28} color="#fff" />
           <Text className="text-xs font-semibold text-white">{formatCount(reel.sharesCount)}</Text>
         </Pressable>
@@ -218,6 +253,19 @@ export const ReelActionBar = ({ reel, onOpenComments, onOpenReport }: Props) => 
               <Ionicons name="flag-outline" size={22} color="#EF4444" />
               <Text className="text-[15px] font-medium text-red-400">Báo cáo</Text>
             </Pressable>
+
+            {isAuthor && (
+              <Pressable
+                onPress={() => {
+                  setMoreVisible(false);
+                  handleDelete();
+                }}
+                className="flex-row items-center gap-3 rounded-xl px-3 py-3.5 active:bg-white/10"
+              >
+                <Ionicons name="trash-outline" size={22} color="#EF4444" />
+                <Text className="text-[15px] font-medium text-red-400">Xóa reel</Text>
+              </Pressable>
+            )}
 
             <View className="flex-row items-center gap-3 px-3 py-3.5">
               <Ionicons name="eye-outline" size={22} color="rgba(255,255,255,0.5)" />
