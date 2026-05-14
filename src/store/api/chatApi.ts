@@ -46,6 +46,8 @@ export {
   useCreatePollMutation,
   useVotePollMutation,
   useUnvotePollMutation,
+  useClosePollMutation,
+  useAddPollOptionMutation,
 } from "./endpoints/pollApi";
 
 export {

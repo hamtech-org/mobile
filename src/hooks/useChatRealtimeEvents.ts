@@ -43,12 +43,6 @@ function groupIdFromPayload(p: Record<string, unknown>): string {
   return String(p.conversationId ?? p.groupId ?? "").trim();
 }
 
-function roleVi(role: string): string {
-  if (role === "owner") return "trưởng nhóm";
-  if (role === "admin") return "quản trị";
-  return "thành viên";
-}
-
 /** Giống web `useChatGroupFrameNotices`: poll / task_assigned / task_joined (màu + icon). */
 function bannerVariantFromSystemKind(kind: string): ChatFrameBannerVariant | null {
   if (kind.startsWith("poll")) return "poll";
@@ -62,6 +56,7 @@ function bannerFromSystemMessage(msg: IMessage): {
   text: string;
   atIso: string;
   variant: ChatFrameBannerVariant;
+  pollId?: string;
 } | null {
   if (msg.type !== "system") return null;
   const raw = String(msg.content ?? "").trim();
@@ -80,7 +75,13 @@ function bannerFromSystemMessage(msg: IMessage): {
   const text =
     formatSystemLastMessagePreview(raw, msg.senderId, "", msg.senderDisplayName) ??
     "Thông báo nhóm";
-  return { text, atIso, variant };
+  let pollId: string | undefined;
+  if (variant === "poll") {
+    const poll = parsed.poll as { pollId?: string } | undefined;
+    const id = String(poll?.pollId ?? "").trim();
+    if (id) pollId = id;
+  }
+  return pollId ? { text, atIso, variant, pollId } : { text, atIso, variant };
 }
 
 /**
@@ -121,6 +122,7 @@ export function useChatRealtimeEvents({
       atIso?: string,
       variant?: ChatFrameBannerVariant,
       dedupeMs = 2500,
+      pollId?: string | null,
     ) => {
       if (conversationId !== activeConvRef.current) return;
       const now = Date.now();
@@ -133,12 +135,14 @@ export function useChatRealtimeEvents({
           if (now - ts > 60_000) frameDedupe.delete(k);
         }
       }
+      const pid = pollId?.trim();
       dispatch(
         showChatFrameBanner({
           conversationId,
           message,
           atIso: normalizeIso(atIso),
           ...(variant ? { variant } : {}),
+          ...(pid ? { pollId: pid } : {}),
         }),
       );
     };
@@ -255,12 +259,36 @@ export function useChatRealtimeEvents({
       if (msg.type === "system") {
         const banner = bannerFromSystemMessage(msg);
         if (banner && msg.conversationId === activeConvRef.current) {
+          let bannerDedupeKey = `sys-banner:${msg.messageId}`;
+          try {
+            const rawSys = String(msg.content ?? "").trim();
+            const pSys = JSON.parse(rawSys) as {
+              kind?: string;
+              stage?: string;
+              task?: { taskId?: string };
+            };
+            const tid = String(pSys?.task?.taskId ?? "").trim();
+            const kSys = String(pSys?.kind ?? "");
+            if (tid && kSys === "task_reminder") {
+              const st = String(pSys?.stage ?? "x");
+              bannerDedupeKey = `frame-task:${msg.conversationId}:${tid}:task_reminder:${st}`;
+            } else if (
+              tid &&
+              (kSys === "task_updated" || kSys === "task_due" || kSys === "task_deleted")
+            ) {
+              bannerDedupeKey = `frame-task:${msg.conversationId}:${tid}:${kSys}`;
+            }
+          } catch {
+            /* keep default */
+          }
           emitFrameBanner(
-            `sys-banner:${msg.messageId}`,
+            bannerDedupeKey,
             msg.conversationId,
             banner.text,
             banner.atIso,
             banner.variant,
+            2200,
+            banner.pollId,
           );
           try {
             const raw = String(msg.content ?? "").trim();
@@ -412,15 +440,6 @@ export function useChatRealtimeEvents({
         ) as never,
       );
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
-      if (payload.conversationId !== activeConvRef.current) return;
-      const list = store.getState().chat.messages[payload.conversationId];
-      const msg = list?.find((m) => m.messageId === payload.messageId);
-      if (!payload.isPinned && msg?.isRecalled) return;
-      emitFrameBanner(
-        `pin:${payload.messageId}:${payload.isPinned ? "1" : "0"}`,
-        payload.conversationId,
-        payload.isPinned ? "Tin nhắn đã được ghim" : "Đã bỏ ghim tin nhắn",
-      );
     };
 
     const handleReaction = (payload: {
@@ -493,12 +512,19 @@ export function useChatRealtimeEvents({
       );
 
       if (conversationId === activeConvRef.current) {
-        const bits: string[] = [];
-        if (name) bits.push(`Tên nhóm: ${name}`);
-        if (avatar) bits.push("Ảnh đại diện nhóm đã đổi");
-        const message = bits.length > 0 ? bits.join(" · ") : "Thông tin nhóm đã được cập nhật";
+        const updatedName =
+          typeof payload.name === "string" && payload.name.trim() ? payload.name.trim() : "";
+        const message = updatedName
+          ? `Nhóm đã cập nhật: ${updatedName}`
+          : "Nhóm đã cập nhật thông tin";
         const atIso = typeof payload.updatedAt === "string" ? payload.updatedAt : undefined;
-        emitFrameBanner(`group:updated:${conversationId}`, conversationId, message, atIso);
+        emitFrameBanner(
+          `group:updated:${conversationId}`,
+          conversationId,
+          message,
+          atIso,
+          "task_assigned",
+        );
       } else if (name) {
         toast.info(`Nhóm '${name}' vừa cập nhật thông tin`);
       }
@@ -521,7 +547,13 @@ export function useChatRealtimeEvents({
         );
       }
       invalidateGroupData(gid, ["settings"]);
-      emitFrameBanner(`group:settings:${gid}`, gid, "Cài đặt nhóm đã được cập nhật");
+      emitFrameBanner(
+        `group:settings:${gid}`,
+        gid,
+        "Cài đặt nhóm đã thay đổi",
+        undefined,
+        "task_assigned",
+      );
     };
 
     const handleGroupPollNew = (payload: Record<string, unknown>) => {
@@ -529,6 +561,14 @@ export function useChatRealtimeEvents({
       if (!gid) return;
       invalidateGroupData(gid, ["polls", "members"]);
       dispatch(chatApi.util.invalidateTags([{ type: "Messages", id: gid }]));
+      emitFrameBanner(
+        `group:poll_new:${gid}`,
+        gid,
+        "Có bình chọn mới trong nhóm",
+        undefined,
+        "poll",
+        1500,
+      );
     };
 
     const handleGroupPollUpdated = (payload: Record<string, unknown>) => {
@@ -536,6 +576,16 @@ export function useChatRealtimeEvents({
       if (!gid) return;
       invalidateGroupData(gid, ["polls"]);
       dispatch(chatApi.util.invalidateTags([{ type: "Messages", id: gid }]));
+      const pollId = String((payload as { pollId?: string }).pollId ?? "").trim();
+      emitFrameBanner(
+        `group:poll_upd:${pollId || gid}`,
+        gid,
+        "Bình chọn vừa được cập nhật",
+        undefined,
+        "poll",
+        1500,
+        pollId || undefined,
+      );
     };
 
     const handleGroupTaskNew = (payload: Record<string, unknown>) => {
@@ -549,6 +599,19 @@ export function useChatRealtimeEvents({
       const gid = groupIdFromPayload(payload);
       if (!gid) return;
       invalidateGroupData(gid, ["tasks"]);
+      const taskId = String((payload as { taskId?: string }).taskId ?? "").trim();
+      const title = String((payload as { title?: string }).title ?? "").trim();
+      const line = title
+        ? `Công việc «${title}» vừa được cập nhật`
+        : "Công việc trong nhóm vừa được cập nhật";
+      emitFrameBanner(
+        taskId ? `frame-task:${gid}:${taskId}:task_updated` : `group:task_upd:${gid}`,
+        gid,
+        line,
+        undefined,
+        "task_assigned",
+        2200,
+      );
     };
 
     const handleGroupTaskDeleted = (payload: Record<string, unknown>) => {
@@ -556,6 +619,17 @@ export function useChatRealtimeEvents({
       if (!gid) return;
       invalidateGroupData(gid, ["tasks"]);
       dispatch(chatApi.util.invalidateTags([{ type: "Messages", id: gid }]));
+      const taskId = String((payload as { taskId?: string }).taskId ?? "").trim();
+      const title = String((payload as { title?: string }).title ?? "").trim();
+      const line = title ? `Đã hủy công việc «${title}»` : "Một công việc trong nhóm đã bị hủy";
+      emitFrameBanner(
+        taskId ? `frame-task:${gid}:${taskId}:task_deleted` : `group:task_del:${gid}`,
+        gid,
+        line,
+        undefined,
+        "task_assigned",
+        2200,
+      );
     };
 
     const handleGroupMemberJoined = (payload: Record<string, unknown>) => {
@@ -569,6 +643,8 @@ export function useChatRealtimeEvents({
         `member_joined:${gid}:${String((payload as { userId?: string }).userId ?? "")}`,
         gid,
         "Có thành viên mới tham gia nhóm",
+        undefined,
+        "task_assigned",
       );
     };
 
@@ -583,8 +659,9 @@ export function useChatRealtimeEvents({
       emitFrameBanner(
         `member_left:${gid}:${String((payload as { userId?: string }).userId ?? "")}`,
         gid,
-        "Có thành viên đã rời nhóm",
+        "Một thành viên vừa rời nhóm",
         leftAt,
+        "task_assigned",
       );
     };
 
@@ -599,6 +676,8 @@ export function useChatRealtimeEvents({
         `member_removed:${gid}:${String((payload as { userId?: string }).userId ?? "")}`,
         gid,
         "Một thành viên đã bị xóa khỏi nhóm",
+        undefined,
+        "task_assigned",
       );
     };
 
@@ -608,14 +687,12 @@ export function useChatRealtimeEvents({
       invalidateGroupData(gid, ["members"]);
       prefetchGroupMembers(gid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
-      const role = String(payload.role ?? "");
-      const msg = role
-        ? `Vai trò trong nhóm đã đổi (${roleVi(role)})`
-        : "Vai trò trong nhóm đã được cập nhật";
       emitFrameBanner(
-        `role:${gid}:${String((payload as { userId?: string }).userId ?? "")}:${role}`,
+        `role:${gid}:${String((payload as { userId?: string }).userId ?? "")}`,
         gid,
-        msg,
+        "Vai trò thành viên đã thay đổi",
+        undefined,
+        "task_assigned",
       );
     };
 
@@ -623,12 +700,12 @@ export function useChatRealtimeEvents({
       const gid = groupIdFromPayload(payload);
       if (!gid) return;
       invalidateGroupData(gid, ["requests"]);
-      const mids = payload.memberIds;
-      const isInvite = Array.isArray(mids) && mids.length > 0;
       emitFrameBanner(
-        isInvite ? `join_invite:${gid}` : `join_request:${gid}`,
+        `join_request:${gid}`,
         gid,
-        isInvite ? "Đã gửi lời mời tham gia nhóm" : "Có yêu cầu tham gia nhóm mới",
+        "Có yêu cầu tham gia nhóm mới",
+        undefined,
+        "task_assigned",
       );
     };
 
@@ -636,13 +713,26 @@ export function useChatRealtimeEvents({
       const gid = groupIdFromPayload(payload);
       if (!gid) return;
       invalidateGroupData(gid, ["requests"]);
-      emitFrameBanner(`join_request_updated:${gid}`, gid, "Danh sách chờ duyệt đã cập nhật");
+      emitFrameBanner(
+        `join_request_updated:${gid}`,
+        gid,
+        "Danh sách yêu cầu tham gia đã cập nhật",
+        undefined,
+        "task_assigned",
+      );
     };
 
     const handleGroupDisbanded = (payload: Record<string, unknown>) => {
       const gid = groupIdFromPayload(payload);
       if (!gid) return;
-      emitFrameBanner(`disband:${gid}`, gid, "Nhóm đã được giải tán", undefined, undefined, 10_000);
+      emitFrameBanner(
+        `disband:${gid}`,
+        gid,
+        "Nhóm đã bị giải tán",
+        undefined,
+        "task_assigned",
+        10_000,
+      );
       removeConversationFromListCache(gid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
     };
@@ -650,7 +740,7 @@ export function useChatRealtimeEvents({
     const handleGroupDeleted = (payload: Record<string, unknown>) => {
       const gid = groupIdFromPayload(payload);
       if (!gid) return;
-      emitFrameBanner(`deleted:${gid}`, gid, "Nhóm đã bị xóa", undefined, undefined, 10_000);
+      emitFrameBanner(`deleted:${gid}`, gid, "Nhóm đã bị xóa", undefined, "task_assigned", 10_000);
       removeConversationFromListCache(gid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
     };

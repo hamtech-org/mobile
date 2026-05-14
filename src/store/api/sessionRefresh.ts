@@ -2,6 +2,7 @@ import type { UnknownAction } from "@reduxjs/toolkit";
 
 import { env } from "@/config/env";
 import { secureStorage } from "@/services/storage";
+import { clearMarkAsReadDedupeCache } from "@/utils/markAsReadSessionDedupe";
 import { clearAuthState, setSessionTokens } from "@/store/slices/authSlice";
 
 interface RefreshEnvelope {
@@ -73,5 +74,6 @@ export async function invalidateSessionAfterAuthFailure(
   dispatch: (action: UnknownAction) => unknown,
 ): Promise<void> {
   await secureStorage.clearTokens();
+  clearMarkAsReadDedupeCache();
   dispatch(clearAuthState());
 }

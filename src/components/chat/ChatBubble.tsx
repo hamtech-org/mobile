@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -23,6 +23,7 @@ import {
   MapPin,
   Pencil,
   Pin,
+  PinOff,
   Phone,
   Trash2,
   Users,
@@ -45,16 +46,20 @@ import {
   type SystemTextRowIcon,
 } from "@/utils/systemMessage";
 import {
-  formatChatFrameDate,
-  formatGroupBubbleFooterTime,
+  chatMessagesSameLocalDay,
+  chatSystemPillShowDateLine,
+  formatChatSystemPillDateLabel,
+  formatChatSystemPillTime,
   formatTimestamp,
   isSameCalendarMinute,
-  isSameDay,
 } from "@/utils/time";
 import { toast } from "@/utils/appToast";
 import { TaskDeadlineChipMobile } from "@/utils/taskDeadlineDisplay";
 import { isTaskJoinDeadlinePassed } from "@/utils/taskJoin";
 import { normalizeMediaUrl } from "@/utils/url";
+import { mergePollWithGroupList, parsePollPayloadFromMessageContent } from "@/utils/groupPollMerge";
+
+import type { PollVoteModalPoll } from "./PollVoteModal";
 
 /** Dữ liệu nhóm để card giao việc / nút bình chọn (chỉ khi `isGroup`). */
 export interface ChatBubbleGroupExtras {
@@ -76,6 +81,12 @@ export interface ChatBubbleGroupExtras {
   joinTask?: (taskId: string) => Promise<void>;
   onTaskJoined?: (taskId: string) => void;
   onOpenPollVote: (pollId: string) => void;
+  /** Danh sách poll nhóm (API) — preview trong bubble `type: "poll"` + meta tin `poll_created`. */
+  groupPolls?: PollVoteModalPoll[];
+  /** Tin system `task_updated` — nhảy tới thẻ giao việc trong luồng (giống web «Xem»). */
+  onJumpToTaskCard?: (taskId: string) => void;
+  /** Tin system `task_due` — mở modal nhóm tab công việc (giống web «Mở công việc»). */
+  onOpenGroupTaskSheet?: (taskId: string) => void;
   /** Chỉ người tạo task — mở modal nhóm + editor (giống web). */
   onEditGroupTask?: (taskId: string) => void;
   onDeleteGroupTask?: (taskId: string) => void;
@@ -96,6 +107,8 @@ interface ChatBubbleProps {
   onLongPress?: (message: IMessage) => void;
   /** Callback khi nhấn vào reply-to để scroll đến tin gốc */
   onPressReplyTo?: (messageId: string) => void;
+  /** Viền nhấp nháy khi nhảy tới tin (ghim / trích dẫn) — giống web `jumpHighlightMessageId`. */
+  isJumpHighlighted?: boolean;
   /** Thông tin nhóm: join task, mở poll (tuỳ chọn) */
   groupExtras?: ChatBubbleGroupExtras;
 }
@@ -106,12 +119,10 @@ function CallLogMessage({
   message,
   isOwn,
   showTimestampFooter,
-  calendarNow,
 }: {
   message: IMessage;
   isOwn: boolean;
   showTimestampFooter?: boolean;
-  calendarNow?: Date;
 }) {
   const { primary } = useIconColors();
   let kind = "completed";
@@ -152,11 +163,8 @@ function CallLogMessage({
   const IconComponent = callType === "video" ? Video : Phone;
   const iconColor = kind === "missed" || (kind === "cancelled" && !isOwn) ? "#ef4444" : primary;
 
-  const now = calendarNow ?? new Date();
   const footerTime =
-    showTimestampFooter && message.createdAt
-      ? formatGroupBubbleFooterTime(message.createdAt, now)
-      : "";
+    showTimestampFooter && message.createdAt ? formatTimestamp(message.createdAt) : "";
 
   return (
     <View className={`my-3 px-4 ${isOwn ? "items-end" : "items-start"}`}>
@@ -182,29 +190,46 @@ function CallLogMessage({
   );
 }
 
-/** Pill giờ phía trên thẻ system — giờ (HH:mm) + ngày DD/MM/YYYY (không «Hôm nay»). */
+/** Pill giờ phía trên thẻ system — giờ trước mốc: «7:00 Hôm nay», «10:00 Hôm qua», «10:00 13/05/2026». */
 function SystemNotifyTimePill({
   createdAt,
   prevMessage,
+  calendarNow,
+  isGroup,
 }: {
   createdAt?: string | null;
   prevMessage?: IMessage;
+  calendarNow: Date;
+  /** Nhóm: chip mốc ngày giữa luồng + pill chỉ giờ — đồng bộ web `daySepAboveSystem`. */
+  isGroup?: boolean;
 }) {
   const iso = createdAt?.trim();
   if (!iso) return null;
-  const currDate = iso.slice(0, 10);
-  const prevDate = prevMessage?.createdAt?.trim().slice(0, 10);
-  const showDate = !prevMessage || prevDate !== currDate;
-  const timeLabel = formatTimestamp(iso);
-  const datePart = showDate ? formatChatFrameDate(iso) : "";
-  const label = (showDate && datePart ? `${timeLabel} · ${datePart}` : timeLabel).trim();
-  if (!label) return null;
+  const showDate = chatSystemPillShowDateLine(prevMessage?.createdAt, iso);
+  const daySepAboveSystem = Boolean(isGroup) && showDate;
+  const timeLabel = formatChatSystemPillTime(iso);
+  const datePart = showDate ? formatChatSystemPillDateLabel(iso, calendarNow) : "";
+  const pillText = (
+    daySepAboveSystem ? timeLabel : showDate && datePart ? `${timeLabel} ${datePart}` : timeLabel
+  ).trim();
+  if (!pillText) return null;
   return (
-    <View className="mb-2 self-center rounded-full bg-black/10 px-3 py-1 dark:bg-white/10">
-      <Text className="text-[11px] font-semibold text-muted-foreground" numberOfLines={1}>
-        {label}
-      </Text>
-    </View>
+    <Fragment>
+      {daySepAboveSystem && datePart ? (
+        <View className="min-h-[28px] w-full shrink-0 items-center justify-center py-2">
+          <View className="rounded-full bg-muted/60 px-3 py-1 shadow-sm dark:bg-white/15">
+            <Text className="text-[11px] font-semibold text-foreground/80 dark:text-white/85">
+              {datePart}
+            </Text>
+          </View>
+        </View>
+      ) : null}
+      <View className="mb-2 self-center rounded-full bg-black/10 px-3 py-1 dark:bg-white/10">
+        <Text className="text-[11px] font-semibold text-muted-foreground" numberOfLines={1}>
+          {pillText}
+        </Text>
+      </View>
+    </Fragment>
   );
 }
 
@@ -214,6 +239,8 @@ function SystemRowLeadingIcon({ kind }: { kind: SystemTextRowIcon }) {
       return <Pencil size={16} color="#60a5fa" strokeWidth={2} />;
     case "pin":
       return <Pin size={16} color="#3b82f6" strokeWidth={2} />;
+    case "pinOff":
+      return <PinOff size={16} color="#3b82f6" strokeWidth={2} />;
     case "checkCheck":
       return <CheckCheck size={16} color="#16a34a" strokeWidth={2} />;
     case "alarmClock":
@@ -233,6 +260,36 @@ function SystemRowLeadingIcon({ kind }: { kind: SystemTextRowIcon }) {
 
 // ── System center (JSON + card) ───────────────────────────────────────────
 
+const SYSTEM_CENTER_SURFACE = "bg-card dark:bg-zinc-800/95";
+
+/**
+ * Khi nhảy tới tin: chỉ **một** viền xanh ở lớp ngoài (giống web), nền thẻ nằm trong — tránh “hai viền” do thiếu nền + viền xám nội dung.
+ */
+function SystemCenterCardChrome({
+  isJumpHighlighted,
+  innerClassName,
+  children,
+}: {
+  isJumpHighlighted: boolean;
+  innerClassName: string;
+  children: ReactNode;
+}) {
+  if (isJumpHighlighted) {
+    return (
+      <View className="w-full max-w-[92%] overflow-hidden rounded-2xl border-2 border-blue-500">
+        <View className={`${SYSTEM_CENTER_SURFACE} ${innerClassName}`.trim()}>{children}</View>
+      </View>
+    );
+  }
+  return (
+    <View
+      className={`w-full max-w-[92%] overflow-hidden rounded-2xl border border-black/[0.06] shadow-sm dark:border-white/10 ${SYSTEM_CENTER_SURFACE} ${innerClassName}`.trim()}
+    >
+      {children}
+    </View>
+  );
+}
+
 function SystemCenterBlock({
   message,
   isOwn,
@@ -240,6 +297,8 @@ function SystemCenterBlock({
   groupExtras,
   calendarNow,
   prevMessage,
+  isGroupChat,
+  isJumpHighlighted = false,
 }: {
   message: IMessage;
   isOwn: boolean;
@@ -247,6 +306,9 @@ function SystemCenterBlock({
   groupExtras?: ChatBubbleGroupExtras;
   calendarNow: Date;
   prevMessage?: IMessage;
+  isGroupChat: boolean;
+  /** Nhảy từ danh sách ghim / tìm tin — viền quanh thẻ (poll_created, task, …). */
+  isJumpHighlighted?: boolean;
 }) {
   const { muted } = useIconColors();
   // Re-render periodically so deadline highlight updates in realtime.
@@ -266,55 +328,163 @@ function SystemCenterBlock({
       return next;
     });
   };
-  const view = useMemo(
-    () =>
-      buildSystemBubbleView(message, {
-        isOwn,
-        currentUserId: viewerUserId ?? groupExtras?.currentUserId,
-      }),
-    [message, isOwn, viewerUserId, groupExtras?.currentUserId],
-  );
+  const view = buildSystemBubbleView(message, {
+    isOwn,
+    currentUserId: viewerUserId ?? groupExtras?.currentUserId,
+    isGroupChat,
+  });
 
   const [joinBusy, setJoinBusy] = useState(false);
+
+  if (view.variant === "task_assigned_card") {
+    const isLocalCard = message.messageId.startsWith("local-task-card:");
+    const tid = String(view.taskId ?? "").trim();
+    const onBoard = (groupExtras?.groupTasks ?? []).some((x) => String(x.taskId ?? "") === tid);
+    if (isLocalCard && tid && !tid.startsWith("tmp-") && !onBoard) {
+      return null;
+    }
+  }
 
   if (view.variant === "text") {
     const rowIcon: SystemTextRowIcon = view.rowIcon ?? "pencil";
     return (
       <View className="my-3 w-full items-center px-4">
-        <SystemNotifyTimePill createdAt={message.createdAt} prevMessage={prevMessage} />
-        <View className="w-full max-w-[92%] flex-row flex-wrap items-center justify-center gap-2 rounded-2xl border border-black/[0.06] bg-card px-3 py-2.5 shadow-sm dark:border-white/10">
+        <SystemNotifyTimePill
+          createdAt={message.createdAt}
+          prevMessage={prevMessage}
+          calendarNow={calendarNow}
+          isGroup={Boolean(groupExtras)}
+        />
+        <SystemCenterCardChrome
+          isJumpHighlighted={isJumpHighlighted}
+          innerClassName="flex-row flex-wrap items-center justify-center gap-2 rounded-2xl px-3 py-2.5"
+        >
           <View className="shrink-0 pt-0.5">
             <SystemRowLeadingIcon kind={rowIcon} />
           </View>
           <Text className="max-w-[90%] text-center text-[12px] font-medium leading-[18px] text-[#666666] dark:text-zinc-300">
             {view.text}
           </Text>
-        </View>
+        </SystemCenterCardChrome>
       </View>
     );
   }
 
   if (view.variant === "poll_created_row") {
     const showVoteCta = Boolean(view.pollId && groupExtras?.onOpenPollVote);
+    const line =
+      `${view.actorLabel} đã tạo một bình chọn` + (view.question ? `: ${view.question}` : "");
     return (
       <View className="my-3 w-full items-center px-4">
-        <SystemNotifyTimePill createdAt={message.createdAt} prevMessage={prevMessage} />
-        <View className="w-full max-w-[92%] overflow-hidden rounded-2xl border border-black/[0.06] bg-card px-3 py-2.5 shadow-sm dark:border-white/10">
+        <SystemNotifyTimePill
+          createdAt={message.createdAt}
+          prevMessage={prevMessage}
+          calendarNow={calendarNow}
+          isGroup={Boolean(groupExtras)}
+        />
+        <SystemCenterCardChrome
+          isJumpHighlighted={isJumpHighlighted}
+          innerClassName="overflow-hidden rounded-2xl px-3 py-2.5"
+        >
           <View className="flex-row flex-wrap items-center justify-center gap-2">
             <BarChart2 size={16} color="#f97316" strokeWidth={2} />
-            <Text className="min-w-[120px] flex-1 text-center text-[12px] font-medium leading-[18px] text-[#666666] dark:text-zinc-300">
-              {view.actorLabel} đã tạo một bình chọn{view.question ? `: ${view.question}` : ""}
+            <Text
+              className="max-w-[88%] shrink text-center text-[12px] font-medium leading-[18px] text-[#666666] dark:text-zinc-300"
+              numberOfLines={4}
+            >
+              {line}
             </Text>
             {showVoteCta ? (
               <Pressable
                 onPress={() => groupExtras!.onOpenPollVote(view.pollId)}
-                className="rounded-full bg-orange-500 px-3 py-1.5"
+                className="ml-1 shrink-0 rounded-full bg-orange-500 px-2 py-1"
+                android_ripple={{ color: "rgba(255,255,255,0.25)" }}
               >
                 <Text className="text-[11px] font-bold text-white">Bình chọn</Text>
               </Pressable>
             ) : null}
           </View>
-        </View>
+        </SystemCenterCardChrome>
+      </View>
+    );
+  }
+
+  if (view.variant === "task_updated_row") {
+    const tid = String(view.taskId ?? "").trim();
+    const showXem = Boolean(tid && groupExtras?.onJumpToTaskCard);
+    return (
+      <View className="my-3 w-full items-center px-4">
+        <SystemNotifyTimePill
+          createdAt={message.createdAt}
+          prevMessage={prevMessage}
+          calendarNow={calendarNow}
+          isGroup={Boolean(groupExtras)}
+        />
+        <SystemCenterCardChrome
+          isJumpHighlighted={isJumpHighlighted}
+          innerClassName="flex-row items-center justify-between gap-2 rounded-2xl px-3 py-2.5"
+        >
+          <View className="min-w-0 flex-1 flex-row items-center gap-2">
+            <Pencil size={16} color="#60a5fa" strokeWidth={2} />
+            <Text
+              className="min-w-0 flex-1 text-left text-[12px] font-medium leading-[18px] text-[#666666] dark:text-zinc-300"
+              numberOfLines={2}
+            >
+              {view.actorLabel} đã cập nhật công việc
+              {view.title ? ` "${view.title}"` : ""}
+            </Text>
+          </View>
+          {showXem ? (
+            <Pressable
+              onPress={() => groupExtras!.onJumpToTaskCard!(tid)}
+              className="ml-1 h-7 shrink-0 items-center justify-center rounded-full border-2 border-blue-500 px-3"
+              android_ripple={{ color: "rgba(59,130,246,0.22)", foreground: true }}
+            >
+              <Text className="text-[11px] font-bold text-blue-600 dark:text-blue-400">Xem</Text>
+            </Pressable>
+          ) : null}
+        </SystemCenterCardChrome>
+      </View>
+    );
+  }
+
+  if (view.variant === "task_due_row") {
+    const tid = String(view.taskId ?? "").trim();
+    const showOpen = Boolean(tid && groupExtras?.onOpenGroupTaskSheet);
+    const line = view.title ? `Đến hạn: "${view.title}"` : "Đến hạn công việc";
+    return (
+      <View className="my-3 w-full items-center px-4">
+        <SystemNotifyTimePill
+          createdAt={message.createdAt}
+          prevMessage={prevMessage}
+          calendarNow={calendarNow}
+          isGroup={Boolean(groupExtras)}
+        />
+        <SystemCenterCardChrome
+          isJumpHighlighted={isJumpHighlighted}
+          innerClassName="flex-row items-center justify-between gap-2 rounded-2xl px-3 py-2.5"
+        >
+          <View className="min-w-0 flex-1 flex-row items-center gap-2">
+            <AlarmClock size={16} color="#f97316" strokeWidth={2} />
+            <Text
+              className="min-w-0 flex-1 text-left text-[12px] font-medium leading-[18px] text-[#666666] dark:text-zinc-300"
+              numberOfLines={2}
+            >
+              {line}
+            </Text>
+          </View>
+          {showOpen ? (
+            <Pressable
+              onPress={() => groupExtras!.onOpenGroupTaskSheet!(tid)}
+              className="ml-1 h-7 shrink-0 items-center justify-center rounded-full border border-black/10 bg-black/[0.03] px-3 dark:border-white/10 dark:bg-white/[0.06]"
+              android_ripple={{ color: "rgba(0,0,0,0.06)" }}
+            >
+              <Text className="text-[11px] font-bold text-foreground/80 dark:text-white/80">
+                Mở công việc
+              </Text>
+            </Pressable>
+          ) : null}
+        </SystemCenterCardChrome>
       </View>
     );
   }
@@ -413,8 +583,16 @@ function SystemCenterBlock({
 
   return (
     <View className="my-3 w-full items-center px-4">
-      <SystemNotifyTimePill createdAt={message.createdAt} prevMessage={prevMessage} />
-      <View className="w-full max-w-[92%] overflow-hidden rounded-2xl border border-black/[0.06] bg-card shadow-sm dark:border-white/10">
+      <SystemNotifyTimePill
+        createdAt={message.createdAt}
+        prevMessage={prevMessage}
+        calendarNow={calendarNow}
+        isGroup={Boolean(groupExtras)}
+      />
+      <SystemCenterCardChrome
+        isJumpHighlighted={isJumpHighlighted}
+        innerClassName="min-w-0 w-full overflow-hidden rounded-2xl"
+      >
         <View className="px-3 py-3">
           <View className="mb-2 flex-row flex-wrap items-center gap-1.5">
             <ClipboardList size={14} color="#4F46E5" strokeWidth={2} />
@@ -590,8 +768,91 @@ function SystemCenterBlock({
             ) : null}
           </View>
         ) : null}
-      </View>
+      </SystemCenterCardChrome>
     </View>
+  );
+}
+
+/** Thẻ bình chọn trong luồng chat — đồng bộ web PollVoteModal (preview + CTA). */
+function PollMessageInlineCard({
+  poll,
+  isOwn,
+  onOpen,
+  isJumpHighlighted = false,
+}: {
+  poll: PollVoteModalPoll;
+  isOwn: boolean;
+  onOpen: () => void;
+  isJumpHighlighted?: boolean;
+}) {
+  const pollBlue = "#2563eb";
+  const total = poll.options.reduce((sum, o) => sum + (o.voters?.length ?? 0), 0);
+  const cardShell = isJumpHighlighted
+    ? `overflow-hidden rounded-2xl border-2 border-blue-500 ${isOwn ? "bg-blue-500/15" : "bg-blue-500/12"}`
+    : isOwn
+      ? "overflow-hidden rounded-2xl border border-white/25 bg-white/12"
+      : "overflow-hidden rounded-2xl border border-border bg-card";
+  return (
+    <Pressable onPress={onOpen} className={cardShell}>
+      <View className="flex-row items-center gap-2 border-b border-black/[0.06] px-3 py-2.5 dark:border-white/10">
+        <View className="h-8 w-8 items-center justify-center rounded-xl bg-orange-500/15 dark:bg-orange-900/30">
+          <BarChart2 size={16} color="#ea580c" strokeWidth={2} />
+        </View>
+        <Text className={`text-[12px] font-bold ${isOwn ? "text-white" : "text-foreground"}`}>
+          Bình chọn
+        </Text>
+        {poll.isClosed ? (
+          <Text className="text-[10px] font-semibold text-muted-foreground">Đã đóng</Text>
+        ) : null}
+      </View>
+      <View className="px-3 py-2.5">
+        <View
+          className={`rounded-xl p-3 ${isOwn ? "bg-white/10" : "bg-black/[0.05] dark:bg-white/[0.06]"}`}
+        >
+          <Text
+            className={`text-[14px] font-extrabold ${isOwn ? "text-white" : "text-foreground"}`}
+          >
+            {poll.question}
+          </Text>
+          <Text className={`mt-1 text-[12px] ${isOwn ? "text-white/75" : "text-muted-foreground"}`}>
+            {poll.isMultipleChoice ? "Chọn nhiều đáp án" : "Chọn một đáp án"} • {total} lượt bình
+            chọn
+          </Text>
+        </View>
+        {poll.options.map((opt, idx) => {
+          const votes = opt.voters?.length ?? 0;
+          const pct = total > 0 ? Math.round((votes / total) * 100) : 0;
+          return (
+            <View key={`${poll.pollId}-opt-${idx}`} className="mt-2.5">
+              <Text
+                className={`text-[13px] font-semibold ${isOwn ? "text-white" : "text-foreground"}`}
+                numberOfLines={3}
+              >
+                {opt.text}
+              </Text>
+              <Text
+                className={`mt-1 text-[11px] ${isOwn ? "text-white/70" : "text-muted-foreground"}`}
+              >
+                {votes} lượt ({pct}%)
+              </Text>
+              <View
+                className={`mt-2 h-2 overflow-hidden rounded-full ${isOwn ? "bg-white/15" : "bg-black/5 dark:bg-white/10"}`}
+              >
+                <View
+                  className="h-full rounded-full"
+                  style={{ width: `${pct}%`, backgroundColor: pollBlue }}
+                />
+              </View>
+            </View>
+          );
+        })}
+        <View className="mt-3 items-end">
+          <View className="rounded-full bg-orange-500 px-3 py-1.5">
+            <Text className="text-[11px] font-bold text-white">Mở bình chọn</Text>
+          </View>
+        </View>
+      </View>
+    </Pressable>
   );
 }
 
@@ -690,6 +951,18 @@ function parseTitleBodyJson(content: string): { title: string; body?: string } |
   }
 }
 
+/** Gộp poll trong luồng với board nhóm — logic thuần (không hook) để tránh lỗi rules-of-hooks / partial stage. */
+function mergedThreadPollForBubble(
+  message: IMessage,
+  isGroup: boolean,
+  groupPolls: PollVoteModalPoll[] | undefined,
+): PollVoteModalPoll | null {
+  if (message.type !== "poll" || !isGroup || !groupPolls) return null;
+  const partial = parsePollPayloadFromMessageContent(message.content ?? "");
+  if (!partial?.pollId) return null;
+  return mergePollWithGroupList(partial, groupPolls);
+}
+
 // ── Main ChatBubble ─────────────────────────────────────────────────────
 
 export const ChatBubble = ({
@@ -701,6 +974,7 @@ export const ChatBubble = ({
   nextMessage,
   onLongPress,
   onPressReplyTo,
+  isJumpHighlighted = false,
   groupExtras,
 }: ChatBubbleProps) => {
   const { width: windowWidth } = useWindowDimensions();
@@ -709,60 +983,62 @@ export const ChatBubble = ({
   const isRecalled = Boolean(message.isRecalled);
   const isDeleted = Boolean(message.isDeleted);
 
-  /** Luôn qua format preview — không render JSON thô trong bubble chữ. */
-  const captionPlainText = useMemo(
-    () =>
-      formatChatPreviewLine(
-        {
-          type: message.type,
-          content: message.content ?? "",
-          senderId: message.senderId,
-          senderDisplayName: message.senderDisplayName,
-          isRecalled: Boolean(message.isRecalled),
-        },
-        viewerUserId ?? "",
-      ),
-    [
-      message.type,
-      message.content,
-      message.senderId,
-      message.senderDisplayName,
-      message.isRecalled,
-      viewerUserId,
-    ],
+  const captionPlainText = formatChatPreviewLine(
+    {
+      type: message.type,
+      content: message.content ?? "",
+      senderId: message.senderId,
+      senderDisplayName: message.senderDisplayName,
+      isRecalled: Boolean(message.isRecalled),
+    },
+    viewerUserId ?? "",
   );
 
-  const showDateSeparator = !prevMessage || !isSameDay(prevMessage.createdAt, message.createdAt);
+  const mergedThreadPoll = mergedThreadPollForBubble(message, isGroup, groupExtras?.groupPolls);
 
-  if (message.type === "system" || isCenterPositionMessage(message)) {
+  const isSystemCenter = message.type === "system" || isCenterPositionMessage(message);
+  const dayChangedFromPrev = chatSystemPillShowDateLine(prevMessage?.createdAt, message.createdAt);
+  /** Nhóm: tin system đã có pill giờ+ngày — không lặp chip `DateSeparator` (dễ dính sát ô nhập khi FlatList inverted). */
+  const showDateSeparator = dayChangedFromPrev && !(isGroup && isSystemCenter);
+
+  if (isSystemCenter) {
     return (
       <>
-        {showDateSeparator && <DateSeparator date={message.createdAt} />}
-        <SystemCenterBlock
-          message={message}
-          isOwn={isOwn}
-          viewerUserId={viewerUserId}
-          groupExtras={isGroup ? groupExtras : undefined}
-          calendarNow={calendarNow}
-          prevMessage={prevMessage}
-        />
+        {showDateSeparator && <DateSeparator date={message.createdAt} now={calendarNow} />}
+        <View className="w-full">
+          <SystemCenterBlock
+            message={message}
+            isOwn={isOwn}
+            viewerUserId={viewerUserId}
+            groupExtras={isGroup ? groupExtras : undefined}
+            calendarNow={calendarNow}
+            prevMessage={prevMessage}
+            isGroupChat={Boolean(isGroup)}
+            isJumpHighlighted={isJumpHighlighted}
+          />
+        </View>
       </>
     );
   }
 
   if (message.type === "call") {
-    const isSameMinuteAsNextCall =
-      !!nextMessage && isSameCalendarMinute(message.createdAt, nextMessage.createdAt);
-    const showCallTimestampFooter = Boolean(isGroup && !isSameMinuteAsNextCall);
+    const isSameSenderAsNextCall =
+      !!nextMessage &&
+      nextMessage.senderId === message.senderId &&
+      chatMessagesSameLocalDay(nextMessage.createdAt, message.createdAt);
+    const showCallTimestampFooter = !isSameSenderAsNextCall;
     return (
       <>
-        {showDateSeparator && <DateSeparator date={message.createdAt} />}
-        <CallLogMessage
-          message={message}
-          isOwn={isOwn}
-          showTimestampFooter={showCallTimestampFooter}
-          calendarNow={calendarNow}
-        />
+        {showDateSeparator && <DateSeparator date={message.createdAt} now={calendarNow} />}
+        <View
+          className={`w-full ${isJumpHighlighted ? "bg-blue-500/12 rounded-2xl border-2 border-blue-500 py-1" : ""}`}
+        >
+          <CallLogMessage
+            message={message}
+            isOwn={isOwn}
+            showTimestampFooter={showCallTimestampFooter}
+          />
+        </View>
       </>
     );
   }
@@ -770,11 +1046,11 @@ export const ChatBubble = ({
   const isSameSenderAsPrev =
     !!prevMessage &&
     prevMessage.senderId === message.senderId &&
-    isSameDay(prevMessage.createdAt, message.createdAt);
+    chatMessagesSameLocalDay(prevMessage.createdAt, message.createdAt);
   const isSameSenderAsNext =
     !!nextMessage &&
     nextMessage.senderId === message.senderId &&
-    isSameDay(nextMessage.createdAt, message.createdAt);
+    chatMessagesSameLocalDay(nextMessage.createdAt, message.createdAt);
   const showSenderName = !isOwn && isGroup && !isSameSenderAsPrev;
   const isSameMinuteAsNext =
     !!nextMessage && isSameCalendarMinute(message.createdAt, nextMessage.createdAt);
@@ -810,9 +1086,13 @@ export const ChatBubble = ({
     message.type === "poll" || message.type === "schedule"
       ? parseTitleBodyJson(message.content ?? "")
       : null;
+
+  const jumpHighlightOnPollInline =
+    Boolean(isJumpHighlighted) && message.type === "poll" && mergedThreadPoll != null;
+
   const hasPollScheduleBlock =
     (message.type === "poll" || message.type === "schedule") &&
-    (structuredPollSchedule !== null || hasCaption);
+    (mergedThreadPoll != null || structuredPollSchedule !== null || hasCaption);
 
   const isEmojiMessage = message.type === "emoji";
   const fallbackLabel = getMessageTypeLabel(message.type);
@@ -832,10 +1112,10 @@ export const ChatBubble = ({
 
   return (
     <>
-      {showDateSeparator && <DateSeparator date={message.createdAt} />}
+      {showDateSeparator && <DateSeparator date={message.createdAt} now={calendarNow} />}
 
       <View
-        className={`w-full ${isSameSenderAsPrev ? "mt-0.5" : "mt-2"} ${isOwn ? "items-end" : "items-start"}`}
+        className={`w-full ${isSameSenderAsPrev ? "mt-0.5" : "mt-2"} ${isOwn ? "items-end" : "items-start"} ${isJumpHighlighted && !jumpHighlightOnPollInline ? "bg-blue-500/12 rounded-[22px] border-2 border-blue-500 p-1" : ""}`}
       >
         {showSenderName && message.senderDisplayName ? (
           <Text className="mb-1 ml-2 text-[11px] font-semibold text-primary">
@@ -969,8 +1249,17 @@ export const ChatBubble = ({
                   </Pressable>
                 ) : null}
 
-                {(message.type === "poll" || message.type === "schedule") &&
-                structuredPollSchedule ? (
+                {message.type === "poll" && mergedThreadPoll && groupExtras ? (
+                  <View className="mt-1 w-full min-w-[260px] max-w-full self-stretch">
+                    <PollMessageInlineCard
+                      poll={mergedThreadPoll}
+                      isOwn={isOwn}
+                      isJumpHighlighted={isJumpHighlighted}
+                      onOpen={() => groupExtras.onOpenPollVote(mergedThreadPoll.pollId)}
+                    />
+                  </View>
+                ) : (message.type === "poll" || message.type === "schedule") &&
+                  structuredPollSchedule ? (
                   <View
                     className={
                       isOwn
@@ -1048,9 +1337,7 @@ export const ChatBubble = ({
             className={`mt-0.5 flex-row items-center gap-1 px-1 ${isOwn ? "flex-row-reverse" : "flex-row"}`}
           >
             <Text className="text-[11px] text-muted-foreground">
-              {isGroup
-                ? formatGroupBubbleFooterTime(message.createdAt, calendarNow)
-                : formatTimestamp(message.createdAt)}
+              {formatTimestamp(message.createdAt)}
             </Text>
             {isOwn && !isRecalled && !isDeleted && (
               <StatusIcon status={message.status} primary={primary} muted={muted} />
@@ -1089,13 +1376,15 @@ function ChatBubbleVideoPlayer({ playUri }: { playUri: string }) {
   );
 }
 
-function DateSeparator({ date }: { date: string }) {
+function DateSeparator({ date, now }: { date: string; now: Date }) {
+  const iso = (date ?? "").trim();
+  if (!iso) return null;
+  const label = formatChatSystemPillDateLabel(iso, now);
+  if (!label) return null;
   return (
     <View className="my-3 items-center">
       <View className="rounded-full bg-muted/50 px-3 py-1">
-        <Text className="text-[11px] font-medium text-muted-foreground">
-          {formatChatFrameDate(date)}
-        </Text>
+        <Text className="text-[11px] font-medium text-muted-foreground">{label}</Text>
       </View>
     </View>
   );

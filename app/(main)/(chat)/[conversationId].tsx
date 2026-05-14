@@ -33,12 +33,15 @@ import {
   useJoinTaskMutation,
   useUnvotePollMutation,
   useVotePollMutation,
+  useClosePollMutation,
+  useAddPollOptionMutation,
 } from "@/store/api/chatApi";
 import { useCallContext } from "@/contexts/CallContext";
 import { useAppDispatch, useAppSelector } from "@/hooks/useAppStore";
 import { useChat } from "@/hooks/useChat";
 import { useChatMessageData } from "@/hooks/useChatMessageData";
 import { useConversationLifecycle } from "@/hooks/useConversationLifecycle";
+import { useTaskReminderScheduler, type GroupTaskLike } from "@/hooks/useTaskReminderScheduler";
 import { setReplyingTo, clearReplyingTo, clearChatFrameBanner } from "@/store/slices/chatSlice";
 import type { IMessage, TypingUserEntry } from "@/types/chat.types";
 import { prepareLocalFileForUpload } from "@/utils/uploadAttachment";
@@ -69,7 +72,28 @@ function toPollVoteModalPoll(raw: unknown): PollVoteModalPoll | null {
     options,
     isClosed: Boolean(o.isClosed),
     isMultipleChoice: Boolean(o.isMultipleChoice),
+    isPinned: Boolean(o.isPinned),
+    creatorId: typeof o.creatorId === "string" ? o.creatorId : undefined,
   };
+}
+
+function findPollCreatedSystemMessage(messages: IMessage[], pollId: string): IMessage | null {
+  const id = String(pollId).trim();
+  if (!id) return null;
+  for (const m of messages) {
+    if (m.type !== "system") continue;
+    const raw = String(m.content ?? "").trim();
+    if (!raw.startsWith("{")) continue;
+    try {
+      const obj = JSON.parse(raw) as { kind?: string; poll?: { pollId?: string } };
+      if (obj?.kind === "poll_created" && String(obj?.poll?.pollId ?? "").trim() === id) {
+        return m;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return null;
 }
 
 /**
@@ -97,6 +121,8 @@ export default function ChatDetailScreen() {
   );
 
   const listRef = useRef<FlatList<IMessage>>(null);
+  const jumpHighlightClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [jumpHighlightMessageId, setJumpHighlightMessageId] = useState<string | null>(null);
   const [selectedMessage, setSelectedMessage] = useState<IMessage | null>(null);
   const [activePollId, setActivePollId] = useState<string | null>(null);
   const [votingIndex, setVotingIndex] = useState<number | null>(null);
@@ -126,6 +152,23 @@ export default function ChatDetailScreen() {
   useEffect(() => {
     dispatch(clearChatFrameBanner());
   }, [conversationId, dispatch]);
+
+  useEffect(() => {
+    setJumpHighlightMessageId(null);
+    if (jumpHighlightClearRef.current) {
+      clearTimeout(jumpHighlightClearRef.current);
+      jumpHighlightClearRef.current = null;
+    }
+  }, [conversationId]);
+
+  useEffect(() => {
+    return () => {
+      if (jumpHighlightClearRef.current) {
+        clearTimeout(jumpHighlightClearRef.current);
+        jumpHighlightClearRef.current = null;
+      }
+    };
+  }, []);
 
   const { initiateCall, initiateGroupCall, joinActiveGroupCall } = useCallContext();
 
@@ -190,21 +233,47 @@ export default function ChatDetailScreen() {
     });
   }, [groupTasksFromApi, localParticipantsByTaskId]);
 
+  const tasksForReminderScheduler = useMemo((): GroupTaskLike[] => {
+    return (groupTasks as GroupTaskLike[]).filter((t) => String(t?.taskId ?? "").trim() !== "");
+  }, [groupTasks]);
+
+  useTaskReminderScheduler({
+    conversationId: isGroup && conversationId ? conversationId : null,
+    tasks: tasksForReminderScheduler,
+    members: groupMembersForPerm.map((m) => ({
+      userId: m.userId,
+      displayName: m.displayName ?? null,
+    })),
+    currentUserId: currentUserId ?? "",
+  });
+
   const pollsList = useMemo(() => {
     const raw = pollsEnvelope?.data;
     return Array.isArray(raw) ? raw : [];
   }, [pollsEnvelope]);
 
+  const groupPollsForChat = useMemo((): PollVoteModalPoll[] => {
+    return pollsList
+      .map((p) => toPollVoteModalPoll(p))
+      .filter((x): x is PollVoteModalPoll => x != null);
+  }, [pollsList]);
+
   const activePoll = useMemo(() => {
     if (!activePollId) return null;
     const found = pollsList.find((p) => String((p as { pollId?: string }).pollId) === activePollId);
-    return found ? toPollVoteModalPoll(found) : null;
-  }, [activePollId, pollsList]);
+    const base = found ? toPollVoteModalPoll(found) : null;
+    if (!base) return null;
+    const pinMsg = findPollCreatedSystemMessage(allMessages, activePollId);
+    const pinnedFromMessage = Boolean(pinMsg?.isPinned);
+    return { ...base, isPinned: pinnedFromMessage || Boolean(base.isPinned) };
+  }, [activePollId, pollsList, allMessages]);
 
   const [joinTaskMut] = useJoinTaskMutation();
   const [deleteTaskMut] = useDeleteTaskMutation();
   const [votePollMut] = useVotePollMutation();
   const [unvotePollMut] = useUnvotePollMutation();
+  const [closePollMut] = useClosePollMutation();
+  const [addPollOptionMut] = useAddPollOptionMutation();
 
   const consumeOpenGroupTaskEditor = useCallback(() => {
     setOpenGroupTaskEditorId(null);
@@ -299,33 +368,35 @@ export default function ChatDetailScreen() {
     [conversationId, currentUserId, pollsList, unvotePollMut, votePollMut],
   );
 
-  const groupExtras = useMemo((): ChatBubbleGroupExtras | undefined => {
-    if (!isGroup || !conversationId || !currentUserId) return undefined;
-    return {
-      conversationId,
-      currentUserId,
-      groupMembers: groupMembersForPerm.map((m) => ({
-        userId: m.userId,
-        displayName: String(m.displayName ?? m.userId ?? "").trim() || m.userId,
-      })),
-      groupTasks,
-      joinTask,
-      onTaskJoined,
-      onOpenPollVote: (pollId) => setActivePollId(pollId),
-      onEditGroupTask: handleEditGroupTask,
-      onDeleteGroupTask: handleDeleteGroupTask,
-    };
-  }, [
-    isGroup,
-    conversationId,
-    currentUserId,
-    groupMembersForPerm,
-    groupTasks,
-    joinTask,
-    onTaskJoined,
-    handleEditGroupTask,
-    handleDeleteGroupTask,
-  ]);
+  const handleClosePoll = useCallback(
+    async (pollId: string) => {
+      const id = String(pollId).trim();
+      if (!conversationId || !id) return;
+      try {
+        await closePollMut({ groupId: conversationId, pollId: id }).unwrap();
+        toast.success("Đã đóng bình chọn");
+        setActivePollId(null);
+      } catch {
+        toast.error("Không đóng được bình chọn");
+      }
+    },
+    [conversationId, closePollMut],
+  );
+
+  const handleAddPollOption = useCallback(
+    async (pollId: string, text: string) => {
+      const id = String(pollId).trim();
+      const t = text.trim();
+      if (!conversationId || !id || !t) return;
+      try {
+        await addPollOptionMut({ groupId: conversationId, pollId: id, text: t }).unwrap();
+        toast.success("Đã thêm lựa chọn");
+      } catch {
+        toast.error("Không thêm được lựa chọn");
+      }
+    },
+    [conversationId, addPollOptionMut],
+  );
 
   const handleSendMessage = useCallback(
     (content: string) => {
@@ -427,13 +498,111 @@ export default function ChatDetailScreen() {
 
   const handleJumpToMessage = useCallback(
     (messageId: string) => {
-      const index = allMessages.findIndex((m) => m.messageId === messageId);
-      if (index !== -1) {
-        listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
+      const mid = String(messageId ?? "").trim();
+      if (!mid) return;
+
+      if (jumpHighlightClearRef.current) {
+        clearTimeout(jumpHighlightClearRef.current);
+        jumpHighlightClearRef.current = null;
       }
+      setJumpHighlightMessageId(mid);
+
+      const tryScroll = (remaining: number) => {
+        const index = allMessages.findIndex((m) => m.messageId === mid);
+        if (index !== -1) {
+          try {
+            listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
+          } catch {
+            listRef.current?.scrollToIndex({ index, animated: true });
+          }
+          return;
+        }
+        if (remaining <= 0) {
+          setJumpHighlightMessageId(null);
+          toast.info("Chưa thấy tin trong danh sách. Kéo lên để tải thêm tin cũ rồi thử lại.");
+          return;
+        }
+        setTimeout(() => tryScroll(remaining - 1), 120);
+      };
+
+      requestAnimationFrame(() => tryScroll(10));
+
+      jumpHighlightClearRef.current = setTimeout(() => {
+        setJumpHighlightMessageId(null);
+        jumpHighlightClearRef.current = null;
+      }, 2300);
     },
     [allMessages],
   );
+
+  const handleJumpToTaskCard = useCallback(
+    (taskId: string) => {
+      const tid = String(taskId ?? "").trim();
+      if (!tid || !conversationId) return;
+      let targetMessageId = `local-task-card:${conversationId}:${tid}`;
+      for (const m of allMessages) {
+        if (m.type !== "system") continue;
+        const raw = String(m.content ?? "").trim();
+        if (!raw.startsWith("{")) continue;
+        try {
+          const p = JSON.parse(raw) as { kind?: string; task?: { taskId?: string } };
+          if (p?.kind === "task_assigned") {
+            const mtid = String(p?.task?.taskId ?? "").trim();
+            if (mtid === tid) {
+              targetMessageId = m.messageId;
+              break;
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      handleJumpToMessage(targetMessageId);
+    },
+    [allMessages, conversationId, handleJumpToMessage],
+  );
+
+  const handleOpenGroupTaskFromSystem = useCallback((taskId: string) => {
+    const id = String(taskId).trim();
+    if (!id) return;
+    setGroupModalInitial("tasks");
+    setOpenGroupTaskEditorId(id);
+    setGroupManageOpen(true);
+  }, []);
+
+  const groupExtras = useMemo((): ChatBubbleGroupExtras | undefined => {
+    if (!isGroup || !conversationId || !currentUserId) return undefined;
+    return {
+      conversationId,
+      currentUserId,
+      groupMembers: groupMembersForPerm.map((m) => ({
+        userId: m.userId,
+        displayName: String(m.displayName ?? m.userId ?? "").trim() || m.userId,
+      })),
+      groupTasks,
+      groupPolls: groupPollsForChat,
+      joinTask,
+      onTaskJoined,
+      onOpenPollVote: (pollId) => setActivePollId(pollId),
+      onJumpToTaskCard: handleJumpToTaskCard,
+      onOpenGroupTaskSheet: handleOpenGroupTaskFromSystem,
+      onEditGroupTask: handleEditGroupTask,
+      onDeleteGroupTask: handleDeleteGroupTask,
+    };
+  }, [
+    isGroup,
+    conversationId,
+    currentUserId,
+    groupMembersForPerm,
+    groupTasks,
+    groupPollsForChat,
+    joinTask,
+    onTaskJoined,
+    handleJumpToTaskCard,
+    handleOpenGroupTaskFromSystem,
+    handleEditGroupTask,
+    handleDeleteGroupTask,
+  ]);
 
   const handleTyping = useCallback(() => {
     if (conversationId) emitTyping(conversationId);
@@ -471,6 +640,20 @@ export default function ChatDetailScreen() {
       }
     },
     [allMessages, conversation, myRoleInGroup, togglePinMessage],
+  );
+
+  const handleTogglePinPoll = useCallback(
+    (pollId: string) => {
+      const id = String(pollId).trim();
+      if (!id) return;
+      const m = findPollCreatedSystemMessage(allMessages, id);
+      if (!m) {
+        toast.error("Không tìm thấy tin tạo bình chọn để ghim.");
+        return;
+      }
+      void handleTogglePinForSheet(m);
+    },
+    [allMessages, handleTogglePinForSheet],
   );
 
   const handlePressAudioCall = useCallback(() => {
@@ -511,6 +694,11 @@ export default function ChatDetailScreen() {
     activeGroupCall?.conversationId === conversationId &&
     !inThisGroupCallFlow;
 
+  const joinGroupCallLabel = useMemo(() => {
+    if (!showJoinGroupBanner) return undefined;
+    return activeGroupCall?.type === "video" ? "Tham gia video" : "Tham gia thoại";
+  }, [showJoinGroupBanner, activeGroupCall?.type]);
+
   if (isLoading) {
     return <Loading fullScreen message="Đang tải tin nhắn..." />;
   }
@@ -536,7 +724,7 @@ export default function ChatDetailScreen() {
           onPressCall={handlePressAudioCall}
           onPressVideoCall={showJoinGroupBanner ? joinActiveGroupCall : handlePressVideoCall}
           videoCtaVariant={showJoinGroupBanner ? "join" : "icon"}
-          videoCtaLabel={showJoinGroupBanner ? "Tham gia" : undefined}
+          videoCtaLabel={joinGroupCallLabel}
         />
       )}
 
@@ -555,6 +743,8 @@ export default function ChatDetailScreen() {
           onConsumedInitialTaskEditor={consumeOpenGroupTaskEditor}
           onJumpToMessage={handleJumpToMessage}
           onOpenPollVote={(pollId) => setActivePollId(pollId)}
+          onClosePoll={handleClosePoll}
+          onAddPollOption={handleAddPollOption}
         />
       ) : null}
 
@@ -574,7 +764,10 @@ export default function ChatDetailScreen() {
       />
 
       {frameBanner && frameBanner.conversationId === conversationId ? (
-        <ChatFrameBanner banner={frameBanner} />
+        <ChatFrameBanner
+          banner={frameBanner}
+          onOpenPoll={isGroup ? (pollId) => setActivePollId(pollId) : undefined}
+        />
       ) : null}
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
@@ -590,8 +783,8 @@ export default function ChatDetailScreen() {
           }}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{
-            paddingHorizontal: 8,
-            paddingBottom: 16,
+            paddingHorizontal: 16,
+            paddingVertical: 16,
             flexGrow: allMessages.length === 0 ? 1 : undefined,
           }}
           renderItem={({ item, index }) => (
@@ -604,6 +797,7 @@ export default function ChatDetailScreen() {
               nextMessage={allMessages[index - 1]}
               onLongPress={handleLongPressMessage}
               onPressReplyTo={handleJumpToMessage}
+              isJumpHighlighted={jumpHighlightMessageId === item.messageId}
               groupExtras={groupExtras}
             />
           )}
@@ -616,7 +810,10 @@ export default function ChatDetailScreen() {
           }
         />
 
-        <View style={{ paddingBottom: insets.bottom }}>
+        <View
+          className="border-t border-border/40 bg-background/95 dark:bg-background"
+          style={{ paddingBottom: insets.bottom }}
+        >
           <TypingIndicator typingUsers={typingUsers} currentUserId={currentUserId ?? ""} />
           <ChatInput
             onSend={handleSendMessage}
@@ -636,6 +833,8 @@ export default function ChatDetailScreen() {
         votingIndex={votingIndex}
         onClose={() => setActivePollId(null)}
         onToggleOption={handleTogglePollVote}
+        onClosePoll={isGroup ? handleClosePoll : undefined}
+        onTogglePinPoll={isGroup ? handleTogglePinPoll : undefined}
       />
 
       <MessageActionSheet

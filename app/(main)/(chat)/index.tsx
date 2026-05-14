@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback, useEffect } from "react";
 import { router } from "expo-router";
-import { FlatList, Pressable, Text, View, RefreshControl, Alert } from "react-native";
+import { FlatList, Pressable, Text, View, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   CloudOff,
@@ -64,7 +64,7 @@ export default function ChatListScreen() {
   const [quickMenuConversation, setQuickMenuConversation] = useState<IConversation | null>(null);
   const { primary, muted: iconMuted } = useIconColors();
 
-  const onRefresh = useCallback(() => {
+  const handleRetryFetch = useCallback(() => {
     void refetch();
   }, [refetch]);
 
@@ -271,7 +271,7 @@ export default function ChatListScreen() {
             icon={CloudOff}
             title="Không tải được tin nhắn"
             description="Kiểm tra kết nối mạng và thử lại."
-            action={{ label: "Thử lại", onPress: onRefresh }}
+            action={{ label: "Thử lại", onPress: handleRetryFetch }}
           />
         ) : (
           <FlatList
@@ -284,9 +284,6 @@ export default function ChatListScreen() {
                   ? 1
                   : undefined,
             }}
-            refreshControl={
-              <RefreshControl refreshing={isFetching} onRefresh={onRefresh} tintColor={primary} />
-            }
             renderItem={({ item, index }) => {
               const prev = index > 0 ? listRows[index - 1] : null;
               const showSep = prev?.kind === "conversation" && item.kind === "conversation";

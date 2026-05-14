@@ -11,6 +11,7 @@ import {
   useVerifyLoginOtpMutation,
   type AuthTokenResponse,
 } from "@/store/api/authApi";
+import { clearMarkAsReadDedupeCache } from "@/utils/markAsReadSessionDedupe";
 import { clearAuthState, setAuthState } from "@/store/slices/authSlice";
 import { secureStorage } from "@/services/storage";
 import { fetchCurrentUserProfile } from "@/services/userProfile";
@@ -153,6 +154,7 @@ export const useAuth = () => {
       // Luôn cho phép logout local để tránh user bị kẹt phiên đăng nhập.
     }
     await secureStorage.clearTokens();
+    clearMarkAsReadDedupeCache();
     dispatch(clearAuthState());
     router.replace("/(auth)/login");
   }, [accessToken, dispatch, logoutMutation, router]);
