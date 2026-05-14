@@ -5,6 +5,42 @@ export function formatTimestamp(isoString: string): string {
   });
 }
 
+const MINUTE_MS = 60_000;
+const HOUR_MS = 3_600_000;
+const DAY_MS = 86_400_000;
+
+/**
+ * Thời gian danh sách hội thoại kiểu Zalo — đồng bộ web `formatZaloConversationTime`.
+ * `now` nên lấy từ `useCalendarNow()` (tick mỗi phút).
+ */
+export function formatZaloConversationTime(iso: string, now: Date = new Date()): string {
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return "";
+
+  const diff = now.getTime() - t.getTime();
+  if (diff < 0) return "Vài giây";
+
+  if (diff < MINUTE_MS) return "Vài giây";
+  if (diff < 60 * MINUTE_MS) {
+    const minutes = Math.floor(diff / MINUTE_MS);
+    return `${Math.max(1, minutes)} phút`;
+  }
+  if (diff < 24 * HOUR_MS) {
+    const hours = Math.floor(diff / HOUR_MS);
+    return `${Math.max(1, hours)} giờ`;
+  }
+  if (diff < 7 * DAY_MS) {
+    const days = Math.floor(diff / DAY_MS);
+    return `${Math.max(1, days)} ngày`;
+  }
+
+  const nowY = now.getFullYear();
+  if (t.getFullYear() !== nowY) {
+    return `${String(t.getDate()).padStart(2, "0")}/${String(t.getMonth() + 1).padStart(2, "0")}/${t.getFullYear()}`;
+  }
+  return `${String(t.getDate()).padStart(2, "0")}/${String(t.getMonth() + 1).padStart(2, "0")}`;
+}
+
 export function formatDateLabel(isoString: string, now: Date = new Date()): string {
   const date = new Date(isoString);
   const today = new Date(now);
@@ -20,11 +56,55 @@ export function formatDateLabel(isoString: string, now: Date = new Date()): stri
   });
 }
 
+/**
+ * Ngày gửi tin trong khung chat nhóm — luôn DD/MM/YYYY (không «Hôm nay»/«Hôm qua»),
+ * đồng bộ cách đọc mốc ngày với giờ tin nhắn.
+ */
+export function formatChatFrameDate(isoString: string): string {
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
 export function isSameDay(a: string, b: string): boolean {
   return a.slice(0, 10) === b.slice(0, 10);
 }
 
+/** Cùng phút lịch (ngày + giờ + phút) — gom một dòng giờ dưới tin cuối trong phút đó (nhóm). */
+export function isSameCalendarMinute(a: string, b: string): boolean {
+  const da = new Date(a);
+  const db = new Date(b);
+  if (Number.isNaN(da.getTime()) || Number.isNaN(db.getTime())) return false;
+  return (
+    da.getFullYear() === db.getFullYear() &&
+    da.getMonth() === db.getMonth() &&
+    da.getDate() === db.getDate() &&
+    da.getHours() === db.getHours() &&
+    da.getMinutes() === db.getMinutes()
+  );
+}
+
 const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/**
+ * Giờ/ngày dưới bubble nhóm (Zalo): cùng ngày lịch → chỉ HH:mm; khác ngày → HH:mm · DD/MM/YYYY.
+ * Chỉ gắn vào tin cuối trong cùng một phút lịch — xem `isSameCalendarMinute` + `showTimestamp` ở `ChatBubble`.
+ */
+export function formatGroupBubbleFooterTime(iso: string, now: Date = new Date()): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const clock = formatTimestamp(iso);
+  const sameCalendarDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+  if (sameCalendarDay) return clock;
+  return `${clock} · ${formatChatFrameDate(iso)}`;
+}
 
 /**
  * Giờ trên danh sách chat — luôn có mốc giờ (HH:mm kèm ngày khi không phải hôm nay).

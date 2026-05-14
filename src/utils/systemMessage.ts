@@ -19,14 +19,22 @@ type SystemPoll = {
   optionText?: string;
 };
 
-/** Icon hàng thông báo giữa — đồng bộ web `ChatMessageList` (Pencil / BarChart / …). */
+/** Icon hàng thông báo giữa — đồng bộ web `ChatMessageList` (Pencil / Pin / BarChart / AlarmClock / …). */
 export type SystemTextRowIcon =
   | "pencil"
+  | "pin"
   | "checkCheck"
+  | "alarmClock"
   | "alarmOff"
   | "barChartBlue"
   | "barChartOrange"
   | "barChartMuted";
+
+function systemRowIconForPlainText(text: string): SystemTextRowIcon {
+  const t = (text ?? "").trim();
+  if (t.includes("đã ghim") || t.includes("đã bỏ ghim")) return "pin";
+  return "pencil";
+}
 
 export type SystemBubbleView =
   | { variant: "text"; text: string; rowIcon?: SystemTextRowIcon }
@@ -108,7 +116,7 @@ export function buildSystemBubbleView(
   const baseText = preprocessSystemPlainText(message, ctx);
   const raw = baseText.trim();
   if (!raw.startsWith("{")) {
-    return { variant: "text", text: baseText, rowIcon: "pencil" };
+    return { variant: "text", text: baseText, rowIcon: systemRowIconForPlainText(baseText) };
   }
 
   try {
@@ -152,10 +160,8 @@ export function buildSystemBubbleView(
     }
     if (kind === "task_due") {
       const title = String(obj.task?.title ?? "").trim();
-      const line = title
-        ? `${who} đã đến hạn công việc "${title}"`
-        : `${who} đã đến hạn một công việc`;
-      return { variant: "text", text: line, rowIcon: "pencil" };
+      const line = title ? `Đến hạn: "${title}"` : "Đến hạn công việc";
+      return { variant: "text", text: line, rowIcon: "alarmClock" };
     }
 
     if (kind === "poll_created") {
@@ -195,9 +201,10 @@ export function buildSystemBubbleView(
       return { variant: "text", text: line, rowIcon: "barChartMuted" };
     }
 
-    return { variant: "text", text: "Thông báo nhóm", rowIcon: "pencil" };
+    return { variant: "text", text: baseText, rowIcon: systemRowIconForPlainText(baseText) };
   } catch {
-    return { variant: "text", text: "Thông báo nhóm", rowIcon: "pencil" };
+    const fallback = baseText.trim() ? baseText : "Thông báo nhóm";
+    return { variant: "text", text: fallback, rowIcon: systemRowIconForPlainText(fallback) };
   }
 }
 
