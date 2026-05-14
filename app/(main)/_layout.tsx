@@ -1,9 +1,10 @@
-import { Fragment } from "react";
+// Fragment import removed — replaced by View wrapper
 import { Tabs } from "expo-router";
-import { useColorScheme } from "react-native";
+import { useColorScheme, View } from "react-native";
 import { MessageCircleMore, Newspaper, PlayCircle, User, Users } from "lucide-react-native";
 
 import { ChatSocketBootstrap } from "@/components/chat/ChatSocketBootstrap";
+import { ReelUploadBanner } from "@/features/reels/components/ReelUploadBanner";
 
 interface TabConfig {
   name: string;
@@ -24,7 +25,7 @@ export default function MainLayout() {
   const isDark = colorScheme === "dark";
 
   return (
-    <Fragment>
+    <View style={{ flex: 1 }}>
       <ChatSocketBootstrap />
       <Tabs
         screenOptions={{
@@ -59,6 +60,7 @@ export default function MainLayout() {
           />
         ))}
       </Tabs>
-    </Fragment>
+      <ReelUploadBanner />
+    </View>
   );
 }
