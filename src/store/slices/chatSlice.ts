@@ -11,6 +11,8 @@ export interface ChatFrameBanner {
   atIso: string;
   /** Không set → coi như `task_assigned` (giống web `ChatGroupFrameNoticeBar`). */
   variant?: ChatFrameBannerVariant;
+  /** Bình chọn — bấm banner mở modal (đồng bộ web `poll_created` onClick). */
+  pollId?: string | null;
 }
 
 interface ChatState {

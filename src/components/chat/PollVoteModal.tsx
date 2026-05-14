@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, Text, View } from "react-native";
-import { BarChart2, Check, X } from "lucide-react-native";
+import { BarChart2, Check, Lock, Pin, X } from "lucide-react-native";
 
 import { useIconColors } from "@/hooks/useIconColors";
 
@@ -12,6 +12,8 @@ export type PollVoteModalPoll = {
   options: PollVoteOption[];
   isClosed?: boolean;
   isMultipleChoice?: boolean;
+  isPinned?: boolean;
+  creatorId?: string;
 };
 
 interface PollVoteModalProps {
@@ -21,6 +23,10 @@ interface PollVoteModalProps {
   votingIndex: number | null;
   onClose: () => void;
   onToggleOption: (pollId: string, optionIndex: number) => void;
+  /** Giống web PollVoteModal — khóa bình chọn (chủ poll / quyền backend). */
+  onClosePoll?: (pollId: string) => void | Promise<void>;
+  /** Giống web — ghim tin `poll_created` tương ứng. */
+  onTogglePinPoll?: (pollId: string) => void | Promise<void>;
 }
 
 export function PollVoteModal({
@@ -30,8 +36,11 @@ export function PollVoteModal({
   votingIndex,
   onClose,
   onToggleOption,
+  onClosePoll,
+  onTogglePinPoll,
 }: PollVoteModalProps) {
   const { muted, primary } = useIconColors();
+  const pollBlue = "#2563eb";
 
   const total = useMemo(
     () => poll?.options?.reduce((sum, option) => sum + (option.voters?.length ?? 0), 0) ?? 0,
@@ -62,12 +71,36 @@ export function PollVoteModal({
               </View>
               <Text className="text-[17px] font-bold text-foreground">Bình chọn</Text>
             </View>
-            <Pressable
-              onPress={onClose}
-              className="h-9 w-9 items-center justify-center rounded-full bg-muted"
-            >
-              <X size={20} color={muted} strokeWidth={2} />
-            </Pressable>
+            <View className="flex-row items-center gap-1.5">
+              {onTogglePinPoll ? (
+                <Pressable
+                  onPress={() => void onTogglePinPoll(poll.pollId)}
+                  className={`h-9 w-9 items-center justify-center rounded-full border ${
+                    poll.isPinned
+                      ? "border-blue-600/30 bg-blue-600/10"
+                      : "border-border/60 bg-muted"
+                  }`}
+                  accessibilityLabel={poll.isPinned ? "Gỡ ghim bình chọn" : "Ghim bình chọn"}
+                >
+                  <Pin size={18} color={poll.isPinned ? pollBlue : muted} strokeWidth={2} />
+                </Pressable>
+              ) : null}
+              {onClosePoll && poll && !poll.isClosed ? (
+                <Pressable
+                  onPress={() => void onClosePoll(poll.pollId)}
+                  className="h-9 w-9 items-center justify-center rounded-full bg-muted"
+                  accessibilityLabel="Khóa bình chọn"
+                >
+                  <Lock size={18} color={muted} strokeWidth={2} />
+                </Pressable>
+              ) : null}
+              <Pressable
+                onPress={onClose}
+                className="h-9 w-9 items-center justify-center rounded-full bg-muted"
+              >
+                <X size={20} color={muted} strokeWidth={2} />
+              </Pressable>
+            </View>
           </View>
 
           <ScrollView className="px-4 py-4" keyboardShouldPersistTaps="handled">
@@ -95,14 +128,14 @@ export function PollVoteModal({
                     disabled
                       ? "border-border/40 bg-muted/20 opacity-60"
                       : checked
-                        ? "border-primary/50 bg-primary/10"
+                        ? "border-blue-600/40 bg-blue-600/10"
                         : "border-border/60 bg-background"
                   }`}
                 >
                   <View className="flex-row items-start gap-3">
                     <View
                       className={`mt-0.5 h-5 w-5 items-center justify-center rounded-full border ${
-                        checked ? "border-primary bg-primary" : "border-border"
+                        checked ? "border-blue-600 bg-blue-600" : "border-border"
                       }`}
                     >
                       {busyHere ? (
@@ -118,8 +151,11 @@ export function PollVoteModal({
                       <Text className="mt-0.5 text-[11px] text-muted-foreground">
                         {votes} lượt ({pct}%)
                       </Text>
-                      <View className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
-                        <View className="h-full bg-primary" style={{ width: `${pct}%` }} />
+                      <View className="mt-2 h-2 overflow-hidden rounded-full bg-black/5 dark:bg-white/10">
+                        <View
+                          className="h-full rounded-full"
+                          style={{ width: `${pct}%`, backgroundColor: pollBlue }}
+                        />
                       </View>
                     </View>
                   </View>
@@ -130,7 +166,7 @@ export function PollVoteModal({
 
           <View className="flex-row items-center justify-between border-t border-border/60 px-4 py-3">
             <Text className="flex-1 pr-2 text-[12px] text-muted-foreground">
-              {poll.isClosed ? "Bình chọn đã đóng" : "Bấm để bình chọn / rút phiếu"}
+              {poll.isClosed ? "Bình chọn đã đóng" : "Bấm để bình chọn"}
             </Text>
             <Pressable onPress={onClose} className="rounded-xl bg-muted px-4 py-2">
               <Text className="text-[13px] font-bold text-foreground">Đóng</Text>

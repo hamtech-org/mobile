@@ -1,7 +1,9 @@
 import { useCallback, useRef } from "react";
 
-import { useAppSelector } from "@/hooks/useAppStore";
+import { useAppDispatch, useAppSelector } from "@/hooks/useAppStore";
 import {
+  chatApi,
+  CHAT_MESSAGES_QUERY_LIMIT,
   useSendMessageMutation,
   useEditMessageMutation,
   useRecallMessageMutation,
@@ -10,6 +12,7 @@ import {
   useUnpinMessageMutation,
   useReactMessageMutation,
 } from "@/store/api/chatApi";
+import { messageReceived, messagePinUpdated } from "@/store/slices/chatSlice";
 import { useSocket } from "@/hooks/useSocket";
 import type { IMessage, IReplyToDetails, MessageType } from "@/types/chat.types";
 import { formatChatPreviewLine } from "@/utils/messageDisplay";
@@ -20,6 +23,7 @@ import { toast } from "@/utils/appToast";
  * Mở rộng từ sendMessage cơ bản sang full CRUD + reactions + typing.
  */
 export const useChat = () => {
+  const dispatch = useAppDispatch();
   const currentUserId = useAppSelector((s) => s.auth.user?.userId ?? "");
   const socket = useSocket();
   const [sendMessageMutation, sendState] = useSendMessageMutation();
@@ -30,6 +34,43 @@ export const useChat = () => {
   const [unpinMessageMutation] = useUnpinMessageMutation();
   const [reactMessageMutation] = useReactMessageMutation();
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** Giống web `useMessagePinController.pushLocalPinSystemLine` — dòng giữa luồng + icon ghim. */
+  const pushLocalPinSystemLine = useCallback(
+    (params: { conversationId: string; actorLabel: string; pinned: boolean }) => {
+      const { conversationId, actorLabel, pinned } = params;
+      const sys: IMessage = {
+        messageId: `local-pin:${conversationId}:${pinned ? "pin" : "unpin"}:${Date.now()}`,
+        conversationId,
+        senderId: "system",
+        senderDisplayName: "Hệ thống",
+        type: "system",
+        content: `${actorLabel} ${pinned ? "đã ghim" : "đã bỏ ghim"} một tin nhắn`,
+        mediaUrl: null,
+        thumbnailUrl: null,
+        replyTo: null,
+        replyToDetails: null,
+        isPinned: false,
+        isEdited: false,
+        isRecalled: false,
+        isDeleted: false,
+        reactions: {},
+        status: "sent",
+        createdAt: new Date().toISOString(),
+      };
+      dispatch(
+        (chatApi.util as { updateQueryData: (...args: unknown[]) => unknown }).updateQueryData(
+          "getMessages",
+          { conversationId, limit: CHAT_MESSAGES_QUERY_LIMIT },
+          (draft: IMessage[]) => {
+            draft.push(sys);
+          },
+        ) as never,
+      );
+      dispatch(messageReceived(sys));
+    },
+    [dispatch],
+  );
 
   // ── Gửi tin nhắn text ──────────────────────────────────────────────
   const sendMessage = useCallback(
@@ -164,14 +205,25 @@ export const useChat = () => {
   // ── Ghim/bỏ ghim tin nhắn ─────────────────────────────────────────
   const togglePinMessage = useCallback(
     async (msg: IMessage): Promise<void> => {
+      const conversationId = msg.conversationId;
+      const actorLabel = msg.senderId === currentUserId ? "Bạn" : "Ai đó";
+      const nextPinned = !msg.isPinned;
       const mutation = msg.isPinned ? unpinMessageMutation : pinMessageMutation;
       await mutation({
         messageId: msg.messageId,
-        conversationId: msg.conversationId,
+        conversationId,
         createdAt: msg.createdAt,
       }).unwrap();
+      dispatch(
+        messagePinUpdated({
+          messageId: msg.messageId,
+          conversationId,
+          isPinned: nextPinned,
+        }),
+      );
+      pushLocalPinSystemLine({ conversationId, actorLabel, pinned: nextPinned });
     },
-    [pinMessageMutation, unpinMessageMutation],
+    [pinMessageMutation, unpinMessageMutation, dispatch, currentUserId, pushLocalPinSystemLine],
   );
 
   // ── Thả cảm xúc ───────────────────────────────────────────────────

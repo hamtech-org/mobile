@@ -1,6 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 
 import { useMarkAsReadMutation } from "@/store/api/chatApi";
+import {
+  getLastMarkedMessageIdForConversation,
+  setLastMarkedMessageIdForConversation,
+} from "@/utils/markAsReadSessionDedupe";
 
 interface UseConversationLifecycleParams {
   conversationId: string | undefined;
@@ -9,22 +13,21 @@ interface UseConversationLifecycleParams {
 }
 
 /**
- * Hook quản lý lifecycle của một conversation đang mở:
- * - Auto markAsRead khi mở conversation hoặc có tin nhắn mới
+ * Mở hội thoại / có tin mới → `markAsRead`.
+ * Không gọi lại khi chỉ reload màn mà `latestMessageId` không đổi (dedupe theo phiên).
  */
 export function useConversationLifecycle({
   conversationId,
   latestMessageId,
 }: UseConversationLifecycleParams): void {
   const [markAsRead] = useMarkAsReadMutation();
-  const prevMessageIdRef = useRef<string | undefined>(undefined);
 
-  // Mark as read khi mở conversation hoặc có tin nhắn mới
   useEffect(() => {
     if (!conversationId || !latestMessageId) return;
-    if (prevMessageIdRef.current === latestMessageId) return;
+    const prev = getLastMarkedMessageIdForConversation(conversationId);
+    if (prev === latestMessageId) return;
 
-    prevMessageIdRef.current = latestMessageId;
+    setLastMarkedMessageIdForConversation(conversationId, latestMessageId);
     void markAsRead({ conversationId, messageId: latestMessageId });
   }, [conversationId, latestMessageId, markAsRead]);
 }

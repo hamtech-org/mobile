@@ -36,6 +36,61 @@ function stripOptimisticEchoes(messages: IMessage[]): IMessage[] {
 }
 
 /**
+ * Giống web `ChatMessageList` `seenTaskAssignedIds`: mỗi `taskId` chỉ giữ một tin
+ * `task_assigned` — ưu bản server (không phải `local-task-card:*`) thay vì thẻ local.
+ */
+function dedupeTaskAssignedSystemMessages(messages: IMessage[]): IMessage[] {
+  type Pick = { messageId: string; createdAt: number; isLocal: boolean };
+  const best = new Map<string, Pick>();
+
+  for (const m of messages) {
+    if (m.type !== "system") continue;
+    const raw = String(m.content ?? "").trim();
+    if (!raw.startsWith("{")) continue;
+    let tid: string | null = null;
+    try {
+      const o = JSON.parse(raw) as { kind?: string; task?: { taskId?: string } };
+      if (o?.kind === "task_assigned" && o?.task?.taskId) tid = String(o.task.taskId).trim();
+    } catch {
+      continue;
+    }
+    if (!tid) continue;
+
+    const cur: Pick = {
+      messageId: m.messageId,
+      createdAt: new Date(m.createdAt).getTime(),
+      isLocal: m.messageId.startsWith("local-task-card:"),
+    };
+    const prev = best.get(tid);
+    if (!prev) {
+      best.set(tid, cur);
+      continue;
+    }
+    if (prev.isLocal && !cur.isLocal) {
+      best.set(tid, cur);
+      continue;
+    }
+    if (!prev.isLocal && cur.isLocal) continue;
+    if (cur.createdAt < prev.createdAt) best.set(tid, cur);
+  }
+
+  return messages.filter((m) => {
+    if (m.type !== "system") return true;
+    const raw = String(m.content ?? "").trim();
+    if (!raw.startsWith("{")) return true;
+    try {
+      const o = JSON.parse(raw) as { kind?: string; task?: { taskId?: string } };
+      if (o?.kind !== "task_assigned" || !o?.task?.taskId) return true;
+      const tid = String(o.task.taskId).trim();
+      const keeper = best.get(tid)?.messageId;
+      return keeper === m.messageId;
+    } catch {
+      return true;
+    }
+  });
+}
+
+/**
  * Hook quản lý data cho messages: merge API (RTK Query) + socket (Redux state).
  * Đảm bảo tin nhắn realtime hiện ngay lập tức và đồng bộ với lịch sử fetch.
  */
@@ -67,8 +122,11 @@ export function useChatMessageData(conversationId: string | null) {
     socketMessages.forEach((m) => map.set(m.messageId, m));
 
     const merged = stripOptimisticEchoes(Array.from(map.values()));
+    const deduped = dedupeTaskAssignedSystemMessages(merged);
 
-    return merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return deduped.sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
   }, [apiMessages, socketMessages]);
 
   const result = useMemo(
