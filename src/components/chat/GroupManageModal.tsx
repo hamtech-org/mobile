@@ -41,7 +41,6 @@ import {
   Camera,
   BellOff,
   Bell,
-  BarChart2,
   Search,
   Settings,
   Shield,
@@ -52,6 +51,7 @@ import {
   UserPlus,
   Users,
   Plus,
+  MessageSquare,
 } from "lucide-react-native";
 
 import { Avatar } from "@/components/common/Avatar";
@@ -141,6 +141,10 @@ interface GroupManageModalProps {
   onJumpToMessage?: (messageId: string) => void;
   /** Mở PollVoteModal trên màn chat (giống web onOpenPollVote). */
   onOpenPollVote?: (pollId: string) => void;
+  /** Giống web BulletinCardRow — đóng poll từ bảng tin. */
+  onClosePoll?: (pollId: string) => void | Promise<void>;
+  /** Giống web — thêm lựa chọn (prompt trên web → modal nhập trên mobile). */
+  onAddPollOption?: (pollId: string, text: string) => void | Promise<void>;
 }
 
 const Z = {
@@ -246,6 +250,8 @@ export function GroupManageModal({
   onConsumedInitialTaskEditor,
   onJumpToMessage,
   onOpenPollVote,
+  onClosePoll,
+  onAddPollOption,
 }: GroupManageModalProps): ReactElement {
   const groupId = conversation.conversationId;
   const authUserId = useAppSelector((s) => s.auth.user?.userId);
@@ -259,6 +265,9 @@ export function GroupManageModal({
   );
   const [addFriendFilter, setAddFriendFilter] = useState("");
   const [pollModalOpen, setPollModalOpen] = useState(false);
+  const [addPollOptionTargetId, setAddPollOptionTargetId] = useState<string | null>(null);
+  const [addPollOptionDraft, setAddPollOptionDraft] = useState("");
+  const [addPollOptionBusy, setAddPollOptionBusy] = useState(false);
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [editingTaskData, setEditingTaskData] = useState<any>(null);
   const [muteNotifOpen, setMuteNotifOpen] = useState(false);
@@ -520,6 +529,20 @@ export function GroupManageModal({
     },
     [onClose, onOpenPollVote],
   );
+
+  const submitAddPollOptionFromSheet = useCallback(async () => {
+    const pid = addPollOptionTargetId;
+    const text = addPollOptionDraft.trim();
+    if (!pid || !text || !onAddPollOption) return;
+    setAddPollOptionBusy(true);
+    try {
+      await onAddPollOption(pid, text);
+      setAddPollOptionTargetId(null);
+      setAddPollOptionDraft("");
+    } finally {
+      setAddPollOptionBusy(false);
+    }
+  }, [addPollOptionTargetId, addPollOptionDraft, onAddPollOption]);
 
   const navigateOut = useCallback(() => {
     onClose();
@@ -1655,37 +1678,89 @@ export function GroupManageModal({
       const p = pollSummary(raw);
       const key = p.id || `poll-${idx}`;
       const preview = pollOptionsPreview(raw);
+      const creatorId = typeof o.creatorId === "string" ? o.creatorId : "";
+      const creatorMember = members.find((m) => m.userId === creatorId);
       const creator = resolveCreatorLabel(
-        typeof o.creatorId === "string" ? o.creatorId : null,
+        creatorId || null,
         o.creatorDisplayName != null ? String(o.creatorDisplayName) : null,
         effectiveUserId,
         memberNameById,
       );
-      const statusLine = `${p.closed ? "Đã đóng" : "Đang mở"}${creator ? ` · ${creator}` : ""}`;
+      const when = formatBulletinFooterTime(
+        typeof o.createdAt === "string" ? o.createdAt : undefined,
+      );
+      const pollOpen = !p.closed && Boolean(onOpenPollVote);
+      const openVote = () => openPollFromBulletin(p.id);
+      const showPollAdminRow = Boolean(onAddPollOption || onClosePoll);
       return (
-        <Pressable
-          key={key}
-          onPress={() => openPollFromBulletin(p.id)}
-          disabled={!onOpenPollVote || !p.id}
-          style={({ pressed }) => [
-            styles.bulletinPollCard,
-            pressed && onOpenPollVote ? { opacity: 0.92 } : null,
-            !onOpenPollVote ? { opacity: 0.85 } : null,
-          ]}
-        >
-          <View style={styles.bulletinPollCardTop}>
-            <BarChart2 size={18} color="#f97316" strokeWidth={2} />
-            <Text style={styles.bulletinPollTitle} numberOfLines={3}>
-              {p.title}
-            </Text>
+        <View key={key} style={{ marginBottom: 12 }}>
+          <View style={styles.bulletinPollCard}>
+            <Pressable
+              onPress={() => {
+                if (pollOpen) openVote();
+              }}
+              disabled={!pollOpen || !onOpenPollVote || !p.id}
+              style={({ pressed }) => [
+                pressed && pollOpen && onOpenPollVote ? { opacity: 0.92 } : null,
+              ]}
+            >
+              <View style={styles.bulletinPollHeaderRow}>
+                <Avatar uri={creatorMember?.avatar ?? undefined} name={creator} size="md" />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.bulletinPollCreatorName} numberOfLines={1}>
+                    {creator}
+                  </Text>
+                  <View style={styles.bulletinPollKindRow}>
+                    <MessageSquare size={14} color="#2563eb" strokeWidth={2} />
+                    <Text style={styles.bulletinPollKindLabel}>Bình chọn</Text>
+                  </View>
+                </View>
+              </View>
+              <Text style={styles.bulletinPollTitleBlock} numberOfLines={4}>
+                {p.title}
+              </Text>
+              {preview ? (
+                <Text style={styles.bulletinPollPreview} numberOfLines={3}>
+                  {preview}
+                </Text>
+              ) : null}
+              <View style={styles.bulletinPollFooterRow}>
+                <Text style={styles.bulletinPollMeta}>{when || "—"}</Text>
+                {pollOpen ? (
+                  <>
+                    <Text style={styles.bulletinPollFooterSep}>|</Text>
+                    <Pressable onPress={openVote} hitSlop={6}>
+                      <Text style={styles.bulletinPollVoteLink}>Bỏ phiếu</Text>
+                    </Pressable>
+                  </>
+                ) : null}
+              </View>
+            </Pressable>
+            {showPollAdminRow ? (
+              <View style={styles.bulletinPollAdminRow}>
+                {onAddPollOption ? (
+                  <Pressable
+                    onPress={() => {
+                      setAddPollOptionTargetId(p.id);
+                      setAddPollOptionDraft("");
+                    }}
+                    style={styles.bulletinPollAdminBtn}
+                  >
+                    <Text style={styles.bulletinPollAdminBtnText}>+ Option</Text>
+                  </Pressable>
+                ) : null}
+                {onClosePoll ? (
+                  <Pressable
+                    onPress={() => void onClosePoll(p.id)}
+                    style={styles.bulletinPollAdminBtn}
+                  >
+                    <Text style={styles.bulletinPollAdminBtnText}>Đóng</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            ) : null}
           </View>
-          {preview ? (
-            <Text style={styles.bulletinPollPreview} numberOfLines={3}>
-              {preview}
-            </Text>
-          ) : null}
-          <Text style={styles.bulletinPollMeta}>{statusLine}</Text>
-        </Pressable>
+        </View>
       );
     });
   };
@@ -2306,6 +2381,81 @@ export function GroupManageModal({
           </Pressable>
         </Pressable>
       </Modal>
+
+      <Modal
+        visible={Boolean(addPollOptionTargetId)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!addPollOptionBusy) setAddPollOptionTargetId(null);
+        }}
+      >
+        <Pressable
+          style={styles.overlay}
+          onPress={() => {
+            if (!addPollOptionBusy) setAddPollOptionTargetId(null);
+          }}
+        >
+          <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.sheetTitle}>Thêm lựa chọn</Text>
+            <TextInput
+              value={addPollOptionDraft}
+              onChangeText={setAddPollOptionDraft}
+              placeholder="Nhập lựa chọn mới"
+              placeholderTextColor={Z.sub}
+              editable={!addPollOptionBusy}
+              style={{
+                marginHorizontal: 16,
+                marginTop: 8,
+                borderWidth: 1,
+                borderColor: Z.line,
+                borderRadius: 10,
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                fontSize: 15,
+                color: Z.text,
+                backgroundColor: Z.bg,
+              }}
+            />
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "flex-end",
+                gap: 12,
+                paddingHorizontal: 16,
+                paddingTop: 16,
+                paddingBottom: 12,
+              }}
+            >
+              <Pressable
+                onPress={() => {
+                  if (!addPollOptionBusy) setAddPollOptionTargetId(null);
+                }}
+                style={{ paddingVertical: 10, paddingHorizontal: 8 }}
+              >
+                <Text style={{ fontWeight: "600", color: Z.sub }}>Hủy</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => void submitAddPollOptionFromSheet()}
+                disabled={addPollOptionBusy || !addPollOptionDraft.trim()}
+                style={{
+                  backgroundColor: Z.primary,
+                  borderRadius: 12,
+                  paddingVertical: 10,
+                  paddingHorizontal: 20,
+                  opacity: addPollOptionBusy || !addPollOptionDraft.trim() ? 0.5 : 1,
+                }}
+              >
+                {addPollOptionBusy ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.primaryBtnText}>Thêm</Text>
+                )}
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </>
   );
 }
@@ -2775,12 +2925,32 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: Z.bg,
     padding: 12,
-    marginBottom: 12,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.06,
     shadowRadius: 3,
     elevation: 1,
+  },
+  bulletinPollHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  bulletinPollCreatorName: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: Z.text,
+  },
+  bulletinPollKindRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 2,
+  },
+  bulletinPollKindLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#2563eb",
   },
   bulletinPollCardTop: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
   bulletinPollTitle: {
@@ -2790,13 +2960,42 @@ const styles = StyleSheet.create({
     color: Z.text,
     lineHeight: 21,
   },
-  bulletinPollPreview: {
-    marginTop: 8,
+  bulletinPollTitleBlock: {
+    marginTop: 10,
     fontSize: 13,
-    color: "#4b5563",
+    fontWeight: "600",
+    color: Z.text,
+    lineHeight: 19,
+  },
+  bulletinPollPreview: {
+    marginTop: 6,
+    fontSize: 12,
+    color: "#6B7280",
     lineHeight: 18,
   },
-  bulletinPollMeta: { marginTop: 8, fontSize: 12, fontWeight: "600", color: Z.sub },
+  bulletinPollMeta: { fontSize: 12, fontWeight: "600", color: Z.sub },
+  bulletinPollFooterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 10,
+    flexWrap: "wrap",
+    gap: 4,
+  },
+  bulletinPollFooterSep: { fontSize: 11, color: "rgba(0,0,0,0.2)" },
+  bulletinPollVoteLink: { fontSize: 11, fontWeight: "600", color: "#2563eb" },
+  bulletinPollAdminRow: {
+    marginTop: 10,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  bulletinPollAdminBtn: {
+    borderRadius: 6,
+    backgroundColor: "rgba(0,0,0,0.05)",
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  bulletinPollAdminBtnText: { fontSize: 10, fontWeight: "600", color: Z.text },
   secondaryBtn: {
     borderWidth: 1,
     borderColor: "#BFDBFE",
