@@ -19,10 +19,11 @@ type SystemPoll = {
   optionText?: string;
 };
 
-/** Icon hàng thông báo giữa — đồng bộ web `ChatMessageList` (Pencil / Pin / BarChart / AlarmClock / …). */
+/** Icon hàng thông báo giữa — đồng bộ web `ChatMessageList` (Pencil / Pin / PinOff / BarChart / …). */
 export type SystemTextRowIcon =
   | "pencil"
   | "pin"
+  | "pinOff"
   | "checkCheck"
   | "alarmClock"
   | "alarmOff"
@@ -32,7 +33,8 @@ export type SystemTextRowIcon =
 
 function systemRowIconForPlainText(text: string): SystemTextRowIcon {
   const t = (text ?? "").trim();
-  if (t.includes("đã ghim") || t.includes("đã bỏ ghim")) return "pin";
+  if (t.includes("đã bỏ ghim")) return "pinOff";
+  if (t.includes("đã ghim")) return "pin";
   return "pencil";
 }
 
@@ -47,11 +49,20 @@ export type SystemBubbleView =
       dueDate: string | null;
       note: string | null;
     }
+  | {
+      variant: "task_updated_row";
+      actorLabel: string;
+      title: string | null;
+      taskId: string;
+    }
+  | { variant: "task_due_row"; title: string | null; taskId: string }
   | { variant: "poll_created_row"; pollId: string; question: string; actorLabel: string };
 
 export interface SystemMessageFormatContext {
   isOwn: boolean;
   currentUserId?: string | null;
+  /** Chỉ nhóm: hàng system có nút (đồng bộ web `ChatMessageList`). */
+  isGroupChat?: boolean;
 }
 
 function replaceFirst(haystack: string, needle: string, replacement: string): string {
@@ -125,9 +136,11 @@ export function buildSystemBubbleView(
       actor?: SystemActor;
       task?: SystemTask;
       poll?: SystemPoll;
+      header?: { title?: string; emoji?: string };
     };
     const kind = String(obj?.kind ?? "");
     const who = actorWho(obj.actor, message, ctx);
+    const isGroup = Boolean(ctx.isGroupChat);
 
     if (kind === "task_assigned" && obj.task?.title) {
       const taskId = String(obj.task.taskId ?? "").trim();
@@ -148,8 +161,17 @@ export function buildSystemBubbleView(
 
     if (kind === "task_updated") {
       const title = String(obj.task?.title ?? "").trim();
+      const taskId = String(obj.task?.taskId ?? "").trim();
+      if (isGroup) {
+        return {
+          variant: "task_updated_row",
+          actorLabel: who,
+          title: title || null,
+          taskId,
+        };
+      }
       const line = title
-        ? `${who} đã cập nhật công việc «${title}»`
+        ? `${who} đã cập nhật công việc "${title}"`
         : `${who} đã cập nhật một công việc`;
       return { variant: "text", text: line, rowIcon: "pencil" };
     }
@@ -160,7 +182,22 @@ export function buildSystemBubbleView(
     }
     if (kind === "task_due") {
       const title = String(obj.task?.title ?? "").trim();
+      const taskId = String(obj.task?.taskId ?? "").trim();
+      if (isGroup) {
+        return {
+          variant: "task_due_row",
+          title: title || null,
+          taskId,
+        };
+      }
       const line = title ? `Đến hạn: "${title}"` : "Đến hạn công việc";
+      return { variant: "text", text: line, rowIcon: "alarmClock" };
+    }
+
+    if (kind === "task_reminder") {
+      const ht = String(obj.header?.title ?? "Nhắc hạn").trim();
+      const title = String(obj.task?.title ?? "").trim();
+      const line = title ? `${ht}: «${title}»` : ht;
       return { variant: "text", text: line, rowIcon: "alarmClock" };
     }
 
@@ -223,6 +260,7 @@ export function formatSystemLastMessagePreview(
       actor?: SystemActor;
       task?: SystemTask;
       poll?: SystemPoll;
+      header?: { title?: string; emoji?: string };
     };
     const kind = String(obj?.kind ?? "");
     const actorId = String(obj?.actor?.userId ?? senderId ?? "");
@@ -246,7 +284,7 @@ export function formatSystemLastMessagePreview(
     }
     if (kind === "task_updated") {
       const title = String(obj.task?.title ?? "").trim();
-      return title ? `${who} đã cập nhật công việc «${title}»` : `${who} đã cập nhật một công việc`;
+      return title ? `${who} đã cập nhật công việc "${title}"` : `${who} đã cập nhật một công việc`;
     }
     if (kind === "task_deleted") {
       const title = String(obj.task?.title ?? "").trim();
@@ -254,7 +292,12 @@ export function formatSystemLastMessagePreview(
     }
     if (kind === "task_due") {
       const title = String(obj.task?.title ?? "").trim();
-      return title ? `${who} đã đến hạn công việc "${title}"` : `${who} đã đến hạn một công việc`;
+      return title ? `Đến hạn: "${title}"` : "Đến hạn công việc";
+    }
+    if (kind === "task_reminder") {
+      const ht = String(obj.header?.title ?? "Nhắc hạn").trim();
+      const title = String(obj.task?.title ?? "").trim();
+      return title ? `${ht}: «${title}»` : ht;
     }
     if (kind === "poll_created") {
       const question = String(obj.poll?.question ?? "").trim();
