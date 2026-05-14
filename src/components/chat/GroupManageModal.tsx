@@ -1087,7 +1087,7 @@ export function GroupManageModal({
           onPress={() => setPanel("members")}
           android_ripple={{ color: "rgba(0,0,0,0.04)" }}
         >
-          <Text style={styles.memberMgmtTitle}>Quản lý thành viên ({members.length})</Text>
+          <Text style={styles.memberMgmtTitle}>Quản lý thành viên</Text>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             {joinRequests.length > 0 ? (
               <View style={styles.requestBadge}>
