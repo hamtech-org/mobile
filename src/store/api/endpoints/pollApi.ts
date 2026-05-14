@@ -49,6 +49,26 @@ export const pollApi = chatApi.injectEndpoints({
       }),
       invalidatesTags: (_result, _error, { groupId }) => [{ type: "Polls", id: groupId }],
     }),
+
+    closePoll: builder.mutation<ApiEnvelope<unknown>, { groupId: string; pollId: string }>({
+      query: ({ groupId, pollId }) => ({
+        url: `/chat/groups/${groupId}/polls/${pollId}/close`,
+        method: "POST",
+      }),
+      invalidatesTags: (_result, _error, { groupId }) => [{ type: "Polls", id: groupId }],
+    }),
+
+    addPollOption: builder.mutation<
+      ApiEnvelope<unknown>,
+      { groupId: string; pollId: string; text: string }
+    >({
+      query: ({ groupId, pollId, text }) => ({
+        url: `/chat/groups/${groupId}/polls/${pollId}/options`,
+        method: "POST",
+        body: { text },
+      }),
+      invalidatesTags: (_result, _error, { groupId }) => [{ type: "Polls", id: groupId }],
+    }),
   }),
   overrideExisting: true,
 });
@@ -58,4 +78,6 @@ export const {
   useCreatePollMutation,
   useVotePollMutation,
   useUnvotePollMutation,
+  useClosePollMutation,
+  useAddPollOptionMutation,
 } = pollApi;
