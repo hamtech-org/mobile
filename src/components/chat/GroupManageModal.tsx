@@ -16,13 +16,14 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Switch,
   Text,
   TextInput,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import * as Clipboard from "expo-clipboard";
 import { router } from "expo-router";
@@ -52,15 +53,24 @@ import {
   Users,
   Plus,
   MessageSquare,
+  Lock,
+  Copy,
+  RefreshCw,
+  Share2,
+  Ban,
+  KeyRound,
+  HelpCircle,
 } from "lucide-react-native";
 
 import { Avatar } from "@/components/common/Avatar";
+import { MAX_PINNED_PER_CONVERSATION } from "@/constants/chatPin";
 import { MIN_GROUP_MEMBERS } from "@/constants/group";
 import { env } from "@/config/env";
 import { useAppSelector } from "@/hooks/useAppStore";
 import type {
   IConversation,
   IGroupMember,
+  IGroupMemberPermissions,
   IGroupSettings,
   IMessage,
   MemberRole,
@@ -253,6 +263,7 @@ export function GroupManageModal({
   onClosePoll,
   onAddPollOption,
 }: GroupManageModalProps): ReactElement {
+  const insets = useSafeAreaInsets();
   const groupId = conversation.conversationId;
   const authUserId = useAppSelector((s) => s.auth.user?.userId);
   const effectiveUserId = (currentUserId ?? authUserId)?.trim() || undefined;
@@ -326,7 +337,11 @@ export function GroupManageModal({
     { skip: !visible },
   );
 
-  const { data: settings, refetch: refetchSettings } = useGetGroupSettingsQuery(groupId, {
+  const {
+    data: settings,
+    refetch: refetchSettings,
+    isFetching: settingsFetching,
+  } = useGetGroupSettingsQuery(groupId, {
     skip: !visible,
   });
 
@@ -905,6 +920,17 @@ export function GroupManageModal({
     [groupId, joinSuffix, refetchSettings, updateSettings],
   );
 
+  const regenerateGroupJoinLink = useCallback(async () => {
+    if (!canEditGroupSettings) return;
+    try {
+      await updateSettings({ groupId, regenerateJoinLink: true }).unwrap();
+      void refetchSettings();
+      toast.success("Đã tạo link mới");
+    } catch {
+      toast.error("Không lưu được cài đặt");
+    }
+  }, [canEditGroupSettings, groupId, refetchSettings, updateSettings]);
+
   const transferOwnerTo = useCallback(
     async (userId: string) => {
       if (!effectiveUserId) return;
@@ -954,7 +980,7 @@ export function GroupManageModal({
             : panel === "requests"
               ? "Duyệt thành viên"
               : panel === "settings"
-                ? "Cài đặt nhóm"
+                ? "Quản lý nhóm"
                 : panel === "media"
                   ? mediaTab === "media"
                     ? "Ảnh / Video"
@@ -1525,97 +1551,192 @@ export function GroupManageModal({
   );
 
   const renderSettings = () => {
-    if (!settings) {
+    const settingsBusy = savingSettings || settingsFetching;
+    if (settingsFetching && !settings) {
       return (
         <View style={styles.panelPad}>
           <ActivityIndicator color={Z.primary} />
+          <Text style={[styles.help, { textAlign: "center", marginTop: 12 }]}>
+            Đang tải cài đặt…
+          </Text>
+        </View>
+      );
+    }
+    if (!settings) {
+      return (
+        <View style={styles.panelPad}>
+          <Text style={[styles.help, { textAlign: "center", color: Z.red }]}>
+            Không tải được cài đặt nhóm.
+          </Text>
         </View>
       );
     }
     const mp = settings.memberPermissions;
     const ad = settings.adminSettings;
-    const settingsLocked = savingSettings || !canEditGroupSettings;
+    const settingsLocked = settingsBusy || !canEditGroupSettings;
+
+    const memberRows: {
+      key: keyof IGroupMemberPermissions;
+      label: string;
+      hint?: string;
+    }[] = [
+      { key: "changeNameAvatar", label: "Thay đổi tên & ảnh đại diện của nhóm" },
+      {
+        key: "pinMessages",
+        label: "Ghim tin nhắn, ghi chú, bình chọn lên đầu hội thoại",
+        hint: `Tối đa ${MAX_PINNED_PER_CONVERSATION} tin ghim mỗi cuộc trò chuyện.`,
+      },
+      { key: "createNotesReminders", label: "Tạo mới ghi chú, nhắc hẹn" },
+      { key: "createPolls", label: "Tạo mới bình chọn" },
+      { key: "sendMessages", label: "Gửi tin nhắn" },
+    ];
+
+    const shareJoinLink = async () => {
+      if (!joinUrl) {
+        toast.info("Dùng Sao chép để gửi link");
+        return;
+      }
+      try {
+        await Share.share(
+          Platform.OS === "ios"
+            ? { url: joinUrl, title: "Tham gia nhóm" }
+            : { message: joinUrl, title: "Tham gia nhóm" },
+        );
+      } catch {
+        toast.info("Dùng Sao chép để gửi link");
+      }
+    };
+
+    const gmBottomPad = 16 + Math.max(insets.bottom, 8);
+
     return (
-      <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: 32 }}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.gmScrollContent, { paddingBottom: gmBottomPad }]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {canEditGroupSettings ? (
+          <View style={styles.gmAdminBanner}>
+            <Lock size={18} color="#64748B" strokeWidth={2} />
+            <Text style={styles.gmAdminBannerText}>Tính năng chỉ dành cho quản trị viên</Text>
+          </View>
+        ) : null}
+
+        <Text style={styles.gmSectionTitle}>Cho phép các thành viên trong nhóm:</Text>
+        <View style={styles.gmMemberCard}>
+          {memberRows.map((row, idx) => (
+            <MemberPermissionRow
+              key={row.key}
+              label={row.label}
+              hint={row.hint}
+              checked={mp[row.key]}
+              disabled={settingsLocked}
+              isLast={idx === memberRows.length - 1}
+              onToggle={(v) => void patchSettingMember(row.key, v)}
+            />
+          ))}
+        </View>
+
+        <View style={styles.gmAdminToggles}>
+          <GroupAdminToggleRow
+            label="Đánh dấu tin nhắn từ trưởng/phó nhóm"
+            value={ad.highlightLeaderMessages}
+            onValueChange={(v) => void patchSettingAdmin("highlightLeaderMessages", v)}
+            disabled={settingsLocked}
+          />
+          <GroupAdminToggleRow
+            label="Cho phép thành viên mới đọc tin nhắn gần nhất"
+            value={ad.newMembersReadRecent}
+            onValueChange={(v) => void patchSettingAdmin("newMembersReadRecent", v)}
+            disabled={settingsLocked}
+          />
+          <GroupAdminToggleRow
+            label="Cho phép dùng link tham gia nhóm"
+            value={ad.allowJoinLink}
+            onValueChange={(v) => void patchSettingAdmin("allowJoinLink", v)}
+            disabled={settingsLocked}
+          />
+        </View>
+
+        {ad.allowJoinLink ? (
+          <View style={styles.gmJoinLinkWrap}>
+            <View style={styles.gmJoinUrlCol}>
+              <Text style={styles.gmJoinUrlText} numberOfLines={1} ellipsizeMode="tail" selectable>
+                {joinUrl || "—"}
+              </Text>
+            </View>
+            <View style={styles.gmJoinActionsRow}>
+              <Pressable
+                accessibilityLabel="Sao chép"
+                disabled={!joinSuffix}
+                onPress={() => {
+                  if (!joinUrl) return;
+                  void (async () => {
+                    await Clipboard.setStringAsync(joinUrl);
+                    toast.success("Đã sao chép link");
+                  })();
+                }}
+                style={({ pressed }) => [styles.gmJoinIconBtn, pressed ? { opacity: 0.75 } : null]}
+              >
+                <Copy size={18} color={Z.primary} strokeWidth={2} />
+              </Pressable>
+              <Pressable
+                accessibilityLabel="Chia sẻ"
+                disabled={!joinSuffix}
+                onPress={() => void shareJoinLink()}
+                style={({ pressed }) => [styles.gmJoinIconBtn, pressed ? { opacity: 0.75 } : null]}
+              >
+                <Share2 size={18} color={Z.primary} strokeWidth={2} />
+              </Pressable>
+              <Pressable
+                accessibilityLabel="Làm mới link"
+                disabled={settingsLocked}
+                onPress={() => void regenerateGroupJoinLink()}
+                style={({ pressed }) => [styles.gmJoinIconBtn, pressed ? { opacity: 0.75 } : null]}
+              >
+                <RefreshCw size={18} color={Z.primary} strokeWidth={2} />
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
+
+        <View style={styles.gmPlaceholderBlock}>
+          <Pressable
+            onPress={() => toast.info("Tính năng đang phát triển")}
+            style={({ pressed }) => [
+              { width: "100%" },
+              styles.gmPlaceholderHit,
+              pressed ? styles.gmPlaceholderPressed : null,
+            ]}
+            android_ripple={{ color: "rgba(0,0,0,0.06)" }}
+          >
+            <View style={styles.gmPlaceholderRowInner}>
+              <Ban size={20} color="#64748B" strokeWidth={2} />
+              <Text style={styles.gmPlaceholderLabel}>Chặn khỏi nhóm</Text>
+            </View>
+          </Pressable>
+          <Pressable
+            onPress={() => toast.info("Dùng mục Quản lý thành viên để xem vai trò")}
+            style={({ pressed }) => [
+              { width: "100%" },
+              styles.gmPlaceholderHit,
+              pressed ? styles.gmPlaceholderPressed : null,
+            ]}
+            android_ripple={{ color: "rgba(0,0,0,0.06)" }}
+          >
+            <View style={styles.gmPlaceholderRowInner}>
+              <KeyRound size={20} color="#64748B" strokeWidth={2} />
+              <Text style={styles.gmPlaceholderLabel}>Trưởng & phó nhóm</Text>
+            </View>
+          </Pressable>
+        </View>
+
         {!canEditGroupSettings ? (
-          <Text style={[styles.help, { paddingHorizontal: 16, paddingTop: 8 }]}>
-            Bạn có thể xem cài đặt nhóm. Chỉ trưởng nhóm hoặc quản trị mới chỉnh được các tùy chọn
-            bên dưới.
+          <Text style={styles.gmReadOnlyFooter}>
+            Bạn chỉ xem được cài đặt. Chỉ trưởng/phó nhóm mới chỉnh sửa.
           </Text>
         ) : null}
-        <Text style={styles.sectionCap}>Quyền thành viên</Text>
-        <ToggleRow
-          label="Đổi tên & ảnh nhóm"
-          value={mp.changeNameAvatar}
-          onValueChange={(v) => void patchSettingMember("changeNameAvatar", v)}
-          disabled={settingsLocked}
-        />
-        <ToggleRow
-          label="Ghim tin, bình chọn…"
-          value={mp.pinMessages}
-          onValueChange={(v) => void patchSettingMember("pinMessages", v)}
-          disabled={settingsLocked}
-        />
-        <ToggleRow
-          label="Ghi chú, nhắc hẹn"
-          value={mp.createNotesReminders}
-          onValueChange={(v) => void patchSettingMember("createNotesReminders", v)}
-          disabled={settingsLocked}
-        />
-        <ToggleRow
-          label="Tạo bình chọn"
-          value={mp.createPolls}
-          onValueChange={(v) => void patchSettingMember("createPolls", v)}
-          disabled={settingsLocked}
-        />
-        <ToggleRow
-          label="Gửi tin nhắn"
-          value={mp.sendMessages}
-          onValueChange={(v) => void patchSettingMember("sendMessages", v)}
-          disabled={settingsLocked}
-        />
-
-        <Text style={[styles.sectionCap, { marginTop: 16 }]}>Quản trị</Text>
-        <ToggleRow
-          label="Duyệt thành viên mới"
-          value={ad.approvalRequired}
-          onValueChange={(v) => void patchSettingAdmin("approvalRequired", v)}
-          disabled={settingsLocked}
-        />
-        <ToggleRow
-          label="Nổi bật tin trưởng nhóm"
-          value={ad.highlightLeaderMessages}
-          onValueChange={(v) => void patchSettingAdmin("highlightLeaderMessages", v)}
-          disabled={settingsLocked}
-        />
-        <ToggleRow
-          label="Link tham gia nhóm"
-          value={ad.allowJoinLink}
-          onValueChange={(v) => void patchSettingAdmin("allowJoinLink", v)}
-          disabled={settingsLocked}
-        />
-
-        <Pressable
-          style={[
-            styles.primaryBtn,
-            { marginHorizontal: 16, marginTop: 16 },
-            settingsLocked && { opacity: 0.45 },
-          ]}
-          onPress={() => {
-            void (async () => {
-              try {
-                await updateSettings({ groupId, regenerateJoinLink: true }).unwrap();
-                void refetchSettings();
-                toast.success("Link nhóm đã được làm mới");
-              } catch {
-                toast.error("Không tạo được link mới");
-              }
-            })();
-          }}
-          disabled={settingsLocked}
-        >
-          <Text style={styles.primaryBtnText}>Tạo lại link nhóm</Text>
-        </Pressable>
       </ScrollView>
     );
   };
@@ -2498,7 +2619,7 @@ function ToggleRow({
 }) {
   return (
     <View style={styles.toggleRow}>
-      <View style={{ flex: 1, paddingRight: 8 }}>
+      <View style={{ flex: 1, paddingRight: 8, minWidth: 0 }}>
         <Text style={styles.menuLabel}>{label}</Text>
         {sub ? <Text style={styles.subSmall}>{sub}</Text> : null}
       </View>
@@ -2510,6 +2631,98 @@ function ToggleRow({
         thumbColor={value ? Z.primary : "#f4f4f5"}
       />
     </View>
+  );
+}
+
+/** Một hàng quản trị: nhãn (+ gợi ý Help) | switch — khớp web GroupManagementModal ToggleRow. */
+function GroupAdminToggleRow({
+  label,
+  sub,
+  value,
+  disabled,
+  onValueChange,
+  help,
+}: {
+  label: string;
+  sub?: string;
+  value: boolean;
+  disabled?: boolean;
+  onValueChange: (v: boolean) => void;
+  /** Tooltip web → chạm icon mở Alert. */
+  help?: string;
+}) {
+  return (
+    <View style={styles.toggleRowGroup}>
+      <View style={styles.toggleRowGroupLabel}>
+        <View style={styles.toggleRowGroupLabelInner}>
+          <Text style={styles.gmAdminToggleLabel}>{label}</Text>
+          {help ? (
+            <Pressable
+              onPress={() => Alert.alert("Gợi ý", help)}
+              hitSlop={10}
+              accessibilityLabel="Gợi ý"
+              accessibilityRole="button"
+            >
+              <HelpCircle size={16} color="#94A3B8" strokeWidth={2} />
+            </Pressable>
+          ) : null}
+        </View>
+        {sub ? <Text style={styles.gmAdminToggleSub}>{sub}</Text> : null}
+      </View>
+      <View style={styles.toggleRowGroupSwitch}>
+        <Switch
+          value={value}
+          onValueChange={onValueChange}
+          disabled={disabled}
+          trackColor={{ false: "#D1D5DB", true: "#93C5FD" }}
+          thumbColor={value ? Z.primary : "#f4f4f5"}
+        />
+      </View>
+    </View>
+  );
+}
+
+function MemberPermissionRow({
+  label,
+  hint,
+  checked,
+  disabled,
+  isLast,
+  onToggle,
+}: {
+  label: string;
+  hint?: string;
+  checked: boolean;
+  disabled: boolean;
+  isLast: boolean;
+  onToggle: (v: boolean) => void;
+}) {
+  return (
+    <Pressable
+      onPress={() => !disabled && onToggle(!checked)}
+      disabled={disabled}
+      style={({ pressed }) => [
+        { width: "100%" },
+        styles.gmMemberRowHit,
+        !disabled && pressed ? styles.gmMemberRowPressed : null,
+        disabled ? styles.gmMemberRowDisabled : null,
+      ]}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked, disabled }}
+      android_ripple={{ color: "rgba(0,104,255,0.06)" }}
+    >
+      <View style={[styles.gmMemberRowInner, isLast ? styles.gmMemberRowInnerLast : null]}>
+        <View style={styles.gmMemberTextCol}>
+          <Text style={styles.gmMemberLabel}>{label}</Text>
+          {hint ? <Text style={styles.gmMemberHint}>{hint}</Text> : null}
+        </View>
+        <View style={styles.gmMemberControlCol}>
+          <View style={[styles.gmCheckbox, checked ? styles.gmCheckboxOn : null]}>
+            {checked ? <Check size={13} color="#fff" strokeWidth={3} /> : null}
+          </View>
+        </View>
+      </View>
+    </Pressable>
   );
 }
 
@@ -2743,6 +2956,34 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Z.line,
   },
+  toggleRowGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    minHeight: 48,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Z.line,
+    gap: 12,
+  },
+  toggleRowGroupLabel: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: 4,
+  },
+  toggleRowGroupLabelInner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    alignSelf: "stretch",
+  },
+  toggleRowGroupSwitch: {
+    width: 52,
+    flexShrink: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   destructRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -2774,6 +3015,216 @@ const styles = StyleSheet.create({
   },
   primaryBtnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
   help: { fontSize: 13, color: Z.sub, marginBottom: 10 },
+  gmScrollContent: {
+    paddingTop: 8,
+    paddingBottom: 8,
+  },
+  gmAdminBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginHorizontal: 16,
+    marginTop: 4,
+    marginBottom: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: "#F1F5F9",
+  },
+  gmAdminBannerText: {
+    flex: 1,
+    fontSize: 13,
+    color: "#334155",
+    fontWeight: "500",
+    lineHeight: 19,
+  },
+  gmSectionTitle: {
+    paddingHorizontal: 16,
+    marginBottom: 8,
+    marginTop: 4,
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#475569",
+    lineHeight: 18,
+    letterSpacing: 0.1,
+  },
+  gmMemberCard: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "#E2E8F0",
+    backgroundColor: Z.bg,
+    overflow: "hidden",
+  },
+  gmMemberRowHit: {
+    width: "100%",
+    overflow: "hidden",
+  },
+  gmMemberRowPressed: {
+    backgroundColor: "#F8FAFC",
+  },
+  gmMemberRowDisabled: {
+    opacity: 0.82,
+  },
+  gmMemberRowInner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+    minHeight: 48,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#E2E8F0",
+  },
+  gmMemberRowInnerLast: {
+    borderBottomWidth: 0,
+  },
+  gmMemberTextCol: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: 4,
+    paddingTop: 2,
+  },
+  gmMemberControlCol: {
+    width: 52,
+    flexShrink: 0,
+    alignItems: "flex-end",
+    justifyContent: "flex-start",
+    paddingTop: 4,
+  },
+  gmMemberLabel: {
+    fontSize: 14,
+    color: Z.text,
+    fontWeight: "500",
+    lineHeight: 20,
+  },
+  gmMemberHint: {
+    fontSize: 12,
+    color: Z.sub,
+    marginTop: 4,
+    lineHeight: 17,
+  },
+  gmCheckbox: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: "#CBD5E1",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Z.bg,
+  },
+  gmCheckboxOn: {
+    backgroundColor: Z.primary,
+    borderColor: Z.primary,
+  },
+  gmAdminToggles: {
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  gmAdminToggleLabel: {
+    flex: 1,
+    minWidth: 0,
+    flexShrink: 1,
+    fontSize: 14,
+    color: Z.text,
+    fontWeight: "500",
+    lineHeight: 20,
+  },
+  gmAdminToggleSub: {
+    fontSize: 12,
+    color: Z.sub,
+    marginTop: 4,
+    lineHeight: 17,
+  },
+  gmJoinLinkWrap: {
+    marginHorizontal: 16,
+    marginTop: 4,
+    marginBottom: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: "#F0F9FF",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "#BFDBFE",
+    flexDirection: "row",
+    flexWrap: "nowrap",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  gmJoinUrlCol: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: 8,
+  },
+  gmJoinUrlText: {
+    fontSize: 12,
+    fontFamily: Platform.select({ ios: "Menlo", default: "monospace" }),
+    color: "#1E293B",
+    lineHeight: 18,
+  },
+  gmJoinActionsRow: {
+    flexDirection: "row",
+    flexWrap: "nowrap",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 8,
+    flexShrink: 0,
+  },
+  gmJoinIconBtn: {
+    padding: 0,
+    borderRadius: 10,
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  gmPlaceholderBlock: {
+    marginTop: 4,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Z.line,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+    gap: 2,
+  },
+  gmPlaceholderHit: {
+    width: "100%",
+    borderRadius: 10,
+    opacity: 0.65,
+  },
+  gmPlaceholderPressed: {
+    opacity: 0.85,
+    backgroundColor: "rgba(248,250,252,0.95)",
+  },
+  gmPlaceholderRowInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    minHeight: 48,
+    paddingVertical: 10,
+    paddingHorizontal: 0,
+  },
+  gmPlaceholderLabel: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 14,
+    fontWeight: "500",
+    color: Z.text,
+    lineHeight: 20,
+  },
+  gmReadOnlyFooter: {
+    fontSize: 12,
+    color: Z.sub,
+    textAlign: "center",
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: 8,
+    lineHeight: 18,
+  },
   addMemberNotice: {
     paddingVertical: 10,
     paddingHorizontal: 12,
