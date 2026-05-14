@@ -74,6 +74,14 @@ export function isSameDay(a: string, b: string): boolean {
   return a.slice(0, 10) === b.slice(0, 10);
 }
 
+/** Cùng ngày lịch theo giờ máy (khác `isSameDay` chỉ so chuỗi ISO UTC). */
+export function isSameLocalCalendarDay(a: string, b: string): boolean {
+  const da = new Date(a);
+  const db = new Date(b);
+  if (Number.isNaN(da.getTime()) || Number.isNaN(db.getTime())) return false;
+  return da.toDateString() === db.toDateString();
+}
+
 /** Cùng phút lịch (ngày + giờ + phút) — gom một dòng giờ dưới tin cuối trong phút đó (nhóm). */
 export function isSameCalendarMinute(a: string, b: string): boolean {
   const da = new Date(a);
@@ -89,6 +97,59 @@ export function isSameCalendarMinute(a: string, b: string): boolean {
 }
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/** Giờ trên pill thông báo giữa khung (VD 7:00, 10:00) — đồng bộ web `formatChatSystemPillTime` (H:mm). */
+export function formatChatSystemPillTime(iso: string): string {
+  const raw = String(iso ?? "").trim();
+  if (!raw) return "";
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${d.getHours()}:${pad2(d.getMinutes())}`;
+}
+
+/**
+ * Mốc ngày trên pill / chip danh sách: Hôm nay | Hôm qua | DD/MM/YYYY —
+ * cùng `toDateString` + DD/MM/YYYY với web `formatChatSystemPillDateLabel`.
+ */
+export function formatChatSystemPillDateLabel(iso: string, now: Date = new Date()): string {
+  const raw = String(iso ?? "").trim();
+  if (!raw) return "";
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return "";
+  const today = new Date(now);
+  const yesterday = new Date(now);
+  yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) return "Hôm nay";
+  if (date.toDateString() === yesterday.toDateString()) return "Hôm qua";
+  return `${pad2(date.getDate())}/${pad2(date.getMonth() + 1)}/${date.getFullYear()}`;
+}
+
+/** Hiện chip mốc ngày khi đổi ngày lịch local — đồng bộ web `chatSystemPillShowDateLine`. */
+export function chatSystemPillShowDateLine(
+  prevCreatedAt: string | undefined | null,
+  currCreatedAt: string | undefined | null,
+): boolean {
+  const curr = String(currCreatedAt ?? "").trim();
+  if (!curr) return false;
+  const c = new Date(curr);
+  if (Number.isNaN(c.getTime())) return true;
+  const prev = String(prevCreatedAt ?? "").trim();
+  if (!prev) return true;
+  const p = new Date(prev);
+  if (Number.isNaN(p.getTime())) return true;
+  return p.toDateString() !== c.toDateString();
+}
+
+/** Cùng ngày lịch local (gom bubble / tên người gửi) — đồng bộ web `chatMessagesSameLocalDay`. */
+export function chatMessagesSameLocalDay(
+  a: string | undefined | null,
+  b: string | undefined | null,
+): boolean {
+  const da = new Date(String(a ?? "").trim());
+  const db = new Date(String(b ?? "").trim());
+  if (Number.isNaN(da.getTime()) || Number.isNaN(db.getTime())) return false;
+  return da.toDateString() === db.toDateString();
+}
 
 /**
  * Giờ/ngày dưới bubble nhóm (Zalo): cùng ngày lịch → chỉ HH:mm; khác ngày → HH:mm · DD/MM/YYYY.
