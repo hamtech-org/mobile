@@ -1107,6 +1107,7 @@ export function GroupManageModal({
           onPress={() => setBulletinExpanded((v) => !v)}
           android_ripple={{ color: "rgba(0,0,0,0.04)" }}
         >
+          <Text style={styles.bulletinHeaderTitle}>Bảng tin nhóm</Text>
           <View
             style={{
               transform: [{ rotate: bulletinExpanded ? "0deg" : "-90deg" }],
@@ -1114,7 +1115,6 @@ export function GroupManageModal({
           >
             <ChevronDown size={18} color={Z.sub} strokeWidth={2} />
           </View>
-          <Text style={styles.bulletinHeaderTitle}>Bảng tin nhóm</Text>
         </Pressable>
         {bulletinExpanded ? (
           <View style={styles.bulletinBody}>
@@ -2641,11 +2641,12 @@ const styles = StyleSheet.create({
   bulletinHeader: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     gap: 10,
     paddingHorizontal: 16,
     paddingVertical: 13,
   },
-  bulletinHeaderTitle: { fontSize: 15, fontWeight: "700", color: Z.text },
+  bulletinHeaderTitle: { flex: 1, fontSize: 15, fontWeight: "700", color: Z.text },
   bulletinBody: { paddingBottom: 4 },
   bulletinRow: {
     flexDirection: "row",
