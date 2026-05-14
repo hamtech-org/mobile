@@ -1099,31 +1099,6 @@ export function GroupManageModal({
             <ChevronRight size={18} color={Z.sub} />
           </View>
         </Pressable>
-        {canManageMembers ? (
-          <Pressable
-            style={styles.memberMgmtSubRow}
-            onPress={() => setPanel("requests")}
-            android_ripple={{ color: "rgba(0,104,255,0.08)" }}
-          >
-            <UserPlus size={18} color={Z.sub} strokeWidth={1.75} />
-            <Text style={styles.memberMgmtSubLabel}>Duyệt người vào nhóm</Text>
-            {joinRequests.length > 0 ? (
-              <View style={[styles.requestBadge, { marginLeft: 8 }]}>
-                <Text style={styles.requestBadgeText}>
-                  {joinRequests.length > 99 ? "99+" : joinRequests.length}
-                </Text>
-              </View>
-            ) : null}
-          </Pressable>
-        ) : null}
-        <Pressable
-          style={styles.memberMgmtSubRow}
-          onPress={() => setPanel("members")}
-          android_ripple={{ color: "rgba(220,38,38,0.08)" }}
-        >
-          <Users size={18} color={Z.sub} strokeWidth={1.75} />
-          <Text style={[styles.memberMgmtSubLabel, { color: Z.red }]}>Mời ra khỏi nhóm</Text>
-        </Pressable>
       </View>
 
       <View style={styles.bulletinOuter}>
@@ -1408,21 +1383,46 @@ export function GroupManageModal({
           keyExtractor={(m) => m.userId}
           contentContainerStyle={{ paddingBottom: 24 }}
           ListHeaderComponent={
-            canManageMembers ? (
-              <View style={{ paddingHorizontal: 16, paddingBottom: 10, paddingTop: 4 }}>
+            <View style={{ paddingHorizontal: 16, paddingBottom: 10, paddingTop: 4 }}>
+              {canManageMembers && joinRequests.length > 0 ? (
+                <Pressable
+                  onPress={() => setPanel("requests")}
+                  android_ripple={{ color: "rgba(0,104,255,0.08)" }}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 10,
+                    paddingVertical: 12,
+                    paddingHorizontal: 12,
+                    marginBottom: 12,
+                    borderRadius: 12,
+                    backgroundColor: Z.subBg,
+                  }}
+                >
+                  <UserPlus size={20} color={Z.primary} strokeWidth={1.85} />
+                  <Text style={{ flex: 1, fontSize: 15, fontWeight: "700", color: Z.text }}>
+                    Yêu cầu vào nhóm
+                  </Text>
+                  <View style={styles.requestBadge}>
+                    <Text style={styles.requestBadgeText}>
+                      {joinRequests.length > 99 ? "99+" : joinRequests.length}
+                    </Text>
+                  </View>
+                  <ChevronRight size={18} color={Z.sub} />
+                </Pressable>
+              ) : null}
+              {canManageMembers ? (
                 <Text style={styles.help}>
                   {kickGloballyDisabled
                     ? `Nhóm hiện có ${members.length} người — cần ít nhất ${MIN_GROUP_MEMBERS + 1} người thì mới mời được một người ra (để nhóm còn tối thiểu ${MIN_GROUP_MEMBERS} người).`
                     : "Chạm «Mời ra» để xóa thành viên khỏi nhóm (không áp dụng cho trưởng nhóm)."}
                 </Text>
-              </View>
-            ) : (
-              <View style={{ paddingHorizontal: 16, paddingBottom: 10, paddingTop: 4 }}>
+              ) : (
                 <Text style={styles.help}>
                   Chỉ trưởng nhóm hoặc quản trị mới thấy nút mời người ra.
                 </Text>
-              </View>
-            )
+              )}
+            </View>
           }
           renderItem={({ item: m }) => (
             <View style={styles.memberRow}>
@@ -2633,16 +2633,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   requestBadgeText: { color: "#fff", fontSize: 11, fontWeight: "800" },
-  memberMgmtSubRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 11,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: Z.line,
-    gap: 10,
-  },
-  memberMgmtSubLabel: { fontSize: 14, fontWeight: "600", color: Z.sub, flex: 1 },
   bulletinOuter: {
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Z.line,
