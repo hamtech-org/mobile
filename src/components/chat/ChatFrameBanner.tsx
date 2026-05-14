@@ -11,22 +11,26 @@ import { formatTimestamp } from "@/utils/time";
 
 interface ChatFrameBannerProps {
   banner: ChatFrameBannerData;
+  /** Nhóm + banner poll: bấm nội dung mở bình chọn (đồng bộ web). */
+  onOpenPoll?: (pollId: string) => void;
 }
 
 /**
  * Thông báo trong khung chat nhóm — khớp web `ChatGroupFrameNoticeBar.tsx`
  * (variant mặc định `task_assigned`, chỉ giờ HH:mm ở dòng phụ, border-t + nền /90).
  */
-export function ChatFrameBanner({ banner }: ChatFrameBannerProps): ReactElement {
+export function ChatFrameBanner({ banner, onOpenPoll }: ChatFrameBannerProps): ReactElement {
   const dispatch = useAppDispatch();
   const v = banner.variant ?? "task_assigned";
   const at = banner.atIso?.trim();
   const timeLabel = at && !Number.isNaN(new Date(at).getTime()) ? formatTimestamp(at) : "";
+  const pollId = banner.pollId?.trim();
+  const openPoll = Boolean(pollId && onOpenPoll);
 
   useEffect(() => {
     const t = setTimeout(() => dispatch(clearChatFrameBanner()), 7000);
     return () => clearTimeout(t);
-  }, [banner.atIso, banner.message, banner.variant, dispatch]);
+  }, [banner.atIso, banner.message, banner.variant, banner.pollId, dispatch]);
 
   const theme =
     v === "task_joined"
@@ -61,12 +65,28 @@ export function ChatFrameBanner({ banner }: ChatFrameBannerProps): ReactElement 
     >
       <View className="flex-row items-start gap-2">
         <View className="mt-[1px]">{theme.icon}</View>
-        <Text
-          className={`min-w-0 flex-1 text-left text-[12px] font-semibold leading-[18px] ${theme.main}`}
-          numberOfLines={5}
-        >
-          {banner.message}
-        </Text>
+        {openPoll ? (
+          <Pressable
+            onPress={() => pollId && onOpenPoll?.(pollId)}
+            className="min-w-0 flex-1 active:opacity-80"
+            accessibilityRole="button"
+            accessibilityLabel="Mở bình chọn"
+          >
+            <Text
+              className={`text-left text-[12px] font-semibold leading-[18px] underline ${theme.main}`}
+              numberOfLines={5}
+            >
+              {banner.message}
+            </Text>
+          </Pressable>
+        ) : (
+          <Text
+            className={`min-w-0 flex-1 text-left text-[12px] font-semibold leading-[18px] ${theme.main}`}
+            numberOfLines={5}
+          >
+            {banner.message}
+          </Text>
+        )}
         <Pressable
           onPress={() => dispatch(clearChatFrameBanner())}
           hitSlop={10}
