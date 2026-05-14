@@ -39,13 +39,7 @@ import { useAppDispatch, useAppSelector } from "@/hooks/useAppStore";
 import { useChat } from "@/hooks/useChat";
 import { useChatMessageData } from "@/hooks/useChatMessageData";
 import { useConversationLifecycle } from "@/hooks/useConversationLifecycle";
-import { useSocket } from "@/hooks/useSocket";
-import {
-  setReplyingTo,
-  clearReplyingTo,
-  clearChatFrameBanner,
-  messageReceived,
-} from "@/store/slices/chatSlice";
+import { setReplyingTo, clearReplyingTo, clearChatFrameBanner } from "@/store/slices/chatSlice";
 import type { IMessage, TypingUserEntry } from "@/types/chat.types";
 import { prepareLocalFileForUpload } from "@/utils/uploadAttachment";
 import { toast } from "@/utils/appToast";
@@ -86,7 +80,6 @@ export default function ChatDetailScreen() {
   const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
   const dispatch = useAppDispatch();
   const insets = useSafeAreaInsets();
-  const socket = useSocket();
 
   const currentUserId = useAppSelector((state) => state.auth.user?.userId);
   const currentUserName = useAppSelector((state) => state.auth.user?.displayName ?? null);
@@ -278,53 +271,9 @@ export default function ChatDetailScreen() {
 
       const next = Array.from(new Set([...existing, currentUserId]));
       setLocalParticipantsByTaskId((prev) => ({ ...prev, [id]: next }));
-
-      const msgId = `system-task-join:${conversationId}:${id}:${currentUserId}`;
-      const payload = {
-        kind: "task_joined",
-        createdAt: new Date().toISOString(),
-        actor: {
-          userId: currentUserId,
-          id: currentUserId,
-          name: currentUserName ?? "Bạn",
-        },
-        task: {
-          taskId: id,
-          title: rawTask?.title ?? "",
-        },
-      };
-
-      const systemMsg: IMessage = {
-        messageId: msgId,
-        conversationId,
-        senderId: currentUserId,
-        senderDisplayName: currentUserName,
-        position: "center",
-        type: "system",
-        content: JSON.stringify(payload),
-        mediaUrl: null,
-        thumbnailUrl: null,
-        replyTo: null,
-        isPinned: false,
-        isEdited: false,
-        isRecalled: false,
-        reactions: {},
-        status: "sent",
-        createdAt: payload.createdAt,
-      };
-
-      dispatch(messageReceived(systemMsg));
-      socket?.emit("message:new", systemMsg);
+      /** Tin system `task_joined` chỉ từ server (`joinTask` → `createAndBroadcastSystemMessage`). Không dispatch/socket ở đây — tránh đúp trong khung chat + banner. */
     },
-    [
-      conversationId,
-      currentUserId,
-      currentUserName,
-      dispatch,
-      groupTasksFromApi,
-      localParticipantsByTaskId,
-      socket,
-    ],
+    [conversationId, currentUserId, groupTasksFromApi, localParticipantsByTaskId],
   );
 
   const handleTogglePollVote = useCallback(

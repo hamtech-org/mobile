@@ -9,7 +9,7 @@ export interface ChatFrameBanner {
   conversationId: string;
   message: string;
   atIso: string;
-  /** Không set → kiểu primary (ghim, thu hồi, …). */
+  /** Không set → coi như `task_assigned` (giống web `ChatGroupFrameNoticeBar`). */
   variant?: ChatFrameBannerVariant;
 }
 
