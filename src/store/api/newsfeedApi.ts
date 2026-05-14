@@ -326,6 +326,7 @@ export const newsfeedApi = createApi({
         body: { type },
       }),
       transformResponse: (response: ApiEnvelope<IReactionSummary>) => response.data,
+      invalidatesTags: ["ReelsFeed", "ReelDetail"],
     }),
 
     sharePost: builder.mutation<IPost, { postId: string } & SharePostBody>({
@@ -452,6 +453,7 @@ export const newsfeedApi = createApi({
         method: "POST",
       }),
       transformResponse: (response: ApiEnvelope<{ isSaved: boolean }>) => response.data,
+      invalidatesTags: ["ReelsFeed", "ReelDetail"],
     }),
 
     reportReel: builder.mutation<null, { reelId: string } & IReportReelDto>({

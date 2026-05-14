@@ -127,8 +127,8 @@ export interface IReelFeedPage {
 
 export interface ICreateReelDto {
   videoUrl: string;
-  thumbnailUrl: string;
-  caption: string;
+  thumbnailUrl?: string | null;
+  caption?: string;
   durationMs: number;
   width: number;
   height: number;
