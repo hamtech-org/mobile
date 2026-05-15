@@ -1,4 +1,5 @@
 import type { IMessage } from "@/types/chat.types";
+import { formatGroupSystemChatLine } from "@/utils/groupSystemMessage";
 
 /** Tin hệ thống căn giữa (từ socket/API legacy). */
 export function isCenterPositionMessage(message: IMessage): boolean {
@@ -96,7 +97,7 @@ export function preprocessSystemPlainText(
     if (name) text = replaceFirst(text, name, "Bạn");
   }
 
-  return text;
+  return text.replace(/\bundefined\b/g, "Thành viên").replace(/\bnull\b/g, "Thành viên");
 }
 
 function actorWho(
@@ -124,6 +125,12 @@ export function buildSystemBubbleView(
   message: IMessage,
   ctx: SystemMessageFormatContext,
 ): SystemBubbleView {
+  const rawContent = (message.content ?? "").trim();
+  const groupLine = formatGroupSystemChatLine(rawContent, ctx.currentUserId);
+  if (groupLine) {
+    return { variant: "text", text: groupLine, rowIcon: systemRowIconForPlainText(groupLine) };
+  }
+
   const baseText = preprocessSystemPlainText(message, ctx);
   const raw = baseText.trim();
   if (!raw.startsWith("{")) {
@@ -254,6 +261,8 @@ export function formatSystemLastMessagePreview(
 ): string | null {
   const raw = (content ?? "").trim();
   if (!raw.startsWith("{")) return null;
+  const groupLine = formatGroupSystemChatLine(raw, currentUserId);
+  if (groupLine) return groupLine;
   try {
     const obj = JSON.parse(raw) as {
       kind?: string;
