@@ -96,7 +96,7 @@ export function preprocessSystemPlainText(
     if (name) text = replaceFirst(text, name, "Bạn");
   }
 
-  return text;
+  return text.replace(/\bundefined\b/g, "Thành viên").replace(/\bnull\b/g, "Thành viên");
 }
 
 function actorWho(
