@@ -1847,28 +1847,6 @@ export function GroupManageModal({
         <View style={styles.gmPlaceholderBlock}>
           <Pressable
             onPress={() => {
-              if (!canKickMembers) {
-                toast.info("Chỉ trưởng nhóm mới có thể mời thành viên ra khỏi nhóm");
-                return;
-              }
-              setMembersLeadersOnly(false);
-              setMemberManageTab("list");
-              setPanel("members");
-            }}
-            style={({ pressed }) => [
-              { width: "100%" },
-              styles.gmPlaceholderHit,
-              pressed ? styles.gmPlaceholderPressed : null,
-            ]}
-            android_ripple={{ color: "rgba(0,0,0,0.06)" }}
-          >
-            <View style={styles.gmPlaceholderRowInner}>
-              <Ban size={20} color="#64748B" strokeWidth={2} />
-              <Text style={styles.gmPlaceholderLabel}>Chặn khỏi nhóm</Text>
-            </View>
-          </Pressable>
-          <Pressable
-            onPress={() => {
               setMembersLeadersOnly(true);
               setMemberManageTab("list");
               setPanel("members");
