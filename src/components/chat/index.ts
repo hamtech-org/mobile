@@ -12,6 +12,7 @@ export { ConversationPersonalSettingsModal } from "./ConversationPersonalSetting
 export { MutedConversationsFooter } from "./MutedConversationsFooter";
 export { CreateGroupModal } from "./CreateGroupModal";
 export { ChatInput } from "./ChatInput";
+export { GroupMemberSendRestrictedBar } from "./GroupMemberSendRestrictedBar";
 export type { PendingAttachment } from "./ChatInput";
 export { ConversationItem } from "./ConversationItem";
 export { ConversationListActionSheet } from "./ConversationListActionSheet";

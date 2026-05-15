@@ -22,6 +22,11 @@ import { toast } from "@/utils/appToast";
 import { formatChatPreviewLine, getMessageTypeLabel } from "@/utils/messageDisplay";
 import { sortConversationsForSidebar } from "@/utils/conversationListSort";
 import { formatSystemLastMessagePreview } from "@/utils/systemMessage";
+import {
+  applyKickedFromGroupRealtime,
+  applyRejoinedGroupMemberRealtime,
+  messagePassesJoinCutoff,
+} from "@/utils/chatMembershipRealtime";
 
 /** Toast khi không mở hội thoại — tránh trùng poll. */
 const pollToastDedupe = new Set<string>();
@@ -199,6 +204,9 @@ export function useChatRealtimeEvents({
 
     const handleNewMessage = (msg: IMessage) => {
       const cid = String(msg.conversationId ?? "").trim();
+      const cutoff = store.getState().chat.messageJoinCutoffMsByConversation[cid];
+      if (!messagePassesJoinCutoff(msg, cutoff)) return;
+
       const mid = String(msg.messageId ?? "").trim();
       if (cid && mid) {
         const sig = `${cid}:${mid}`;
@@ -635,12 +643,18 @@ export function useChatRealtimeEvents({
     const handleGroupMemberJoined = (payload: Record<string, unknown>) => {
       const gid = groupIdFromPayload(payload);
       if (!gid) return;
+      const viewerId = store.getState().auth.user?.userId ?? "";
+      const joinedUserId = String((payload as { userId?: string }).userId ?? "").trim();
+      const joinedAt = String((payload as { joinedAt?: string }).joinedAt ?? "").trim();
+      if (viewerId && joinedUserId === viewerId && joinedAt) {
+        applyRejoinedGroupMemberRealtime(dispatch, gid, joinedAt);
+      }
       patchConversationMemberCount(gid, payload);
       invalidateGroupData(gid, ["members", "requests"]);
       prefetchGroupMembers(gid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
       emitFrameBanner(
-        `member_joined:${gid}:${String((payload as { userId?: string }).userId ?? "")}`,
+        `member_joined:${gid}:${joinedUserId}`,
         gid,
         "Có thành viên mới tham gia nhóm",
         undefined,
@@ -668,12 +682,17 @@ export function useChatRealtimeEvents({
     const handleGroupMemberRemoved = (payload: Record<string, unknown>) => {
       const gid = groupIdFromPayload(payload);
       if (!gid) return;
+      const viewerId = store.getState().auth.user?.userId ?? "";
+      const removedUserId = String((payload as { userId?: string }).userId ?? "").trim();
+      if (viewerId && removedUserId === viewerId) {
+        applyKickedFromGroupRealtime(dispatch, gid);
+      }
       patchConversationMemberCount(gid, payload);
       invalidateGroupData(gid, ["members"]);
       prefetchGroupMembers(gid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
       emitFrameBanner(
-        `member_removed:${gid}:${String((payload as { userId?: string }).userId ?? "")}`,
+        `member_removed:${gid}:${removedUserId}`,
         gid,
         "Một thành viên đã bị xóa khỏi nhóm",
         undefined,
@@ -746,7 +765,12 @@ export function useChatRealtimeEvents({
     };
 
     const handleGroupRequestApproved = (payload: Record<string, unknown>) => {
-      const gid = String((payload as { groupId?: string }).groupId ?? "").trim();
+      const gid = groupIdFromPayload(payload);
+      if (!gid) return;
+      const joinedAt = String((payload as { joinedAt?: string }).joinedAt ?? "").trim();
+      if (joinedAt) {
+        applyRejoinedGroupMemberRealtime(dispatch, gid, joinedAt);
+      }
       patchConversationMemberCount(gid, payload);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
       toast.info("Bạn đã được duyệt vào nhóm", 5000);
@@ -816,6 +840,17 @@ export function useChatRealtimeEvents({
     socket.on("group:join_request_updated", handleGroupJoinRequestUpdated);
     socket.on("group:disbanded", handleGroupDisbanded);
     socket.on("group:deleted", handleGroupDeleted);
+    const handleGroupMembershipRevoked = (payload: Record<string, unknown>) => {
+      const gid = groupIdFromPayload(payload);
+      if (!gid) return;
+      const viewerId = store.getState().auth.user?.userId ?? "";
+      const removedUserId = String((payload as { userId?: string }).userId ?? "").trim();
+      if (viewerId && removedUserId === viewerId) {
+        applyKickedFromGroupRealtime(dispatch, gid);
+      }
+    };
+
+    socket.on("group:membership_revoked", handleGroupMembershipRevoked);
     socket.on("group:request_approved", handleGroupRequestApproved);
     socket.on("group:request_rejected", handleGroupRequestRejected);
     socket.on("group:recap_new", handleGroupRecapNew);
@@ -851,6 +886,7 @@ export function useChatRealtimeEvents({
       socket.off("group:join_request_updated", handleGroupJoinRequestUpdated);
       socket.off("group:disbanded", handleGroupDisbanded);
       socket.off("group:deleted", handleGroupDeleted);
+      socket.off("group:membership_revoked", handleGroupMembershipRevoked);
       socket.off("group:request_approved", handleGroupRequestApproved);
       socket.off("group:request_rejected", handleGroupRequestRejected);
       socket.off("group:recap_new", handleGroupRecapNew);

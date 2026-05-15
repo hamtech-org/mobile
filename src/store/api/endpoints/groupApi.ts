@@ -48,6 +48,7 @@ export interface GroupJoinRequestRow {
   name: string;
   avatar: string | null;
   status?: string;
+  isFriend?: boolean;
 }
 
 const DEFAULT_GROUP_SETTINGS: IGroupSettings = {
@@ -161,7 +162,23 @@ export const groupApi = chatApi.injectEndpoints({
         url: `/chat/groups/${groupId}/members/${userId}`,
         method: "DELETE",
       }),
-      invalidatesTags: ["Conversations"],
+      invalidatesTags: (_r, _e, arg) => [
+        { type: "Conversations", id: `MEMBERS-${arg.groupId}` },
+        "Conversations",
+      ],
+      async onQueryStarted({ groupId, userId }, { dispatch, queryFulfilled }) {
+        const patch = dispatch(
+          chatApi.util.updateQueryData("getGroupMembers", groupId, (draft) => {
+            const idx = draft.findIndex((m) => m.userId === userId);
+            if (idx >= 0) draft.splice(idx, 1);
+          }),
+        );
+        try {
+          await queryFulfilled;
+        } catch {
+          patch.undo();
+        }
+      },
     }),
 
     changeMemberRole: builder.mutation<ApiEnvelope<null>, ChangeMemberRoleRequest>({
@@ -190,6 +207,7 @@ export const groupApi = chatApi.injectEndpoints({
             avatar: o.avatar != null ? String(o.avatar) : null,
           };
           if (o.status != null) row.status = String(o.status);
+          if (typeof o.isFriend === "boolean") row.isFriend = o.isFriend;
           out.push(row);
         }
         return out;

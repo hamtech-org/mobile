@@ -21,6 +21,7 @@ interface ChatState {
   typingUsers: Record<string, TypingUserEntry[]>;
   replyingTo: IMessage | null;
   frameBanner: ChatFrameBanner | null;
+  messageJoinCutoffMsByConversation: Record<string, number>;
 }
 
 const initialState: ChatState = {
@@ -29,6 +30,7 @@ const initialState: ChatState = {
   typingUsers: {},
   replyingTo: null,
   frameBanner: null,
+  messageJoinCutoffMsByConversation: {},
 };
 
 const chatSlice = createSlice({
@@ -49,6 +51,11 @@ const chatSlice = createSlice({
     // ─── Socket event: tin nhắn mới nhận từ server ────────────────────
     messageReceived: (state, action: PayloadAction<IMessage>) => {
       const msg = action.payload;
+      const cutoff = state.messageJoinCutoffMsByConversation[msg.conversationId];
+      if (cutoff != null) {
+        const t = Date.parse(msg.createdAt);
+        if (Number.isFinite(t) && t < cutoff) return;
+      }
       if (!state.messages[msg.conversationId]) {
         state.messages[msg.conversationId] = [];
       }
@@ -211,6 +218,25 @@ const chatSlice = createSlice({
     clearChatFrameBanner: (state) => {
       state.frameBanner = null;
     },
+
+    setMessageJoinCutoff: (
+      state,
+      action: PayloadAction<{ conversationId: string; minCreatedAtMs: number | null }>,
+    ) => {
+      const id = String(action.payload.conversationId ?? "").trim();
+      if (!id) return;
+      if (action.payload.minCreatedAtMs == null) {
+        delete state.messageJoinCutoffMsByConversation[id];
+        return;
+      }
+      state.messageJoinCutoffMsByConversation[id] = action.payload.minCreatedAtMs;
+    },
+
+    clearConversationMessages: (state, action: PayloadAction<string>) => {
+      const id = String(action.payload ?? "").trim();
+      if (!id) return;
+      delete state.messages[id];
+    },
   },
 });
 
@@ -231,6 +257,8 @@ export const {
   clearReplyingTo,
   showChatFrameBanner,
   clearChatFrameBanner,
+  setMessageJoinCutoff,
+  clearConversationMessages,
 } = chatSlice.actions;
 
 export const chatReducer = chatSlice.reducer;
