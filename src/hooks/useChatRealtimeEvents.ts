@@ -569,14 +569,7 @@ export function useChatRealtimeEvents({
       if (!gid) return;
       invalidateGroupData(gid, ["polls", "members"]);
       dispatch(chatApi.util.invalidateTags([{ type: "Messages", id: gid }]));
-      emitFrameBanner(
-        `group:poll_new:${gid}`,
-        gid,
-        "Có bình chọn mới trong nhóm",
-        undefined,
-        "poll",
-        1500,
-      );
+      /** Banner từ tin system `poll_created` (`message:new`); không emit thêm (tránh đúp). */
     };
 
     const handleGroupPollUpdated = (payload: Record<string, unknown>) => {

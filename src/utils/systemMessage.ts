@@ -97,6 +97,8 @@ export function preprocessSystemPlainText(
     if (name) text = replaceFirst(text, name, "Bạn");
   }
 
+  const trimmed = text.trim();
+  if (trimmed.startsWith("{")) return text;
   return text.replace(/\bundefined\b/g, "Thành viên").replace(/\bnull\b/g, "Thành viên");
 }
 
@@ -131,14 +133,13 @@ export function buildSystemBubbleView(
     return { variant: "text", text: groupLine, rowIcon: systemRowIconForPlainText(groupLine) };
   }
 
-  const baseText = preprocessSystemPlainText(message, ctx);
-  const raw = baseText.trim();
-  if (!raw.startsWith("{")) {
+  if (!rawContent.startsWith("{")) {
+    const baseText = preprocessSystemPlainText(message, ctx);
     return { variant: "text", text: baseText, rowIcon: systemRowIconForPlainText(baseText) };
   }
 
   try {
-    const obj = JSON.parse(raw) as {
+    const obj = JSON.parse(rawContent) as {
       kind?: string;
       actor?: SystemActor;
       task?: SystemTask;
@@ -245,9 +246,22 @@ export function buildSystemBubbleView(
       return { variant: "text", text: line, rowIcon: "barChartMuted" };
     }
 
-    return { variant: "text", text: baseText, rowIcon: systemRowIconForPlainText(baseText) };
+    const fallback =
+      formatSystemLastMessagePreview(
+        rawContent,
+        message.senderId,
+        ctx.currentUserId ?? "",
+        message.senderDisplayName,
+      ) ?? "Thông báo nhóm";
+    return { variant: "text", text: fallback, rowIcon: systemRowIconForPlainText(fallback) };
   } catch {
-    const fallback = baseText.trim() ? baseText : "Thông báo nhóm";
+    const fallback =
+      formatSystemLastMessagePreview(
+        rawContent,
+        message.senderId,
+        ctx.currentUserId ?? "",
+        message.senderDisplayName,
+      ) ?? "Thông báo nhóm";
     return { variant: "text", text: fallback, rowIcon: systemRowIconForPlainText(fallback) };
   }
 }
