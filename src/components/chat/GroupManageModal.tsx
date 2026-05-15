@@ -459,7 +459,7 @@ export function GroupManageModal({
   const isOwner = myRole === "owner";
   const canModerateMembers = myRole === "owner" || myRole === "admin";
   const canKickMembers = isOwner;
-  const canEditGroupSettings = isOwner || myRole === "admin";
+  const canEditGroupSettings = isOwner;
 
   /** Khớp backend: owner/admin luôn được; member cần `changeNameAvatar` (áp dụng cho cả tên và ảnh nhóm). */
   const canEditGroupProfile = useMemo(
@@ -1372,7 +1372,7 @@ export function GroupManageModal({
         <Text style={[styles.help, { textAlign: "center", marginTop: 10, paddingHorizontal: 8 }]}>
           {canEditGroupProfile
             ? "Chạm ảnh để đổi ảnh đại diện nhóm"
-            : "Nhóm không cho phép thành viên đổi tên hoặc ảnh đại diện. Chỉ trưởng nhóm hoặc quản trị có thể chỉnh sửa."}
+            : "Nhóm không cho phép thành viên đổi tên hoặc ảnh đại diện. Chỉ trưởng nhóm có thể chỉnh sửa."}
         </Text>
       </View>
       <Text style={styles.fieldLabel}>Tên nhóm</Text>
@@ -1783,12 +1783,6 @@ export function GroupManageModal({
 
         <View style={styles.gmAdminToggles}>
           <GroupAdminToggleRow
-            label="Đánh dấu tin nhắn từ trưởng/phó nhóm"
-            value={ad.highlightLeaderMessages}
-            onValueChange={(v) => void patchSettingAdmin("highlightLeaderMessages", v)}
-            disabled={settingsLocked}
-          />
-          <GroupAdminToggleRow
             label="Cho phép thành viên mới đọc tin nhắn gần nhất"
             value={ad.newMembersReadRecent}
             onValueChange={(v) => void patchSettingAdmin("newMembersReadRecent", v)}
@@ -1895,7 +1889,7 @@ export function GroupManageModal({
 
         {!canEditGroupSettings ? (
           <Text style={styles.gmReadOnlyFooter}>
-            Bạn chỉ xem được cài đặt. Chỉ trưởng/phó nhóm mới chỉnh sửa.
+            Bạn chỉ xem được cài đặt. Chỉ trưởng nhóm mới chỉnh được cài đặt.
           </Text>
         ) : null}
       </ScrollView>
