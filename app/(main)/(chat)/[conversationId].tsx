@@ -51,6 +51,7 @@ import { formatChatPreviewLine } from "@/utils/messageDisplay";
 import {
   canUserPinMessageInGroup,
   canUserSendMessageInGroup,
+  resolveGroupMemberRole,
 } from "@/utils/groupConversationPermissions";
 import { MAX_PINNED_PER_CONVERSATION } from "@/constants/chatPin";
 
@@ -202,18 +203,23 @@ export default function ChatDetailScreen() {
   });
 
   const myRoleInGroup = useMemo(() => {
-    if (!currentUserId || !groupMembersForPerm.length) return undefined;
-    return groupMembersForPerm.find((m) => m.userId === currentUserId)?.role;
-  }, [groupMembersForPerm, currentUserId]);
+    if (!currentUserId) return undefined;
+    return resolveGroupMemberRole({
+      userId: currentUserId,
+      members: groupMembersForPerm,
+      conversationCreatorId: conversation?.creatorId,
+    });
+  }, [groupMembersForPerm, currentUserId, conversation?.creatorId]);
 
   const canSendInGroup = useMemo(() => {
     if (!isGroup || !conversation) return true;
     return canUserSendMessageInGroup({
       conversation,
+      userRole: myRoleInGroup,
       userId: currentUserId ?? "",
       members: groupMembersForPerm,
     });
-  }, [isGroup, conversation, currentUserId, groupMembersForPerm]);
+  }, [isGroup, conversation, myRoleInGroup, currentUserId, groupMembersForPerm]);
 
   const { data: tasksEnvelope } = useGetTasksQuery(conversationId!, {
     skip: !isGroup || !conversationId,
