@@ -281,6 +281,7 @@ export function GroupManageModal({
   const [panel, setPanel] = useState<Panel>("home");
   /** Tab trong màn «Quản lý thành viên» — khớp web MemberManagementModal (list | pending). */
   const [memberManageTab, setMemberManageTab] = useState<"list" | "pending">("list");
+  const [membersLeadersOnly, setMembersLeadersOnly] = useState(false);
   const [pickOwnerForLeave, setPickOwnerForLeave] = useState(false);
   const [editName, setEditName] = useState(conversation.name ?? "");
   const [selectedInviteFriendIds, setSelectedInviteFriendIds] = useState<Set<string>>(
@@ -597,6 +598,7 @@ export function GroupManageModal({
       return;
     }
     if (panel !== "home") {
+      if (panel === "members") setMembersLeadersOnly(false);
       setPanel("home");
       return;
     }
@@ -759,7 +761,9 @@ export function GroupManageModal({
           onPress: () => confirmDemote(m),
         });
       }
-      buttons.push({ text: "Kick", style: "destructive", onPress: kick });
+      if (!membersLeadersOnly) {
+        buttons.push({ text: "Kick", style: "destructive", onPress: kick });
+      }
       buttons.push({ text: "Hủy", style: "cancel" });
       Alert.alert(name, undefined, buttons);
     },
@@ -770,6 +774,7 @@ export function GroupManageModal({
       effectiveUserId,
       kickGloballyDisabled,
       members.length,
+      membersLeadersOnly,
     ],
   );
 
@@ -1026,7 +1031,9 @@ export function GroupManageModal({
         : panel === "add"
           ? "Thêm thành viên"
           : panel === "members"
-            ? "Quản lý thành viên"
+            ? membersLeadersOnly
+              ? "Trưởng & phó nhóm"
+              : "Quản lý thành viên"
             : panel === "settings"
               ? "Quản lý nhóm"
               : panel === "media"
@@ -1159,6 +1166,7 @@ export function GroupManageModal({
         <Pressable
           style={styles.memberMgmtHeader}
           onPress={() => {
+            setMembersLeadersOnly(false);
             setMemberManageTab("list");
             setPanel("members");
           }}
@@ -1448,6 +1456,11 @@ export function GroupManageModal({
     </View>
   );
 
+  const membersForList = useMemo(() => {
+    if (!membersLeadersOnly) return members;
+    return members.filter((m) => m.role === "owner" || m.role === "admin");
+  }, [members, membersLeadersOnly]);
+
   const renderMembers = () => (
     <View style={{ flex: 1 }}>
       <View
@@ -1459,7 +1472,7 @@ export function GroupManageModal({
           borderBottomColor: Z.line,
         }}
       >
-        {canModerateMembers ? (
+        {canModerateMembers && !membersLeadersOnly ? (
           <Pressable
             style={styles.mmAddBtn}
             onPress={() => setPanel("add")}
@@ -1472,66 +1485,77 @@ export function GroupManageModal({
         ) : null}
       </View>
 
-      <View style={styles.mmTabsRow}>
-        <Pressable
-          onPress={() => setMemberManageTab("list")}
-          style={[styles.mmTab, memberManageTab === "list" ? styles.mmTabActive : styles.mmTabIdle]}
-        >
-          <Users size={14} color={memberManageTab === "list" ? "#fff" : Z.sub} strokeWidth={2} />
-          <Text
-            style={[
-              styles.mmTabText,
-              memberManageTab === "list" ? styles.mmTabTextActive : styles.mmTabTextIdle,
-            ]}
-          >
-            Thành viên ({members.length})
-          </Text>
-        </Pressable>
-        {canModerateMembers ? (
+      {!membersLeadersOnly ? (
+        <View style={styles.mmTabsRow}>
           <Pressable
-            onPress={() => setMemberManageTab("pending")}
+            onPress={() => setMemberManageTab("list")}
             style={[
               styles.mmTab,
-              memberManageTab === "pending" ? styles.mmTabActive : styles.mmTabIdle,
+              memberManageTab === "list" ? styles.mmTabActive : styles.mmTabIdle,
             ]}
           >
-            <UserPlus
-              size={14}
-              color={memberManageTab === "pending" ? "#fff" : Z.sub}
-              strokeWidth={2}
-            />
+            <Users size={14} color={memberManageTab === "list" ? "#fff" : Z.sub} strokeWidth={2} />
             <Text
               style={[
                 styles.mmTabText,
-                memberManageTab === "pending" ? styles.mmTabTextActive : styles.mmTabTextIdle,
+                memberManageTab === "list" ? styles.mmTabTextActive : styles.mmTabTextIdle,
               ]}
             >
-              Chờ duyệt
+              Thành viên ({members.length})
             </Text>
-            {joinRequests.length > 0 ? (
-              <View style={styles.mmPendingCountBadge}>
-                <Text style={styles.mmPendingCountBadgeText}>
-                  {joinRequests.length > 99 ? "99+" : joinRequests.length}
-                </Text>
-              </View>
-            ) : null}
           </Pressable>
-        ) : null}
-      </View>
+          {canModerateMembers ? (
+            <Pressable
+              onPress={() => setMemberManageTab("pending")}
+              style={[
+                styles.mmTab,
+                memberManageTab === "pending" ? styles.mmTabActive : styles.mmTabIdle,
+              ]}
+            >
+              <UserPlus
+                size={14}
+                color={memberManageTab === "pending" ? "#fff" : Z.sub}
+                strokeWidth={2}
+              />
+              <Text
+                style={[
+                  styles.mmTabText,
+                  memberManageTab === "pending" ? styles.mmTabTextActive : styles.mmTabTextIdle,
+                ]}
+              >
+                Chờ duyệt
+              </Text>
+              {joinRequests.length > 0 ? (
+                <View style={styles.mmPendingCountBadge}>
+                  <Text style={styles.mmPendingCountBadgeText}>
+                    {joinRequests.length > 99 ? "99+" : joinRequests.length}
+                  </Text>
+                </View>
+              ) : null}
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
 
       {isFetching ? (
         <ActivityIndicator style={{ marginTop: 24 }} color={Z.primary} />
-      ) : memberManageTab === "list" || !canModerateMembers ? (
+      ) : memberManageTab === "list" || !canModerateMembers || membersLeadersOnly ? (
         <FlatList
-          data={members}
+          data={membersForList}
           keyExtractor={(m) => m.userId}
           contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 24 }}
+          ListEmptyComponent={
+            <Text style={[styles.help, { textAlign: "center", marginTop: 24 }]}>
+              {membersLeadersOnly ? "Chưa có phó nhóm." : "Chưa có thành viên."}
+            </Text>
+          }
           renderItem={({ item: m }) => {
-            const canAct =
-              canKickMembers &&
-              Boolean(effectiveUserId) &&
-              m.userId !== effectiveUserId &&
-              m.role !== "owner";
+            const canAct = membersLeadersOnly
+              ? canKickMembers && m.role === "admin"
+              : canKickMembers &&
+                Boolean(effectiveUserId) &&
+                m.userId !== effectiveUserId &&
+                m.role !== "owner";
             return (
               <View style={styles.mmMemberRow}>
                 <Avatar uri={m.avatar || undefined} name={m.displayName} size="sm" />
@@ -1753,6 +1777,12 @@ export function GroupManageModal({
             onValueChange={(v) => void patchSettingAdmin("allowJoinLink", v)}
             disabled={settingsLocked}
           />
+          <GroupAdminToggleRow
+            label="Phê duyệt thành viên mới vào nhóm"
+            value={ad.approvalRequired}
+            onValueChange={(v) => void patchSettingAdmin("approvalRequired", v)}
+            disabled={settingsLocked}
+          />
         </View>
 
         {ad.allowJoinLink ? (
@@ -1799,7 +1829,15 @@ export function GroupManageModal({
 
         <View style={styles.gmPlaceholderBlock}>
           <Pressable
-            onPress={() => toast.info("Tính năng đang phát triển")}
+            onPress={() => {
+              if (!canKickMembers) {
+                toast.info("Chỉ trưởng nhóm mới có thể mời thành viên ra khỏi nhóm");
+                return;
+              }
+              setMembersLeadersOnly(false);
+              setMemberManageTab("list");
+              setPanel("members");
+            }}
             style={({ pressed }) => [
               { width: "100%" },
               styles.gmPlaceholderHit,
@@ -1813,7 +1851,11 @@ export function GroupManageModal({
             </View>
           </Pressable>
           <Pressable
-            onPress={() => toast.info("Dùng mục Quản lý thành viên để xem vai trò")}
+            onPress={() => {
+              setMembersLeadersOnly(true);
+              setMemberManageTab("list");
+              setPanel("members");
+            }}
             style={({ pressed }) => [
               { width: "100%" },
               styles.gmPlaceholderHit,
