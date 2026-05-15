@@ -111,8 +111,10 @@ import { GroupTaskModal } from "./GroupTaskModal";
 import { GroupPollModal } from "./GroupPollModal";
 import { MuteNotificationsModal } from "./MuteNotificationsModal";
 import {
+  canUserChangeGroupProfileInGroup,
   canUserCreatePollInGroup,
   canUserCreateTaskInGroup,
+  resolveGroupMemberRole,
 } from "@/utils/groupConversationPermissions";
 
 export type GroupManagePanel =
@@ -428,15 +430,31 @@ export function GroupManageModal({
     () => (effectiveUserId ? members.find((m) => m.userId === effectiveUserId) : undefined),
     [members, effectiveUserId],
   );
-  const myRole = myMember?.role;
+  const myRole = useMemo(
+    () =>
+      resolveGroupMemberRole({
+        userId: effectiveUserId,
+        members,
+      }),
+    [effectiveUserId, members],
+  );
   const effectiveGroupSettings = settings ?? conversation.groupSettings;
+  const permConversation = useMemo(
+    () => ({
+      type: "group" as const,
+      groupSettings: effectiveGroupSettings,
+    }),
+    [effectiveGroupSettings],
+  );
   const canCreatePollUi = canUserCreatePollInGroup({
-    conversation: { type: "group", groupSettings: effectiveGroupSettings },
-    userRole: myRole,
+    conversation: permConversation,
+    userId: effectiveUserId,
+    members,
   });
   const canCreateTaskUi = canUserCreateTaskInGroup({
-    conversation: { type: "group", groupSettings: effectiveGroupSettings },
-    userRole: myRole,
+    conversation: permConversation,
+    userId: effectiveUserId,
+    members,
   });
   const isOwner = myRole === "owner";
   const canModerateMembers = myRole === "owner" || myRole === "admin";
@@ -444,11 +462,16 @@ export function GroupManageModal({
   const canEditGroupSettings = isOwner || myRole === "admin";
 
   /** Khớp backend: owner/admin luôn được; member cần `changeNameAvatar` (áp dụng cho cả tên và ảnh nhóm). */
-  const canEditGroupProfile = useMemo(() => {
-    if (!myMember?.role) return false;
-    if (myMember.role === "owner" || myMember.role === "admin") return true;
-    return settings?.memberPermissions.changeNameAvatar ?? true;
-  }, [myMember?.role, settings?.memberPermissions.changeNameAvatar]);
+  const canEditGroupProfile = useMemo(
+    () =>
+      canUserChangeGroupProfileInGroup({
+        conversation: permConversation,
+        userRole: myRole,
+        userId: effectiveUserId,
+        members,
+      }),
+    [permConversation, myRole, effectiveUserId, members],
+  );
 
   const othersForOwnerHandoff = useMemo(
     () => members.filter((m) => m.userId !== effectiveUserId),
@@ -1703,7 +1726,7 @@ export function GroupManageModal({
       { key: "changeNameAvatar", label: "Thay đổi tên & ảnh đại diện của nhóm" },
       {
         key: "pinMessages",
-        label: "Ghim tin nhắn, ghi chú, bình chọn lên đầu hội thoại",
+        label: "Ghim tin nhắn, bình chọn lên đầu hội thoại",
         hint: `Tối đa ${MAX_PINNED_PER_CONVERSATION} tin ghim mỗi cuộc trò chuyện.`,
       },
       { key: "createNotesReminders", label: "Tạo mới ghi chú, nhắc hẹn" },
@@ -2237,7 +2260,21 @@ export function GroupManageModal({
             {renderTaskCards("")}
           </View>
         ) : (
-          renderTaskCards("Chưa có nhắc hẹn hay công việc.")
+          <>
+            {renderTaskCards("Chưa có nhắc hẹn hay công việc.")}
+            {canCreateTaskUi ? (
+              <Pressable
+                style={[styles.primaryBtn, { marginTop: 16 }, busy && { opacity: 0.6 }]}
+                onPress={() => {
+                  setEditingTaskData(null);
+                  setTaskModalOpen(true);
+                }}
+                disabled={busy}
+              >
+                <Text style={styles.primaryBtnText}>Tạo công việc / nhắc hẹn</Text>
+              </Pressable>
+            ) : null}
+          </>
         )}
 
         {tasksList.length > 0 ? (
