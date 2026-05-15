@@ -44,7 +44,6 @@ import {
   Bell,
   Search,
   Settings,
-  Shield,
   Sparkles,
   Trash2,
   UserCog,
@@ -60,6 +59,7 @@ import {
   Ban,
   KeyRound,
   HelpCircle,
+  MoreHorizontal,
 } from "lucide-react-native";
 
 import { Avatar } from "@/components/common/Avatar";
@@ -96,7 +96,7 @@ import {
 } from "@/store/api/chatApi";
 import { CHAT_MESSAGES_QUERY_LIMIT } from "@/store/api/endpoints/messageApi";
 import { useUploadMediaMutation } from "@/store/api/mediaApi";
-import { useGetFriendsQuery } from "@/store/api/userApi";
+import { useGetFriendsQuery, useSendFriendRequestMutation } from "@/store/api/userApi";
 import { prepareLocalFileForUpload } from "@/utils/uploadAttachment";
 import { toast } from "@/utils/appToast";
 import { formatChatPreviewLine } from "@/utils/messageDisplay";
@@ -179,8 +179,18 @@ function joinUrlFromSuffix(suffix: string | undefined): string {
 
 function roleLabel(role: MemberRole): string {
   if (role === "owner") return "Trưởng nhóm";
-  if (role === "admin") return "Quản trị";
+  if (role === "admin") return "Phó nhóm";
   return "Thành viên";
+}
+
+function joinRequestSubtitle(status?: string): string {
+  if (status === "invited") return "Được mời vào nhóm";
+  return "Yêu cầu tham gia";
+}
+
+function memberRowDisplayName(m: IGroupMember, selfId?: string): string {
+  if (selfId && m.userId === selfId) return "Bạn";
+  return (m.displayName ?? "").trim() || m.userId;
 }
 
 function pollSummary(raw: unknown): { id: string; title: string; closed: boolean } {
@@ -269,6 +279,8 @@ export function GroupManageModal({
   const effectiveUserId = (currentUserId ?? authUserId)?.trim() || undefined;
 
   const [panel, setPanel] = useState<Panel>("home");
+  /** Tab trong màn «Quản lý thành viên» — khớp web MemberManagementModal (list | pending). */
+  const [memberManageTab, setMemberManageTab] = useState<"list" | "pending">("list");
   const [pickOwnerForLeave, setPickOwnerForLeave] = useState(false);
   const [editName, setEditName] = useState(conversation.name ?? "");
   const [selectedInviteFriendIds, setSelectedInviteFriendIds] = useState<Set<string>>(
@@ -297,15 +309,22 @@ export function GroupManageModal({
       if (init === "pinned") {
         setPanel("bulletinFeed");
         setBulletinNotesTab("pinned");
+        setMemberManageTab("list");
       } else if (init === "polls") {
         setPanel("bulletinFeed");
         setBulletinNotesTab("polls");
+        setMemberManageTab("list");
       } else if (init === "bulletinFeed") {
         setPanel("bulletinFeed");
         setBulletinNotesTab("all");
+        setMemberManageTab("list");
+      } else if (init === "requests") {
+        setPanel("members");
+        setMemberManageTab("pending");
       } else {
         setPanel(init);
         setBulletinNotesTab("all");
+        setMemberManageTab("list");
       }
       setEditName(conversation.name ?? "");
       setAddFriendFilter("");
@@ -392,6 +411,7 @@ export function GroupManageModal({
   const [updateSettings, { isLoading: savingSettings }] = useUpdateGroupSettingsMutation();
   const [approveReq] = useApproveGroupRequestMutation();
   const [rejectReq] = useRejectGroupRequestMutation();
+  const [sendFriendReq] = useSendFriendRequestMutation();
   const [uploadMedia, { isLoading: uploadingAvatar }] = useUploadMediaMutation();
   const [deleteTaskMut] = useDeleteTaskMutation();
 
@@ -417,8 +437,9 @@ export function GroupManageModal({
     conversation: { type: "group", groupSettings: effectiveGroupSettings },
     userRole: myRole,
   });
-  const canManageMembers = myRole === "owner" || myRole === "admin";
   const isOwner = myRole === "owner";
+  const canModerateMembers = myRole === "owner" || myRole === "admin";
+  const canKickMembers = isOwner;
   const canEditGroupSettings = isOwner || myRole === "admin";
 
   /** Khớp backend: owner/admin luôn được; member cần `changeNameAvatar` (áp dụng cho cả tên và ảnh nhóm). */
@@ -483,6 +504,8 @@ export function GroupManageModal({
     }
     return m;
   }, [members]);
+
+  const kickGloballyDisabled = members.length <= MIN_GROUP_MEMBERS;
 
   const pollsList = useMemo(() => {
     const raw = pollsEnvelope?.data;
@@ -644,7 +667,8 @@ export function GroupManageModal({
       await addMembers({ groupId, memberIds: ids }).unwrap();
       setSelectedInviteFriendIds(new Set());
       void refetch();
-      setPanel("home");
+      setPanel("members");
+      setMemberManageTab("list");
       toast.success("Đã gửi lời mời vào nhóm");
     } catch {
       toast.error("Không thể mời thành viên");
@@ -659,23 +683,23 @@ export function GroupManageModal({
         );
         return;
       }
-      Alert.alert("Xóa khỏi nhóm", `Xóa ${m.displayName} khỏi nhóm?`, [
+      Alert.alert("Mời khỏi nhóm", `Mời "${m.displayName}" ra khỏi nhóm?`, [
         { text: "Hủy", style: "cancel" },
         {
-          text: "Xóa",
+          text: "Mời ra khỏi nhóm",
           style: "destructive",
           onPress: () => {
             void (async () => {
               try {
                 await removeMember({ groupId, userId: m.userId }).unwrap();
                 void refetch();
-                toast.success("Đã xóa thành viên");
+                toast.success("Đã mời thành viên ra khỏi nhóm");
               } catch (e: unknown) {
                 const msg =
                   e && typeof e === "object" && "data" in e
                     ? String((e as { data?: { message?: string } }).data?.message ?? "")
                     : "";
-                toast.error(msg || "Không thể xóa thành viên");
+                toast.error(msg || "Không thể mời thành viên ra khỏi nhóm");
               }
             })();
           },
@@ -685,42 +709,68 @@ export function GroupManageModal({
     [groupId, members.length, removeMember, refetch],
   );
 
-  const pickNewRole = useCallback(
+  const confirmDemote = useCallback(
     (m: IGroupMember) => {
-      if (!isOwner || m.userId === effectiveUserId) return;
-      Alert.alert("Đổi vai trò", m.displayName, [
+      Alert.alert("Hạ phó nhóm", `Hạ "${m.displayName}" xuống thành viên?`, [
+        { text: "Hủy", style: "cancel" },
         {
-          text: "Quản trị",
-          onPress: () => {
-            void (async () => {
-              try {
-                await changeRole({ groupId, userId: m.userId, role: "admin" }).unwrap();
-                void refetch();
-                toast.success("Đã đặt làm quản trị");
-              } catch {
-                toast.error("Không thể đổi vai trò");
-              }
-            })();
-          },
-        },
-        {
-          text: "Thành viên",
+          text: "Hạ xuống thành viên",
+          style: "destructive",
           onPress: () => {
             void (async () => {
               try {
                 await changeRole({ groupId, userId: m.userId, role: "member" }).unwrap();
                 void refetch();
-                toast.success("Đã đặt làm thành viên");
+                toast.success("Đã hạ phó nhóm xuống thành viên");
               } catch {
                 toast.error("Không thể đổi vai trò");
               }
             })();
           },
         },
-        { text: "Hủy", style: "cancel" },
       ]);
     },
-    [changeRole, effectiveUserId, groupId, isOwner, refetch],
+    [changeRole, groupId, refetch],
+  );
+
+  const openMemberRowMenu = useCallback(
+    (m: IGroupMember) => {
+      if (!canKickMembers) return;
+      if (m.role === "owner" || m.userId === effectiveUserId) return;
+      const canDemote = m.role === "admin";
+      const name = memberRowDisplayName(m, effectiveUserId);
+      const kick = () => {
+        if (kickGloballyDisabled) {
+          toast.warning(
+            `Nhóm phải còn tối thiểu ${MIN_GROUP_MEMBERS} người — không thể mời thêm ai ra (hiện ${members.length} người).`,
+          );
+          return;
+        }
+        confirmRemove(m);
+      };
+      const buttons: {
+        text: string;
+        style?: "destructive" | "cancel";
+        onPress?: () => void;
+      }[] = [];
+      if (canDemote) {
+        buttons.push({
+          text: "Hạ phó nhóm xuống thành viên",
+          onPress: () => confirmDemote(m),
+        });
+      }
+      buttons.push({ text: "Kick", style: "destructive", onPress: kick });
+      buttons.push({ text: "Hủy", style: "cancel" });
+      Alert.alert(name, undefined, buttons);
+    },
+    [
+      canKickMembers,
+      confirmDemote,
+      confirmRemove,
+      effectiveUserId,
+      kickGloballyDisabled,
+      members.length,
+    ],
   );
 
   const runLeave = useCallback(
@@ -934,7 +984,7 @@ export function GroupManageModal({
   const transferOwnerTo = useCallback(
     async (userId: string) => {
       if (!effectiveUserId) return;
-      Alert.alert("Chuyển quyền trưởng nhóm", "Bạn sẽ trở thành quản trị sau khi chuyển.", [
+      Alert.alert("Chuyển quyền trưởng nhóm", "Bạn sẽ trở thành phó nhóm sau khi chuyển.", [
         { text: "Hủy", style: "cancel" },
         {
           text: "Xác nhận",
@@ -976,24 +1026,22 @@ export function GroupManageModal({
         : panel === "add"
           ? "Thêm thành viên"
           : panel === "members"
-            ? `Thành viên (${members.length})`
-            : panel === "requests"
-              ? "Duyệt thành viên"
-              : panel === "settings"
-                ? "Quản lý nhóm"
-                : panel === "media"
-                  ? mediaTab === "media"
-                    ? "Ảnh / Video"
-                    : mediaTab === "file"
-                      ? "File"
-                      : "Link"
-                  : panel === "bulletinFeed"
-                    ? "Tin ghim & Bình chọn"
-                    : panel === "tasks"
-                      ? "Danh sách giao việc & nhắc hẹn"
-                      : panel === "personal"
-                        ? "Cài đặt cá nhân"
-                        : "Chuyển quyền";
+            ? "Quản lý thành viên"
+            : panel === "settings"
+              ? "Quản lý nhóm"
+              : panel === "media"
+                ? mediaTab === "media"
+                  ? "Ảnh / Video"
+                  : mediaTab === "file"
+                    ? "File"
+                    : "Link"
+                : panel === "bulletinFeed"
+                  ? "Tin ghim & Bình chọn"
+                  : panel === "tasks"
+                    ? "Danh sách giao việc & nhắc hẹn"
+                    : panel === "personal"
+                      ? "Cài đặt cá nhân"
+                      : "Chuyển quyền";
 
   const renderHome = () => (
     <ScrollView
@@ -1110,12 +1158,15 @@ export function GroupManageModal({
       <View style={styles.memberMgmtCard}>
         <Pressable
           style={styles.memberMgmtHeader}
-          onPress={() => setPanel("members")}
+          onPress={() => {
+            setMemberManageTab("list");
+            setPanel("members");
+          }}
           android_ripple={{ color: "rgba(0,0,0,0.04)" }}
         >
           <Text style={styles.memberMgmtTitle}>Quản lý thành viên</Text>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            {joinRequests.length > 0 ? (
+            {canModerateMembers && joinRequests.length > 0 ? (
               <View style={styles.requestBadge}>
                 <Text style={styles.requestBadgeText}>
                   {joinRequests.length > 99 ? "99+" : joinRequests.length}
@@ -1397,156 +1448,201 @@ export function GroupManageModal({
     </View>
   );
 
-  const kickGloballyDisabled = members.length <= MIN_GROUP_MEMBERS;
-
   const renderMembers = () => (
     <View style={{ flex: 1 }}>
+      <View
+        style={{
+          paddingHorizontal: 20,
+          paddingTop: 16,
+          paddingBottom: 12,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: Z.line,
+        }}
+      >
+        {canModerateMembers ? (
+          <Pressable
+            style={styles.mmAddBtn}
+            onPress={() => setPanel("add")}
+            disabled={busy}
+            android_ripple={{ color: "rgba(0,104,255,0.12)" }}
+          >
+            <Plus size={17} color={Z.primary} strokeWidth={2.5} />
+            <Text style={styles.mmAddBtnText}>Thêm thành viên</Text>
+          </Pressable>
+        ) : null}
+      </View>
+
+      <View style={styles.mmTabsRow}>
+        <Pressable
+          onPress={() => setMemberManageTab("list")}
+          style={[styles.mmTab, memberManageTab === "list" ? styles.mmTabActive : styles.mmTabIdle]}
+        >
+          <Users size={14} color={memberManageTab === "list" ? "#fff" : Z.sub} strokeWidth={2} />
+          <Text
+            style={[
+              styles.mmTabText,
+              memberManageTab === "list" ? styles.mmTabTextActive : styles.mmTabTextIdle,
+            ]}
+          >
+            Thành viên ({members.length})
+          </Text>
+        </Pressable>
+        {canModerateMembers ? (
+          <Pressable
+            onPress={() => setMemberManageTab("pending")}
+            style={[
+              styles.mmTab,
+              memberManageTab === "pending" ? styles.mmTabActive : styles.mmTabIdle,
+            ]}
+          >
+            <UserPlus
+              size={14}
+              color={memberManageTab === "pending" ? "#fff" : Z.sub}
+              strokeWidth={2}
+            />
+            <Text
+              style={[
+                styles.mmTabText,
+                memberManageTab === "pending" ? styles.mmTabTextActive : styles.mmTabTextIdle,
+              ]}
+            >
+              Chờ duyệt
+            </Text>
+            {joinRequests.length > 0 ? (
+              <View style={styles.mmPendingCountBadge}>
+                <Text style={styles.mmPendingCountBadgeText}>
+                  {joinRequests.length > 99 ? "99+" : joinRequests.length}
+                </Text>
+              </View>
+            ) : null}
+          </Pressable>
+        ) : null}
+      </View>
+
       {isFetching ? (
         <ActivityIndicator style={{ marginTop: 24 }} color={Z.primary} />
-      ) : (
+      ) : memberManageTab === "list" || !canModerateMembers ? (
         <FlatList
           data={members}
           keyExtractor={(m) => m.userId}
-          contentContainerStyle={{ paddingBottom: 24 }}
-          ListHeaderComponent={
-            <View style={{ paddingHorizontal: 16, paddingBottom: 10, paddingTop: 4 }}>
-              {canManageMembers && joinRequests.length > 0 ? (
-                <Pressable
-                  onPress={() => setPanel("requests")}
-                  android_ripple={{ color: "rgba(0,104,255,0.08)" }}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 10,
-                    paddingVertical: 12,
-                    paddingHorizontal: 12,
-                    marginBottom: 12,
-                    borderRadius: 12,
-                    backgroundColor: Z.subBg,
-                  }}
-                >
-                  <UserPlus size={20} color={Z.primary} strokeWidth={1.85} />
-                  <Text style={{ flex: 1, fontSize: 15, fontWeight: "700", color: Z.text }}>
-                    Yêu cầu vào nhóm
-                  </Text>
-                  <View style={styles.requestBadge}>
-                    <Text style={styles.requestBadgeText}>
-                      {joinRequests.length > 99 ? "99+" : joinRequests.length}
-                    </Text>
-                  </View>
-                  <ChevronRight size={18} color={Z.sub} />
-                </Pressable>
-              ) : null}
-              {canManageMembers ? (
-                <Text style={styles.help}>
-                  {kickGloballyDisabled
-                    ? `Nhóm hiện có ${members.length} người — cần ít nhất ${MIN_GROUP_MEMBERS + 1} người thì mới mời được một người ra (để nhóm còn tối thiểu ${MIN_GROUP_MEMBERS} người).`
-                    : "Chạm «Mời ra» để xóa thành viên khỏi nhóm (không áp dụng cho trưởng nhóm)."}
-                </Text>
-              ) : (
-                <Text style={styles.help}>
-                  Chỉ trưởng nhóm hoặc quản trị mới thấy nút mời người ra.
-                </Text>
-              )}
-            </View>
-          }
-          renderItem={({ item: m }) => (
-            <View style={styles.memberRow}>
-              <Avatar uri={m.avatar || undefined} name={m.displayName} size="sm" />
-              <View style={{ flex: 1, marginLeft: 12, minWidth: 0 }}>
-                <Text style={styles.menuLabel} numberOfLines={1}>
-                  {m.displayName}
-                </Text>
-                <Text style={styles.subSmall}>{roleLabel(m.role)}</Text>
-              </View>
-              {canManageMembers &&
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 24 }}
+          renderItem={({ item: m }) => {
+            const canAct =
+              canKickMembers &&
               Boolean(effectiveUserId) &&
               m.userId !== effectiveUserId &&
-              m.role !== "owner" ? (
-                <View style={{ flexDirection: "row", alignItems: "center", flexShrink: 0, gap: 2 }}>
-                  {isOwner ? (
-                    <Pressable onPress={() => pickNewRole(m)} style={styles.iconBtn} hitSlop={6}>
-                      <Shield size={18} color={Z.text} strokeWidth={1.75} />
-                    </Pressable>
-                  ) : null}
+              m.role !== "owner";
+            return (
+              <View style={styles.mmMemberRow}>
+                <Avatar uri={m.avatar || undefined} name={m.displayName} size="sm" />
+                <View style={{ flex: 1, marginLeft: 12, minWidth: 0 }}>
+                  <Text style={styles.mmMemberName} numberOfLines={1}>
+                    {memberRowDisplayName(m, effectiveUserId)}
+                  </Text>
+                </View>
+                {m.role === "owner" ? (
+                  <View style={styles.mmRolePillOwner}>
+                    <Text style={styles.mmRolePillOwnerText}>Trưởng nhóm</Text>
+                  </View>
+                ) : m.role === "admin" ? (
+                  <View style={styles.mmRolePillAdmin}>
+                    <Text style={styles.mmRolePillAdminText}>Phó nhóm</Text>
+                  </View>
+                ) : null}
+                {canAct ? (
+                  <Pressable
+                    style={styles.mmMoreBtn}
+                    onPress={() => openMemberRowMenu(m)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityLabel="Tùy chọn"
+                  >
+                    <MoreHorizontal size={20} color={Z.sub} strokeWidth={2} />
+                  </Pressable>
+                ) : null}
+              </View>
+            );
+          }}
+        />
+      ) : (
+        <FlatList
+          data={joinRequests}
+          keyExtractor={(r) => r.userId}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 24 }}
+          ListEmptyComponent={
+            <Text style={[styles.help, { textAlign: "center", marginTop: 24 }]}>
+              Không có yêu cầu chờ.
+            </Text>
+          }
+          renderItem={({ item: r }) => (
+            <View style={styles.mmPendingCard}>
+              <Avatar uri={r.avatar || undefined} name={r.name} size="sm" />
+              <View style={{ flex: 1, marginLeft: 12, minWidth: 0 }}>
+                <Text style={styles.mmMemberName} numberOfLines={1}>
+                  {r.name}
+                </Text>
+                <Text style={styles.subSmall}>{joinRequestSubtitle(r.status)}</Text>
+              </View>
+              <View style={{ alignItems: "flex-end", gap: 8, flexShrink: 0 }}>
+                {r.isFriend !== true ? (
                   <Pressable
                     onPress={() => {
-                      if (kickGloballyDisabled) {
-                        toast.warning(
-                          `Nhóm phải còn tối thiểu ${MIN_GROUP_MEMBERS} người — không thể mời thêm ai ra (hiện ${members.length} người).`,
-                        );
-                        return;
-                      }
-                      confirmRemove(m);
+                      void (async () => {
+                        try {
+                          await sendFriendReq({ userId: r.userId }).unwrap();
+                          toast.success("Đã kết bạn");
+                        } catch (e: unknown) {
+                          const st =
+                            e && typeof e === "object" && "status" in e
+                              ? (e as { status?: number }).status
+                              : undefined;
+                          toast.error(st === 409 ? "Đã kết bạn" : "Không thể kết bạn");
+                        }
+                      })();
                     }}
-                    style={[styles.kickOutBtn, kickGloballyDisabled ? { opacity: 0.45 } : null]}
-                    hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
                   >
-                    <Trash2 size={17} color={Z.red} strokeWidth={2} />
-                    <Text style={styles.kickOutBtnText}>Mời ra</Text>
+                    <Text style={styles.requestFriendLink}>Kết bạn</Text>
+                  </Pressable>
+                ) : null}
+                <View style={{ flexDirection: "row", gap: 8 }}>
+                  <Pressable
+                    onPress={() => {
+                      void (async () => {
+                        try {
+                          await approveReq({ groupId, userId: r.userId }).unwrap();
+                          void refetchRequests();
+                          void refetch();
+                          toast.success("Đã duyệt yêu cầu");
+                        } catch {
+                          toast.error("Không duyệt được");
+                        }
+                      })();
+                    }}
+                    style={styles.miniBtn}
+                  >
+                    <Text style={styles.miniBtnTextOk}>Duyệt</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      void (async () => {
+                        try {
+                          await rejectReq({ groupId, userId: r.userId }).unwrap();
+                          void refetchRequests();
+                          toast.success("Đã từ chối yêu cầu");
+                        } catch {
+                          toast.error("Không từ chối được");
+                        }
+                      })();
+                    }}
+                    style={styles.miniBtn}
+                  >
+                    <Text style={styles.miniBtnTextNo}>Từ chối</Text>
                   </Pressable>
                 </View>
-              ) : null}
+              </View>
             </View>
           )}
         />
       )}
-    </View>
-  );
-
-  const renderRequests = () => (
-    <View style={{ flex: 1 }}>
-      <FlatList
-        data={joinRequests}
-        keyExtractor={(r) => r.userId}
-        ListEmptyComponent={
-          <Text style={[styles.help, { textAlign: "center", marginTop: 24 }]}>
-            Không có yêu cầu chờ.
-          </Text>
-        }
-        renderItem={({ item: r }) => (
-          <View style={styles.memberRow}>
-            <Avatar uri={r.avatar || undefined} name={r.name} size="sm" />
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.menuLabel}>{r.name}</Text>
-              {r.status ? <Text style={styles.subSmall}>{r.status}</Text> : null}
-            </View>
-            <Pressable
-              onPress={() => {
-                void (async () => {
-                  try {
-                    await approveReq({ groupId, userId: r.userId }).unwrap();
-                    void refetchRequests();
-                    void refetch();
-                    toast.success("Đã duyệt yêu cầu");
-                  } catch {
-                    toast.error("Không duyệt được");
-                  }
-                })();
-              }}
-              style={[styles.miniBtn, { marginRight: 8 }]}
-            >
-              <Text style={styles.miniBtnTextOk}>Duyệt</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => {
-                void (async () => {
-                  try {
-                    await rejectReq({ groupId, userId: r.userId }).unwrap();
-                    void refetchRequests();
-                    toast.success("Đã từ chối yêu cầu");
-                  } catch {
-                    toast.error("Không từ chối được");
-                  }
-                })();
-              }}
-              style={styles.miniBtn}
-            >
-              <Text style={styles.miniBtnTextNo}>Từ chối</Text>
-            </Pressable>
-          </View>
-        )}
-      />
     </View>
   );
 
@@ -2342,7 +2438,6 @@ export function GroupManageModal({
             {panel === "rename" && renderRename()}
             {panel === "add" && renderAdd()}
             {panel === "members" && renderMembers()}
-            {panel === "requests" && renderRequests()}
             {panel === "settings" && renderSettings()}
             {panel === "bulletinFeed" && renderBulletinFeed()}
             {panel === "media" && renderMedia()}
@@ -3269,6 +3364,94 @@ const styles = StyleSheet.create({
   miniBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: Z.subBg },
   miniBtnTextOk: { color: Z.primary, fontWeight: "700", fontSize: 13 },
   miniBtnTextNo: { color: Z.red, fontWeight: "700", fontSize: 13 },
+  requestFriendLink: { color: Z.primary, fontWeight: "700", fontSize: 13 },
+  mmAddBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    alignSelf: "flex-start",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: Z.subBg,
+  },
+  mmAddBtnText: { fontSize: 13, fontWeight: "700", color: Z.primary },
+  mmTabsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    paddingBottom: 4,
+  },
+  mmTab: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    minHeight: 40,
+  },
+  mmTabActive: { backgroundColor: Z.primary },
+  mmTabIdle: { backgroundColor: Z.subBg },
+  mmTabText: { fontSize: 12, fontWeight: "700" },
+  mmTabTextActive: { color: "#fff" },
+  mmTabTextIdle: { color: Z.sub },
+  mmPendingCountBadge: {
+    marginLeft: 2,
+    minWidth: 18,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 10,
+    backgroundColor: "#EF4444",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mmPendingCountBadgeText: { color: "#fff", fontSize: 10, fontWeight: "800" },
+  mmMemberRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderRadius: 14,
+    marginBottom: 4,
+  },
+  mmMemberName: { fontSize: 14, fontWeight: "700", color: Z.text },
+  mmRolePillOwner: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: "rgba(245, 158, 11, 0.12)",
+    marginRight: 4,
+  },
+  mmRolePillOwnerText: { fontSize: 11, fontWeight: "700", color: "#D97706" },
+  mmRolePillAdmin: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: "rgba(0, 104, 255, 0.1)",
+    marginRight: 4,
+  },
+  mmRolePillAdminText: { fontSize: 11, fontWeight: "700", color: "#1D4ED8" },
+  mmMoreBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: Z.subBg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mmPendingCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    padding: 14,
+    marginBottom: 10,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Z.line,
+    backgroundColor: Z.bg,
+  },
   sectionCap: {
     paddingHorizontal: 16,
     paddingVertical: 8,

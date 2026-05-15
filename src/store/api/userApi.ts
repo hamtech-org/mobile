@@ -39,7 +39,18 @@ export const userApi = createApi({
         Array.isArray(response?.data) ? response.data : [],
       invalidatesTags: ["User"],
     }),
+
+    /** Giống web `MemberManagementModal.addFriend`. */
+    sendFriendRequest: builder.mutation<ApiEnvelope<unknown>, { userId: string }>({
+      query: ({ userId }) => ({
+        url: "/contacts/friends/request",
+        method: "POST",
+        body: { userId },
+      }),
+      invalidatesTags: ["Friend"],
+    }),
   }),
 });
 
-export const { useGetFriendsQuery, usePostMultipleUsersMutation } = userApi;
+export const { useGetFriendsQuery, usePostMultipleUsersMutation, useSendFriendRequestMutation } =
+  userApi;
