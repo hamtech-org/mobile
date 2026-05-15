@@ -9,6 +9,7 @@ import {
   ChatFrameBanner,
   ChatHeader,
   ChatInput,
+  GroupMemberSendRestrictedBar,
   ChatInConversationSearchModal,
   ConversationPersonalSettingsModal,
   MessageActionSheet,
@@ -47,7 +48,10 @@ import type { IMessage, TypingUserEntry } from "@/types/chat.types";
 import { prepareLocalFileForUpload } from "@/utils/uploadAttachment";
 import { toast } from "@/utils/appToast";
 import { formatChatPreviewLine } from "@/utils/messageDisplay";
-import { canUserPinMessageInGroup } from "@/utils/groupConversationPermissions";
+import {
+  canUserPinMessageInGroup,
+  canUserSendMessageInGroup,
+} from "@/utils/groupConversationPermissions";
 import { MAX_PINNED_PER_CONVERSATION } from "@/constants/chatPin";
 
 const EMPTY_TYPING_USERS: TypingUserEntry[] = [];
@@ -202,6 +206,15 @@ export default function ChatDetailScreen() {
     return groupMembersForPerm.find((m) => m.userId === currentUserId)?.role;
   }, [groupMembersForPerm, currentUserId]);
 
+  const canSendInGroup = useMemo(() => {
+    if (!isGroup || !conversation) return true;
+    return canUserSendMessageInGroup({
+      conversation,
+      userId: currentUserId ?? "",
+      members: groupMembersForPerm,
+    });
+  }, [isGroup, conversation, currentUserId, groupMembersForPerm]);
+
   const { data: tasksEnvelope } = useGetTasksQuery(conversationId!, {
     skip: !isGroup || !conversationId,
   });
@@ -279,19 +292,34 @@ export default function ChatDetailScreen() {
     setOpenGroupTaskEditorId(null);
   }, []);
 
-  const handleEditGroupTask = useCallback((taskId: string) => {
-    const id = String(taskId).trim();
-    if (!id) return;
-    setGroupModalInitial("tasks");
-    setOpenGroupTaskEditorId(id);
-    setGroupManageOpen(true);
-  }, []);
+  const handleEditGroupTask = useCallback(
+    (taskId: string) => {
+      const id = String(taskId).trim();
+      if (!id) return;
+      const taskRow = groupTasksFromApi.find((t) => String(t?.taskId ?? "") === id);
+      const creatorId = String((taskRow as { creatorId?: string })?.creatorId ?? "").trim();
+      if (!creatorId || creatorId !== String(currentUserId ?? "")) {
+        toast.error("Chỉ người tạo mới chỉnh sửa được");
+        return;
+      }
+      setGroupModalInitial("tasks");
+      setOpenGroupTaskEditorId(id);
+      setGroupManageOpen(true);
+    },
+    [groupTasksFromApi, currentUserId],
+  );
 
   const handleDeleteGroupTask = useCallback(
     (taskId: string) => {
       if (!conversationId) return;
       const id = String(taskId).trim();
       if (!id) return;
+      const taskRow = groupTasksFromApi.find((t) => String(t?.taskId ?? "") === id);
+      const creatorId = String((taskRow as { creatorId?: string })?.creatorId ?? "").trim();
+      if (!creatorId || creatorId !== String(currentUserId ?? "")) {
+        toast.error("Chỉ người tạo mới được hủy công việc này");
+        return;
+      }
       Alert.alert(
         "Hủy công việc",
         "Bạn có chắc muốn hủy công việc này? Thành viên sẽ không còn thấy thẻ trong chat.",
@@ -305,8 +333,13 @@ export default function ChatDetailScreen() {
                 try {
                   await deleteTaskMut({ groupId: conversationId, taskId: id }).unwrap();
                   toast.success("Đã hủy công việc");
-                } catch {
-                  toast.error("Không thể hủy công việc");
+                } catch (err: unknown) {
+                  const st = (err as { status?: number })?.status;
+                  toast.error(
+                    st === 403
+                      ? "Chỉ người tạo mới được hủy công việc này"
+                      : "Không thể hủy công việc",
+                  );
                 }
               })();
             },
@@ -314,7 +347,7 @@ export default function ChatDetailScreen() {
         ],
       );
     },
-    [conversationId, deleteTaskMut],
+    [conversationId, deleteTaskMut, groupTasksFromApi, currentUserId],
   );
 
   const joinTask = useCallback(
@@ -372,15 +405,24 @@ export default function ChatDetailScreen() {
     async (pollId: string) => {
       const id = String(pollId).trim();
       if (!conversationId || !id) return;
+      const pollRow = groupPollsForChat.find((p) => p.pollId === id);
+      const pollCreatorId = String(pollRow?.creatorId ?? "").trim();
+      if (!pollCreatorId || pollCreatorId !== String(currentUserId ?? "")) {
+        toast.error("Chỉ người tạo mới được khóa bình chọn");
+        return;
+      }
       try {
         await closePollMut({ groupId: conversationId, pollId: id }).unwrap();
         toast.success("Đã đóng bình chọn");
         setActivePollId(null);
-      } catch {
-        toast.error("Không đóng được bình chọn");
+      } catch (err: unknown) {
+        const st = (err as { status?: number })?.status;
+        toast.error(
+          st === 403 ? "Chỉ người tạo mới được khóa bình chọn" : "Không đóng được bình chọn",
+        );
       }
     },
-    [conversationId, closePollMut],
+    [conversationId, closePollMut, groupPollsForChat, currentUserId],
   );
 
   const handleAddPollOption = useCallback(
@@ -401,6 +443,7 @@ export default function ChatDetailScreen() {
   const handleSendMessage = useCallback(
     (content: string) => {
       if (!conversationId) return;
+      if (!canSendInGroup) return;
 
       const reply = replyingTo;
       if (reply) {
@@ -416,12 +459,13 @@ export default function ChatDetailScreen() {
 
       listRef.current?.scrollToOffset({ offset: 0, animated: true });
     },
-    [conversationId, replyingTo, sendReplyMessage, sendMessage, dispatch],
+    [conversationId, replyingTo, sendReplyMessage, sendMessage, dispatch, canSendInGroup],
   );
 
   const handleSendMedia = useCallback(
     async (attachment: PendingAttachment, caption: string) => {
       if (!conversationId) return;
+      if (!canSendInGroup) return;
 
       const replySnapshot = replyingTo;
       if (replySnapshot) {
@@ -815,14 +859,23 @@ export default function ChatDetailScreen() {
           style={{ paddingBottom: insets.bottom }}
         >
           <TypingIndicator typingUsers={typingUsers} currentUserId={currentUserId ?? ""} />
-          <ChatInput
-            onSend={handleSendMessage}
-            onSendMedia={handleSendMedia}
-            replyingTo={replyingTo}
-            currentUserId={currentUserId ?? ""}
-            onClearReply={() => dispatch(clearReplyingTo())}
-            onTyping={handleTyping}
-          />
+          {canSendInGroup ? (
+            <ChatInput
+              onSend={handleSendMessage}
+              onSendMedia={handleSendMedia}
+              replyingTo={replyingTo}
+              currentUserId={currentUserId ?? ""}
+              onClearReply={() => dispatch(clearReplyingTo())}
+              onTyping={handleTyping}
+            />
+          ) : (
+            <GroupMemberSendRestrictedBar
+              onLearnMore={() => {
+                setGroupModalInitial("settings");
+                setGroupManageOpen(true);
+              }}
+            />
+          )}
         </View>
       </KeyboardAvoidingView>
 
