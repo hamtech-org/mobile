@@ -26,6 +26,8 @@ export {
   useReactMessageMutation,
 } from "./endpoints/messageApi";
 
+export { useGetGroupJoinPreviewQuery, useJoinGroupViaLinkMutation } from "./endpoints/joinApi";
+
 export {
   useGetGroupMembersQuery,
   useUpdateGroupMutation,
