@@ -1,4 +1,5 @@
 import type { IMessage, MessageType } from "@/types/chat.types";
+import { tryParseGroupJoinLinkMessage } from "@/utils/groupJoinLinkMessage";
 import { formatSystemLastMessagePreview, preprocessSystemPlainText } from "@/utils/systemMessage";
 
 /** Nhãn ngắn cho reply preview / placeholder theo loại tin. */
@@ -90,6 +91,10 @@ export function formatChatPreviewLine(
     return plain ? truncatePreview(plain, PREVIEW_MAX) : getMessageTypeLabel("system");
   }
   if (raw.startsWith("{")) {
+    const joinLink = tryParseGroupJoinLinkMessage(raw);
+    if (joinLink) {
+      return truncatePreview(`Link mời tham gia nhóm: ${joinLink.groupName}`, PREVIEW_MAX);
+    }
     const sys = formatSystemLastMessagePreview(
       raw,
       msg.senderId,
