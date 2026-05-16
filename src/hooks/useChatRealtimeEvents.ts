@@ -256,7 +256,12 @@ export function useChatRealtimeEvents({
           };
           conv.lastMessageAt = msg.createdAt;
           conv.updatedAt = msg.createdAt;
-          if (msg.conversationId !== activeConvRef.current && !alreadySamePreview) {
+          const isIncomingFromOther = Boolean(viewerId) && msg.senderId !== viewerId;
+          if (
+            isIncomingFromOther &&
+            msg.conversationId !== activeConvRef.current &&
+            !alreadySamePreview
+          ) {
             conv.unreadCount = (conv.unreadCount ?? 0) + 1;
           }
           const sorted = sortConversationsForSidebar([...(draft as IConversation[])]);
