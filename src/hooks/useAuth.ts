@@ -37,7 +37,11 @@ export const useAuth = () => {
   const [logoutMutation, logoutState] = useLogoutMutation();
 
   const applyAuthSession = useCallback(
-    async (response: AuthTokenResponse, fallback?: { email?: string; displayName?: string }) => {
+    async (
+      response: AuthTokenResponse,
+      fallback?: { email?: string; displayName?: string },
+      redirectPath?: string,
+    ) => {
       await secureStorage.setTokens(response.accessToken, response.refreshToken);
       const hydratedProfile = await fetchCurrentUserProfile();
       dispatch(
@@ -51,13 +55,14 @@ export const useAuth = () => {
           refreshToken: response.refreshToken,
         }),
       );
-      router.replace("/");
+      const target = redirectPath?.trim().startsWith("/") ? redirectPath.trim() : "/(main)/(chat)";
+      router.replace(target as "/");
     },
     [dispatch, router],
   );
 
   const login = useCallback(
-    async (email: string, password: string): Promise<boolean> => {
+    async (email: string, password: string, redirectPath?: string): Promise<boolean> => {
       try {
         await loginMutation({ email, password }).unwrap();
         router.push({
@@ -66,6 +71,7 @@ export const useAuth = () => {
             email,
             mode: "login",
             notice: "Đã gửi OTP đăng nhập. Vui lòng kiểm tra email.",
+            ...(redirectPath?.trim() ? { redirect: redirectPath.trim() } : {}),
           },
         });
         return true;
@@ -97,10 +103,10 @@ export const useAuth = () => {
   );
 
   const verifyLoginOtp = useCallback(
-    async (email: string, otp: string): Promise<boolean> => {
+    async (email: string, otp: string, redirectPath?: string): Promise<boolean> => {
       try {
         const response = await verifyLoginOtpMutation({ email, otp }).unwrap();
-        await applyAuthSession(response, { email });
+        await applyAuthSession(response, { email }, redirectPath);
         return true;
       } catch {
         return false;
