@@ -58,7 +58,9 @@ import { TaskDeadlineChipMobile } from "@/utils/taskDeadlineDisplay";
 import { isTaskJoinDeadlinePassed } from "@/utils/taskJoin";
 import { normalizeMediaUrl } from "@/utils/url";
 import { mergePollWithGroupList, parsePollPayloadFromMessageContent } from "@/utils/groupPollMerge";
+import { resolveGroupJoinLinkFromMessageContent } from "@/utils/groupJoinLinkMessage";
 
+import { GroupJoinLinkCard } from "./GroupJoinLinkCard";
 import type { PollVoteModalPoll } from "./PollVoteModal";
 
 /** Dữ liệu nhóm để card giao việc / nút bình chọn (chỉ khi `isGroup`). */
@@ -996,6 +998,10 @@ export const ChatBubble = ({
 
   const mergedThreadPoll = mergedThreadPollForBubble(message, isGroup, groupExtras?.groupPolls);
 
+  const joinLinkPayload =
+    message.type === "text" ? resolveGroupJoinLinkFromMessageContent(message.content ?? "") : null;
+  const isJoinLinkMsg = Boolean(joinLinkPayload);
+
   const isSystemCenter = message.type === "system" || isCenterPositionMessage(message);
   const dayChangedFromPrev = chatSystemPillShowDateLine(prevMessage?.createdAt, message.createdAt);
   /** Nhóm: tin system đã có pill giờ+ngày — không lặp chip `DateSeparator` (dễ dính sát ô nhập khi FlatList inverted). */
@@ -1099,6 +1105,7 @@ export const ChatBubble = ({
 
   const hasRenderableSpecial =
     isVisualMedia ||
+    isJoinLinkMsg ||
     hasFile ||
     hasLocationBlock ||
     hasPollScheduleBlock ||
@@ -1145,7 +1152,7 @@ export const ChatBubble = ({
                 className={[
                   "max-w-full",
                   isVisualMedia ? "overflow-hidden rounded-2xl" : "",
-                  !isVisualMedia
+                  !isVisualMedia && !isJoinLinkMsg
                     ? `${hasFile ? "px-2 py-2" : "px-4 py-2.5"} ${isOwn ? "rounded-[20px] rounded-br-[5px] bg-primary" : "rounded-[20px] rounded-bl-[5px] bg-card"}`
                     : "",
                 ]
@@ -1292,7 +1299,13 @@ export const ChatBubble = ({
                   </View>
                 ) : null}
 
-                {!isEmojiMessage && hasCaption && (
+                {joinLinkPayload ? (
+                  <View className="py-0.5">
+                    <GroupJoinLinkCard payload={joinLinkPayload} />
+                  </View>
+                ) : null}
+
+                {!isEmojiMessage && hasCaption && !joinLinkPayload && (
                   <View className={isVisualMedia || hasFile ? "px-3 py-2" : ""}>
                     <Text
                       className={`text-[15px] leading-[22px] ${isOwn && !isVisualMedia ? "text-white" : "text-foreground"}`}

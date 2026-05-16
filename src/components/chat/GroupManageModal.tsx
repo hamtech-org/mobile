@@ -51,9 +51,9 @@ import {
   UserPlus,
   Users,
   Plus,
-  MessageSquare,
   Lock,
   Copy,
+  MessageSquare,
   RefreshCw,
   Share2,
   Ban,
@@ -85,6 +85,7 @@ import {
   useLeaveGroupMutation,
   useGetMessagesQuery,
   useGetGroupSettingsQuery,
+  useSendMessageMutation,
   useGetGroupRequestsQuery,
   useGetGroupMembersQuery,
   useDeleteGroupMutation,
@@ -116,6 +117,8 @@ import {
   canUserCreateTaskInGroup,
   resolveGroupMemberRole,
 } from "@/utils/groupConversationPermissions";
+import { getJoinGroupUrl as joinUrlFromSuffix } from "@/utils/joinGroupUrl";
+import { useGroupJoinLinkModalOptional } from "@/contexts/GroupJoinLinkModalContext";
 
 export type GroupManagePanel =
   | "home"
@@ -169,15 +172,6 @@ const Z = {
   red: "#DC2626",
   line: "#E5E7EB",
 };
-
-function webOriginFromApi(): string {
-  return env.apiBaseUrl.replace(/\/api\/v1\/?$/i, "");
-}
-
-function joinUrlFromSuffix(suffix: string | undefined): string {
-  if (!suffix) return "";
-  return `${webOriginFromApi()}/join/${suffix}`;
-}
 
 function roleLabel(role: MemberRole): string {
   if (role === "owner") return "Trưởng nhóm";
@@ -412,6 +406,8 @@ export function GroupManageModal({
   const [leaveGroup, { isLoading: leaving }] = useLeaveGroupMutation();
   const [patchPrefs, { isLoading: patchingPrefs }] = usePatchConversationPreferencesMutation();
   const [updateSettings, { isLoading: savingSettings }] = useUpdateGroupSettingsMutation();
+  const [sendMessage] = useSendMessageMutation();
+  const joinLinkModal = useGroupJoinLinkModalOptional();
   const [approveReq] = useApproveGroupRequestMutation();
   const [rejectReq] = useRejectGroupRequestMutation();
   const [sendFriendReq] = useSendFriendRequestMutation();
@@ -480,6 +476,30 @@ export function GroupManageModal({
 
   const joinSuffix = settings?.joinLinkSuffix;
   const joinUrl = joinUrlFromSuffix(joinSuffix);
+  const allowJoinLink = settings?.adminSettings?.allowJoinLink;
+
+  const openJoinLinkScreen = useCallback(() => {
+    if (!joinSuffix || !joinUrl) return;
+    joinLinkModal?.openGroupJoinLinkModal({
+      suffix: joinSuffix,
+      url: joinUrl,
+      groupName: conversation.name ?? "Nhóm chat",
+      groupAvatar: conversation.avatar,
+      conversationId: groupId,
+    });
+  }, [conversation.avatar, conversation.name, groupId, joinLinkModal, joinSuffix, joinUrl]);
+
+  const openShareJoinLinkPicker = useCallback(() => {
+    if (!joinSuffix || !joinUrl) return;
+    joinLinkModal?.openShareGroupJoinLinkPicker({
+      suffix: joinSuffix,
+      url: joinUrl,
+      groupName: conversation.name ?? "Nhóm chat",
+      groupAvatar: conversation.avatar,
+      conversationId: groupId,
+    });
+  }, [conversation.avatar, conversation.name, groupId, joinLinkModal, joinSuffix, joinUrl]);
+
   const isMuted = conversation.isMuted ?? false;
   const isPinnedToTop = conversation.isPinnedToTop ?? false;
 
@@ -1414,6 +1434,48 @@ export function GroupManageModal({
             editable={!busy}
           />
         </View>
+        {allowJoinLink && joinSuffix ? (
+          <View style={{ marginTop: 10, flexDirection: "row", gap: 8 }}>
+            <Pressable
+              onPress={openJoinLinkScreen}
+              style={{
+                flex: 1,
+                paddingVertical: 10,
+                borderRadius: 12,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: "rgba(0,104,255,0.35)",
+                backgroundColor: "#F0F9FF",
+                alignItems: "center",
+                flexDirection: "row",
+                justifyContent: "center",
+                gap: 6,
+              }}
+            >
+              <Link2 size={16} color={Z.primary} strokeWidth={2} />
+              <Text style={{ color: Z.primary, fontWeight: "600", fontSize: 14 }}>Link nhóm</Text>
+            </Pressable>
+            <Pressable
+              onPress={openShareJoinLinkPicker}
+              style={{
+                flex: 1,
+                paddingVertical: 10,
+                borderRadius: 12,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: "rgba(0,104,255,0.35)",
+                backgroundColor: "#F0F9FF",
+                alignItems: "center",
+                flexDirection: "row",
+                justifyContent: "center",
+                gap: 6,
+              }}
+            >
+              <Share2 size={16} color={Z.primary} strokeWidth={2} />
+              <Text style={{ color: Z.primary, fontWeight: "600", fontSize: 14 }}>
+                Chia sẻ link
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
       </View>
       {loadingFriendsForInvite ? (
         <ActivityIndicator style={{ marginTop: 24 }} color={Z.primary} />
@@ -1804,12 +1866,29 @@ export function GroupManageModal({
 
         {ad.allowJoinLink ? (
           <View style={styles.gmJoinLinkWrap}>
-            <View style={styles.gmJoinUrlCol}>
-              <Text style={styles.gmJoinUrlText} numberOfLines={1} ellipsizeMode="tail" selectable>
+            <Pressable
+              style={styles.gmJoinUrlCol}
+              onPress={openJoinLinkScreen}
+              disabled={!joinSuffix}
+            >
+              <Text
+                style={styles.gmJoinUrlText}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+                accessibilityLabel={joinUrl ? `Link tham gia: ${joinUrl}` : undefined}
+              >
                 {joinUrl || "—"}
               </Text>
-            </View>
+            </Pressable>
             <View style={styles.gmJoinActionsRow}>
+              <Pressable
+                accessibilityLabel="Xem link & QR"
+                disabled={!joinSuffix}
+                onPress={openJoinLinkScreen}
+                style={({ pressed }) => [styles.gmJoinIconBtn, pressed ? { opacity: 0.75 } : null]}
+              >
+                <Link2 size={18} color={Z.primary} strokeWidth={2} />
+              </Pressable>
               <Pressable
                 accessibilityLabel="Sao chép"
                 disabled={!joinSuffix}
@@ -1827,7 +1906,7 @@ export function GroupManageModal({
               <Pressable
                 accessibilityLabel="Chia sẻ"
                 disabled={!joinSuffix}
-                onPress={() => void shareJoinLink()}
+                onPress={openShareJoinLinkPicker}
                 style={({ pressed }) => [styles.gmJoinIconBtn, pressed ? { opacity: 0.75 } : null]}
               >
                 <Share2 size={18} color={Z.primary} strokeWidth={2} />
@@ -1845,28 +1924,6 @@ export function GroupManageModal({
         ) : null}
 
         <View style={styles.gmPlaceholderBlock}>
-          <Pressable
-            onPress={() => {
-              if (!canKickMembers) {
-                toast.info("Chỉ trưởng nhóm mới có thể mời thành viên ra khỏi nhóm");
-                return;
-              }
-              setMembersLeadersOnly(false);
-              setMemberManageTab("list");
-              setPanel("members");
-            }}
-            style={({ pressed }) => [
-              { width: "100%" },
-              styles.gmPlaceholderHit,
-              pressed ? styles.gmPlaceholderPressed : null,
-            ]}
-            android_ripple={{ color: "rgba(0,0,0,0.06)" }}
-          >
-            <View style={styles.gmPlaceholderRowInner}>
-              <Ban size={20} color="#64748B" strokeWidth={2} />
-              <Text style={styles.gmPlaceholderLabel}>Chặn khỏi nhóm</Text>
-            </View>
-          </Pressable>
           <Pressable
             onPress={() => {
               setMembersLeadersOnly(true);
@@ -3317,11 +3374,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#F0F9FF",
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "#BFDBFE",
-    flexDirection: "row",
-    flexWrap: "nowrap",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
+    flexDirection: "column",
+    alignItems: "stretch",
+    gap: 10,
   },
   gmJoinUrlCol: {
     flex: 1,
@@ -3331,15 +3386,15 @@ const styles = StyleSheet.create({
   gmJoinUrlText: {
     fontSize: 12,
     fontFamily: Platform.select({ ios: "Menlo", default: "monospace" }),
-    color: "#1E293B",
+    color: "#0068FF",
     lineHeight: 18,
   },
   gmJoinActionsRow: {
     flexDirection: "row",
-    flexWrap: "nowrap",
+    flexWrap: "wrap",
     alignItems: "center",
     justifyContent: "flex-end",
-    gap: 8,
+    gap: 4,
     flexShrink: 0,
   },
   gmJoinIconBtn: {

@@ -12,7 +12,7 @@ const loginSchema = z.object({
   password: z.string().min(6, "Mật khẩu tối thiểu 6 ký tự."),
 });
 
-export const LoginForm = () => {
+export const LoginForm = ({ redirectPath }: { redirectPath?: string }) => {
   const { login, isLoading, errorMessage } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -31,7 +31,7 @@ export const LoginForm = () => {
     }
 
     setFieldErrors({});
-    const success = await login(parsed.data.email, parsed.data.password);
+    const success = await login(parsed.data.email, parsed.data.password, redirectPath);
     if (success) {
       setLocalSubmitMessage("Đăng nhập bước 1 thành công. Vui lòng nhập OTP.");
     }

@@ -66,10 +66,17 @@ const agoraFromEnv =
 const agoraAppId =
   (typeof extra.agoraAppId === "string" && extra.agoraAppId.trim()) || agoraFromEnv;
 
+const publicWebOrigin =
+  (typeof process.env.EXPO_PUBLIC_WEB_ORIGIN === "string" &&
+    process.env.EXPO_PUBLIC_WEB_ORIGIN.trim()) ||
+  "";
+
 export const env = {
   apiBaseUrl,
   socketUrl,
   host: defaultHost,
   agoraAppId,
+  /** Domain web cho link mời nhóm (copy/chia sẻ), vd. https://hamtech.app */
+  publicWebOrigin,
   hasReleaseBackendUrl: useDevAuto || Boolean(explicitApi),
 };

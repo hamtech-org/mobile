@@ -6,6 +6,16 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "hamtech",
+    "linking": {
+      "prefixes": ["hamtech://", "https://hamtech.app"],
+      "config": {
+        "screens": {
+          "join": {
+            "path": "join/:suffix"
+          }
+        }
+      }
+    },
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
