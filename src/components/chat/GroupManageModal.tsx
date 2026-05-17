@@ -90,6 +90,7 @@ import {
   useGetGroupMembersQuery,
   useDeleteGroupMutation,
   useChangeMemberRoleMutation,
+  useTransferGroupOwnerMutation,
   useAddMembersMutation,
   useGetPollsQuery,
   useGetTasksQuery,
@@ -115,6 +116,8 @@ import {
   canUserChangeGroupProfileInGroup,
   canUserCreatePollInGroup,
   canUserCreateTaskInGroup,
+  isGroupAdminSlotsFull,
+  MAX_GROUP_ADMINS,
   resolveGroupMemberRole,
 } from "@/utils/groupConversationPermissions";
 import { getJoinGroupUrl as joinUrlFromSuffix } from "@/utils/joinGroupUrl";
@@ -317,7 +320,7 @@ export function GroupManageModal({
         setMemberManageTab("list");
       } else if (init === "requests") {
         setPanel("members");
-        setMemberManageTab("pending");
+        setMemberManageTab("list");
       } else {
         setPanel(init);
         setBulletinNotesTab("all");
@@ -379,6 +382,7 @@ export function GroupManageModal({
   );
 
   const memberIdSet = useMemo(() => new Set(members.map((m) => m.userId)), [members]);
+  const adminSlotsFull = useMemo(() => isGroupAdminSlotsFull(members), [members]);
 
   const friendsToInvite = useMemo(() => {
     const q = addFriendFilter.trim().toLowerCase();
@@ -402,6 +406,7 @@ export function GroupManageModal({
   const [addMembers, { isLoading: adding }] = useAddMembersMutation();
   const [removeMember, { isLoading: removing }] = useRemoveMemberMutation();
   const [changeRole, { isLoading: changingRole }] = useChangeMemberRoleMutation();
+  const [transferOwner, { isLoading: transferringOwner }] = useTransferGroupOwnerMutation();
   const [deleteGroup, { isLoading: deleting }] = useDeleteGroupMutation();
   const [leaveGroup, { isLoading: leaving }] = useLeaveGroupMutation();
   const [patchPrefs, { isLoading: patchingPrefs }] = usePatchConversationPreferencesMutation();
@@ -778,11 +783,42 @@ export function GroupManageModal({
     [changeRole, groupId, refetch],
   );
 
+  const confirmPromote = useCallback(
+    (m: IGroupMember) => {
+      if (adminSlotsFull) {
+        toast.error(
+          `Nhóm chỉ có tối đa ${MAX_GROUP_ADMINS} phó nhóm. Hãy hạ một phó nhóm trước khi bổ nhiệm thêm.`,
+        );
+        return;
+      }
+      Alert.alert("Bổ nhiệm phó nhóm", `Bổ nhiệm "${m.displayName}" làm phó nhóm?`, [
+        { text: "Hủy", style: "cancel" },
+        {
+          text: "Bổ nhiệm",
+          onPress: () => {
+            void (async () => {
+              try {
+                await changeRole({ groupId, userId: m.userId, role: "admin" }).unwrap();
+                void refetch();
+                toast.success("Đã bổ nhiệm phó nhóm");
+              } catch {
+                toast.error("Không thể đổi vai trò");
+              }
+            })();
+          },
+        },
+      ]);
+    },
+    [adminSlotsFull, changeRole, groupId, refetch],
+  );
+
   const openMemberRowMenu = useCallback(
     (m: IGroupMember) => {
-      if (!canKickMembers) return;
-      if (m.role === "owner" || m.userId === effectiveUserId) return;
-      const canDemote = m.role === "admin";
+      const isSelfAdmin = m.role === "admin" && m.userId === effectiveUserId;
+      if (!canKickMembers && !isSelfAdmin) return;
+      if (m.role === "owner" || (m.userId === effectiveUserId && !isSelfAdmin)) return;
+      const canDemote = m.role === "admin" && (canKickMembers || isSelfAdmin);
+      const canPromote = canKickMembers && m.role === "member" && !adminSlotsFull;
       const name = memberRowDisplayName(m, effectiveUserId);
       const kick = () => {
         if (kickGloballyDisabled) {
@@ -804,15 +840,23 @@ export function GroupManageModal({
           onPress: () => confirmDemote(m),
         });
       }
-      if (!membersLeadersOnly) {
+      if (canPromote) {
+        buttons.push({
+          text: "Bổ nhiệm làm phó nhóm",
+          onPress: () => confirmPromote(m),
+        });
+      }
+      if (!membersLeadersOnly && canKickMembers && m.userId !== effectiveUserId) {
         buttons.push({ text: "Kick", style: "destructive", onPress: kick });
       }
       buttons.push({ text: "Hủy", style: "cancel" });
       Alert.alert(name, undefined, buttons);
     },
     [
+      adminSlotsFull,
       canKickMembers,
       confirmDemote,
+      confirmPromote,
       confirmRemove,
       effectiveUserId,
       kickGloballyDisabled,
@@ -1032,27 +1076,38 @@ export function GroupManageModal({
   const transferOwnerTo = useCallback(
     async (userId: string) => {
       if (!effectiveUserId) return;
-      Alert.alert("Chuyển quyền trưởng nhóm", "Bạn sẽ trở thành phó nhóm sau khi chuyển.", [
+      const submit = (currentOwnerNewRole: Extract<MemberRole, "admin" | "member">) => {
+        void (async () => {
+          try {
+            await transferOwner({ groupId, newOwnerUserId: userId, currentOwnerNewRole }).unwrap();
+            setPanel("home");
+            void refetch();
+            toast.success("Trưởng nhóm mới đã được cập nhật");
+          } catch {
+            toast.error("Không thể chuyển quyền. Thử lại hoặc kiểm tra quyền trên máy chủ");
+          }
+        })();
+      };
+      const buttons: {
+        text: string;
+        style?: "cancel" | "destructive" | "default";
+        onPress?: () => void;
+      }[] = [
         { text: "Hủy", style: "cancel" },
-        {
-          text: "Xác nhận",
-          onPress: () => {
-            void (async () => {
-              try {
-                await changeRole({ groupId, userId, role: "owner" }).unwrap();
-                await changeRole({ groupId, userId: effectiveUserId, role: "admin" }).unwrap();
-                setPanel("home");
-                void refetch();
-                toast.success("Trưởng nhóm mới đã được cập nhật");
-              } catch {
-                toast.error("Không thể chuyển quyền. Thử lại hoặc kiểm tra quyền trên máy chủ");
-              }
-            })();
-          },
-        },
-      ]);
+        { text: "Thành viên", style: "destructive", onPress: () => submit("member") },
+      ];
+      if (!adminSlotsFull) {
+        buttons.push({ text: "Phó nhóm", onPress: () => submit("admin") });
+      }
+      Alert.alert(
+        "Chuyển quyền trưởng nhóm",
+        adminSlotsFull
+          ? `Bạn sẽ mất quyền trưởng nhóm. Nhóm đã đủ ${MAX_GROUP_ADMINS} phó nhóm — bạn chỉ có thể trở thành thành viên.`
+          : "Bạn sẽ mất quyền trưởng nhóm. Chọn vai trò của bạn sau khi chuyển.",
+        buttons,
+      );
     },
-    [changeRole, effectiveUserId, groupId, refetch],
+    [adminSlotsFull, effectiveUserId, groupId, refetch, transferOwner],
   );
 
   const busy =
@@ -1060,6 +1115,7 @@ export function GroupManageModal({
     adding ||
     removing ||
     changingRole ||
+    transferringOwner ||
     leaving ||
     deleting ||
     patchingPrefs ||
@@ -1548,80 +1604,6 @@ export function GroupManageModal({
 
   const renderMembers = () => (
     <View style={{ flex: 1 }}>
-      <View
-        style={{
-          paddingHorizontal: 20,
-          paddingTop: 16,
-          paddingBottom: 12,
-          borderBottomWidth: StyleSheet.hairlineWidth,
-          borderBottomColor: Z.line,
-        }}
-      >
-        {canModerateMembers && !membersLeadersOnly ? (
-          <Pressable
-            style={styles.mmAddBtn}
-            onPress={() => setPanel("add")}
-            disabled={busy}
-            android_ripple={{ color: "rgba(0,104,255,0.12)" }}
-          >
-            <Plus size={17} color={Z.primary} strokeWidth={2.5} />
-            <Text style={styles.mmAddBtnText}>Thêm thành viên</Text>
-          </Pressable>
-        ) : null}
-      </View>
-
-      {!membersLeadersOnly ? (
-        <View style={styles.mmTabsRow}>
-          <Pressable
-            onPress={() => setMemberManageTab("list")}
-            style={[
-              styles.mmTab,
-              memberManageTab === "list" ? styles.mmTabActive : styles.mmTabIdle,
-            ]}
-          >
-            <Users size={14} color={memberManageTab === "list" ? "#fff" : Z.sub} strokeWidth={2} />
-            <Text
-              style={[
-                styles.mmTabText,
-                memberManageTab === "list" ? styles.mmTabTextActive : styles.mmTabTextIdle,
-              ]}
-            >
-              Thành viên ({members.length})
-            </Text>
-          </Pressable>
-          {canModerateMembers ? (
-            <Pressable
-              onPress={() => setMemberManageTab("pending")}
-              style={[
-                styles.mmTab,
-                memberManageTab === "pending" ? styles.mmTabActive : styles.mmTabIdle,
-              ]}
-            >
-              <UserPlus
-                size={14}
-                color={memberManageTab === "pending" ? "#fff" : Z.sub}
-                strokeWidth={2}
-              />
-              <Text
-                style={[
-                  styles.mmTabText,
-                  memberManageTab === "pending" ? styles.mmTabTextActive : styles.mmTabTextIdle,
-                ]}
-              >
-                Chờ duyệt
-              </Text>
-              {joinRequests.length > 0 ? (
-                <View style={styles.mmPendingCountBadge}>
-                  <Text style={styles.mmPendingCountBadgeText}>
-                    {joinRequests.length > 99 ? "99+" : joinRequests.length}
-                  </Text>
-                </View>
-              ) : null}
-            </Pressable>
-          ) : null}
-        </View>
-      ) : null}
-
       {isFetching ? (
         <ActivityIndicator style={{ marginTop: 24 }} color={Z.primary} />
       ) : memberManageTab === "list" || !canModerateMembers || membersLeadersOnly ? (
@@ -1635,12 +1617,14 @@ export function GroupManageModal({
             </Text>
           }
           renderItem={({ item: m }) => {
+            const isSelfAdmin = m.role === "admin" && m.userId === effectiveUserId;
             const canAct = membersLeadersOnly
-              ? canKickMembers && m.role === "admin"
-              : canKickMembers &&
-                Boolean(effectiveUserId) &&
-                m.userId !== effectiveUserId &&
-                m.role !== "owner";
+              ? (canKickMembers || isSelfAdmin) && m.role === "admin"
+              : isSelfAdmin ||
+                (canKickMembers &&
+                  Boolean(effectiveUserId) &&
+                  m.userId !== effectiveUserId &&
+                  m.role !== "owner");
             return (
               <View style={styles.mmMemberRow}>
                 <Avatar uri={m.avatar || undefined} name={m.displayName} size="sm" />
