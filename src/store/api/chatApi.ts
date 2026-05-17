@@ -36,6 +36,7 @@ export {
   useAddMembersMutation,
   useRemoveMemberMutation,
   useChangeMemberRoleMutation,
+  useTransferGroupOwnerMutation,
   useGetGroupRequestsQuery,
   useApproveGroupRequestMutation,
   useRejectGroupRequestMutation,
@@ -82,6 +83,7 @@ export type {
   UpdateGroupRequest,
   AddMembersRequest,
   ChangeMemberRoleRequest,
+  TransferGroupOwnerRequest,
   UpdateGroupSettingsRequest,
 } from "./endpoints/groupApi";
 export type { CreatePollRequest } from "./endpoints/pollApi";
