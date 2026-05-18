@@ -1,4 +1,12 @@
-import { Fragment, useEffect, useMemo, useState, type ReactElement, type ReactNode } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import {
   ActivityIndicator,
   Image,
@@ -190,6 +198,8 @@ interface ChatBubbleProps {
   isJumpHighlighted?: boolean;
   /** Thông tin nhóm: join task, mở poll (tuỳ chọn) */
   groupExtras?: ChatBubbleGroupExtras;
+  /** Xem ảnh/video toàn màn hình (lightbox ở màn chat). */
+  onMediaLightbox?: (state: ChatMediaLightboxState) => void;
 }
 
 // ── Call Log Message ────────────────────────────────────────────────────
@@ -1047,6 +1057,7 @@ export const ChatBubble = ({
   onPressReplyTo,
   isJumpHighlighted = false,
   groupExtras,
+  onMediaLightbox,
 }: ChatBubbleProps) => {
   const { width: windowWidth } = useWindowDimensions();
   const { muted, primary, isDark } = useIconColors();
@@ -1054,8 +1065,14 @@ export const ChatBubble = ({
   const isRecalled = Boolean(message.isRecalled);
   const isDeleted = Boolean(message.isDeleted);
   const mediaLayout = useMemo(() => getChatMediaLayout(windowWidth), [windowWidth]);
-  const [mediaLightbox, setMediaLightbox] = useState<ChatMediaLightboxState>(null);
   const [mediaSavedOnDevice, setMediaSavedOnDevice] = useState(false);
+
+  const showMediaLightbox = useCallback(
+    (state: ChatMediaLightboxState) => {
+      if (state) onMediaLightbox?.(state);
+    },
+    [onMediaLightbox],
+  );
 
   /** Luôn qua format preview — không render JSON thô trong bubble chữ. */
   const captionPlainText = useMemo(
@@ -1219,19 +1236,9 @@ export const ChatBubble = ({
         }
       : undefined;
 
-  const handleOpenImage = () => {
-    if (!imageUri) return;
-    setMediaLightbox({ kind: "image", uri: imageUri, filename: downloadFilename });
-  };
-
-  const handleOpenSticker = () => {
-    if (!stickerUri) return;
-    setMediaLightbox({ kind: "image", uri: stickerUri, filename: "sticker.png" });
-  };
-
   const handleOpenVideo = () => {
     if (!videoUri) return;
-    setMediaLightbox({ kind: "video", uri: videoUri, filename: downloadFilename });
+    showMediaLightbox({ kind: "video", uri: videoUri, filename: downloadFilename });
   };
 
   const handleDownloadVideo = async () => {
@@ -1323,10 +1330,9 @@ export const ChatBubble = ({
                 />
               ) : undefined
             }
-            onOpen={() => void handleOpenFile()}
+            onShowActions={openActionSheet}
             onDownload={() => void handleDownloadFile()}
             onFolderHint={openDownloadsFolderHint}
-            onLongPress={openActionSheet}
             renderCaption={(text) => (
               <Text
                 style={{
@@ -1387,17 +1393,16 @@ export const ChatBubble = ({
                       layout={mediaLayout}
                       isDark={isDark}
                       hasCaptionBelow={hasCaption}
-                      onPress={handleOpenImage}
-                      onLongPress={openActionSheet}
+                      onPress={openActionSheet}
                     />
                   ) : null}
 
                   {hasSticker && stickerUri ? (
                     <Pressable
-                      onPress={handleOpenSticker}
+                      onPress={openActionSheet}
                       onLongPress={openActionSheet}
                       delayLongPress={300}
-                      accessibilityLabel="Xem sticker lớn"
+                      accessibilityLabel="Tùy chọn tin nhắn sticker"
                       className="self-center rounded-2xl active:opacity-90"
                     >
                       <Image
@@ -1422,10 +1427,10 @@ export const ChatBubble = ({
                           playUri={videoUri}
                         />
                       }
+                      onPress={openActionSheet}
                       onFullscreen={handleOpenVideo}
                       onFolderHint={openDownloadsFolderHint}
                       onDownload={() => void handleDownloadVideo()}
-                      onLongPress={openActionSheet}
                     />
                   ) : null}
 
@@ -1581,11 +1586,6 @@ export const ChatBubble = ({
           </View>
         )}
       </View>
-      <ChatMediaLightbox
-        state={mediaLightbox}
-        onClose={() => setMediaLightbox(null)}
-        onSaved={() => setMediaSavedOnDevice(true)}
-      />
     </>
   );
 };
