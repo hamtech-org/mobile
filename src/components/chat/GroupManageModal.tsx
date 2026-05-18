@@ -61,10 +61,8 @@ import {
   KeyRound,
   HelpCircle,
   MoreHorizontal,
-  CheckSquare,
   X,
 } from "lucide-react-native";
-import { isTaskJoinDeadlinePassed } from "@/utils/taskJoin";
 import { GroupAddMembersModal } from "@/components/chat/GroupAddMembersModal";
 import {
   ChatMediaLightbox,
@@ -74,10 +72,13 @@ import {
   chatImageDisplayUrl,
   chatMediaDownloadFilename,
   chatVideoPlayUrl,
+  resolveChatFileBubbleMeta,
 } from "@/utils/chatMediaDisplay";
 import { openOrShareChatFile } from "@/utils/chatMediaDownload";
 
 import { BulletinPinnedMessageCard } from "@/components/chat/BulletinPinnedMessageCard";
+import { ChatFileTypeBadge } from "@/components/chat/ChatFileTypeBadge";
+import { BulletinTaskCard } from "@/components/chat/BulletinTaskCard";
 import { Avatar } from "@/components/common/Avatar";
 import { MAX_PINNED_PER_CONVERSATION } from "@/constants/chatPin";
 import { MIN_GROUP_MEMBERS } from "@/constants/group";
@@ -2061,7 +2062,7 @@ export function GroupManageModal({
     });
   };
 
-  /** Thẻ nhắc hẹn — đồng bộ web `BulletinCardRow` (task). */
+  /** Thẻ nhắc hẹn — đồng bộ web `BulletinTaskCard`. */
   const renderTaskCards = (emptyHint: string) => {
     if (tasksSorted.length === 0) {
       return (
@@ -2087,176 +2088,19 @@ export function GroupManageModal({
       const when = formatBulletinFooterTime(
         typeof o.createdAt === "string" ? o.createdAt : undefined,
       );
-      const desc = String(o.description ?? "").trim();
-      const due = t.due;
-      const dueOk = Boolean(due && !Number.isNaN(new Date(due).getTime()));
-      const assignees = Array.isArray(o.assignees) ? (o.assignees as string[]) : [];
-      const participants = Array.isArray(o.participants) ? (o.participants as string[]) : [];
-      const subs = Array.isArray(o.subtasks) ? o.subtasks : [];
-      const subAssigneeIds = subs
-        .map((s) => String((s as { assigneeId?: string }).assigneeId ?? "").trim())
-        .filter(Boolean);
-      const assignToAll =
-        Boolean(o.assignToAll) ||
-        Boolean(o.broadcast) ||
-        (assignees.length === 0 && subAssigneeIds.length === 0);
-      const uid = String(effectiveUserId ?? "");
-      const joined = uid ? participants.includes(uid) : false;
-      const canJoin =
-        assignToAll ||
-        (uid ? assignees.map(String).includes(uid) : false) ||
-        (uid ? subAssigneeIds.includes(uid) : false);
-      const joinDeadlinePassed = dueOk && isTaskJoinDeadlinePassed(due);
-      const showJoinButton = Boolean(onTaskJoined) && !joined && canJoin && !joinDeadlinePassed;
-      const isCreator = Boolean(creatorId && uid && creatorId === uid);
-
       return (
-        <View key={key} style={{ marginBottom: 12 }}>
-          <View style={styles.bulletinPollCard}>
-            <View style={styles.bulletinPollHeaderRow}>
-              <Avatar uri={avatarUrl} name={creator} size="md" />
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.bulletinPollCreatorName} numberOfLines={1}>
-                  {creator}
-                </Text>
-                <View style={styles.bulletinPollKindRow}>
-                  <CheckSquare size={14} color="#16a34a" strokeWidth={2} />
-                  <Text style={[styles.bulletinPollKindLabel, { color: "#16a34a" }]}>
-                    Công việc
-                  </Text>
-                </View>
-              </View>
-            </View>
-            <Text style={styles.bulletinPollTitleBlock} numberOfLines={4}>
-              {t.title}
-            </Text>
-            {desc ? (
-              <Text style={styles.bulletinPollPreview} numberOfLines={3}>
-                {desc}
-              </Text>
-            ) : null}
-            <View
-              style={{
-                flexDirection: "row",
-                flexWrap: "wrap",
-                alignItems: "center",
-                gap: 8,
-                marginTop: 8,
-              }}
-            >
-              {dueOk ? (
-                <Text style={styles.bulletinPollMeta}>
-                  {new Date(due!).toLocaleString("vi-VN", {
-                    day: "2-digit",
-                    month: "2-digit",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </Text>
-              ) : null}
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 4,
-                  backgroundColor: "rgba(0,0,0,0.05)",
-                  paddingHorizontal: 8,
-                  paddingVertical: 4,
-                  borderRadius: 999,
-                }}
-              >
-                <Users size={12} color={Z.sub} strokeWidth={2} />
-                <Text style={[styles.bulletinPollMeta, { fontWeight: "600" }]}>
-                  {participants.length > 0
-                    ? `${participants.length} đã tham gia`
-                    : "Chưa ai tham gia"}
-                </Text>
-              </View>
-              {joined ? (
-                <Text
-                  style={{
-                    marginLeft: "auto",
-                    fontSize: 11,
-                    fontWeight: "700",
-                    color: "#059669",
-                    backgroundColor: "rgba(16,185,129,0.12)",
-                    paddingHorizontal: 10,
-                    paddingVertical: 4,
-                    borderRadius: 999,
-                  }}
-                >
-                  Bạn đã tham gia
-                </Text>
-              ) : joinDeadlinePassed ? (
-                <Text
-                  style={{
-                    marginLeft: "auto",
-                    fontSize: 11,
-                    fontWeight: "600",
-                    color: Z.sub,
-                    backgroundColor: "rgba(0,0,0,0.05)",
-                    paddingHorizontal: 10,
-                    paddingVertical: 4,
-                    borderRadius: 999,
-                  }}
-                >
-                  Chưa tham gia
-                </Text>
-              ) : showJoinButton ? (
-                <Pressable
-                  onPress={() => void onTaskJoined?.(t.id)}
-                  disabled={taskActionBusy}
-                  style={{
-                    marginLeft: "auto",
-                    backgroundColor: "#059669",
-                    paddingHorizontal: 12,
-                    paddingVertical: 6,
-                    borderRadius: 999,
-                    opacity: taskActionBusy ? 0.5 : 1,
-                  }}
-                >
-                  <Text style={{ color: "#fff", fontSize: 11, fontWeight: "700" }}>
-                    Xác nhận tham gia
-                  </Text>
-                </Pressable>
-              ) : null}
-            </View>
-            <Text style={[styles.bulletinPollMeta, { marginTop: 8 }]}>{when || "—"}</Text>
-            {isCreator && (onEditTaskFromBulletin || onDeleteTaskFromBulletin) ? (
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
-                {onEditTaskFromBulletin ? (
-                  <Pressable
-                    onPress={() => onEditTaskFromBulletin(o)}
-                    disabled={taskActionBusy}
-                    style={styles.bulletinPollAdminBtn}
-                  >
-                    <Text style={styles.bulletinPollAdminBtnText}>Sửa</Text>
-                  </Pressable>
-                ) : null}
-                {onDeleteTaskFromBulletin ? (
-                  <Pressable
-                    onPress={() => void onDeleteTaskFromBulletin(t.id)}
-                    disabled={taskActionBusy}
-                    style={[
-                      styles.bulletinPollAdminBtn,
-                      {
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 4,
-                        backgroundColor: "rgba(220,38,38,0.1)",
-                      },
-                    ]}
-                  >
-                    <Trash2 size={12} color={Z.red} strokeWidth={2} />
-                    <Text style={[styles.bulletinPollAdminBtnText, { color: Z.red }]}>
-                      Hủy công việc
-                    </Text>
-                  </Pressable>
-                ) : null}
-              </View>
-            ) : null}
-          </View>
-        </View>
+        <BulletinTaskCard
+          key={key}
+          raw={raw}
+          creator={creator}
+          avatarUrl={avatarUrl}
+          when={when}
+          effectiveUserId={effectiveUserId}
+          onTaskJoined={onTaskJoined}
+          onEditTaskFromBulletin={onEditTaskFromBulletin}
+          onDeleteTaskFromBulletin={onDeleteTaskFromBulletin}
+          taskActionBusy={taskActionBusy}
+        />
       );
     });
   };
@@ -2385,10 +2229,59 @@ export function GroupManageModal({
     const pad = 12;
     const cell = (w - pad * 2 - gap * 2) / 3;
 
-    const gridMessages = mediaMessages.filter((m) => {
-      if (mediaTab === "media") return m.type === "image" || m.type === "video";
-      return m.type === "file";
-    });
+    const gridMessages = mediaMessages.filter((m) => m.type === "image" || m.type === "video");
+
+    if (mediaTab === "file") {
+      const fileMessages = mediaMessages.filter((m) => m.type === "file");
+      return (
+        <FlatList
+          data={fileMessages}
+          keyExtractor={(m) => m.messageId}
+          contentContainerStyle={{
+            paddingTop: 8,
+            paddingBottom: 24,
+            paddingHorizontal: 16,
+            gap: 8,
+          }}
+          ListEmptyComponent={
+            <Text
+              style={[styles.help, { textAlign: "center", marginTop: 24, paddingHorizontal: 16 }]}
+            >
+              Chưa có file được chia sẻ.
+            </Text>
+          }
+          renderItem={({ item: m }) => {
+            const { fileName, mimeType } = resolveChatFileBubbleMeta(m);
+            const who =
+              memberNameById.get(m.senderId) ?? m.senderDisplayName?.trim() ?? "Thành viên";
+            const when = formatBulletinFooterTime(m.createdAt);
+            return (
+              <Pressable
+                style={styles.mediaFileRow}
+                onPress={() => {
+                  if (!m.mediaUrl) return;
+                  void openOrShareChatFile(
+                    m.mediaUrl,
+                    chatMediaDownloadFilename(m, "file"),
+                    m.mediaType,
+                  );
+                }}
+              >
+                <ChatFileTypeBadge fileName={fileName} mimeType={mimeType} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.mediaFileName} numberOfLines={1}>
+                    {fileName}
+                  </Text>
+                  <Text style={styles.mediaFileMeta} numberOfLines={1}>
+                    {who} · {when || "—"}
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          }}
+        />
+      );
+    }
 
     if (mediaTab === "link") {
       return (
@@ -2438,7 +2331,7 @@ export function GroupManageModal({
           <Text
             style={[styles.help, { textAlign: "center", marginTop: 24, paddingHorizontal: 16 }]}
           >
-            {mediaTab === "file" ? "Chưa có file được chia sẻ." : "Chưa có ảnh hoặc video."}
+            Chưa có ảnh hoặc video.
           </Text>
         }
         renderItem={({ item: m }) => {
@@ -2449,14 +2342,6 @@ export function GroupManageModal({
             <Pressable
               style={{ width: cell }}
               onPress={() => {
-                if (m.type === "file" && m.mediaUrl) {
-                  void openOrShareChatFile(
-                    m.mediaUrl,
-                    chatMediaDownloadFilename(m, "file"),
-                    m.mediaType,
-                  );
-                  return;
-                }
                 if (m.type === "image" && imageUri) {
                   setGalleryLightbox({
                     kind: "image",
@@ -2501,7 +2386,7 @@ export function GroupManageModal({
                     }}
                     numberOfLines={2}
                   >
-                    {m.type === "file" ? m.mediaOriginalName?.slice(0, 24) || "FILE" : "•"}
+                    •
                   </Text>
                 </View>
               )}
@@ -3473,6 +3358,29 @@ const styles = StyleSheet.create({
   aiSheetTitle: { fontSize: 16, fontWeight: "700", color: Z.text },
   aiSheetSub: { fontSize: 11, color: Z.sub, marginTop: 2, fontWeight: "600" },
   thumbPlaceholder: { backgroundColor: Z.subBg, alignItems: "center", justifyContent: "center" },
+  mediaFileRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Z.line,
+    backgroundColor: Z.bg,
+    marginBottom: 8,
+  },
+  mediaFileName: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: Z.text,
+    lineHeight: 18,
+  },
+  mediaFileMeta: {
+    marginTop: 4,
+    fontSize: 11,
+    color: Z.sub,
+    lineHeight: 14,
+  },
   menuRow: {
     flexDirection: "row",
     alignItems: "center",
