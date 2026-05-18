@@ -68,8 +68,10 @@ export interface IConversation {
   pinnedMessageCount?: number;
   /** Nhóm: từ API + socket `group:settings_updated` (đồng bộ web). */
   groupSettings?: IGroupSettings;
-  /** Nhóm: người tạo / trưởng nhóm (META). */
+  /** Nhóm: người tạo ban đầu, chỉ dùng như lịch sử. */
   creatorId?: string;
+  /** Nhóm: trưởng nhóm hiện tại. */
+  leaderId?: string;
   /** Nhóm đã giải tán — ẩn khỏi list khi API trả về. */
   isDeleted?: boolean;
 }

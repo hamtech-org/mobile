@@ -33,7 +33,13 @@ export interface AddMembersRequest {
 export interface ChangeMemberRoleRequest {
   groupId: string;
   userId: string;
-  role: MemberRole;
+  role: Extract<MemberRole, "admin" | "member">;
+}
+
+export interface TransferGroupOwnerRequest {
+  groupId: string;
+  newOwnerUserId: string;
+  currentOwnerNewRole: Extract<MemberRole, "admin" | "member">;
 }
 
 export interface UpdateGroupSettingsRequest {
@@ -190,6 +196,15 @@ export const groupApi = chatApi.injectEndpoints({
       invalidatesTags: ["Conversations"],
     }),
 
+    transferGroupOwner: builder.mutation<ApiEnvelope<unknown>, TransferGroupOwnerRequest>({
+      query: ({ groupId, ...body }) => ({
+        url: `/chat/groups/${groupId}/transfer-owner`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["Conversations"],
+    }),
+
     getGroupRequests: builder.query<GroupJoinRequestRow[], string>({
       query: (groupId) => `/chat/groups/${groupId}/requests`,
       transformResponse: (response: ApiEnvelope<unknown[]>): GroupJoinRequestRow[] => {
@@ -273,6 +288,7 @@ export const {
   useAddMembersMutation,
   useRemoveMemberMutation,
   useChangeMemberRoleMutation,
+  useTransferGroupOwnerMutation,
   useGetGroupRequestsQuery,
   useApproveGroupRequestMutation,
   useRejectGroupRequestMutation,
