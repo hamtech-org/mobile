@@ -62,7 +62,6 @@ export function ChatFileMessageBubble({
 
   return (
     <Pressable
-      onPress={onShowActions}
       onLongPress={onShowActions}
       delayLongPress={300}
       style={chatFileMessageShellStyle(isDark, isOwn)}
