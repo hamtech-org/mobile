@@ -1,9 +1,11 @@
+import type { BaseQueryApi } from "@reduxjs/toolkit/query";
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 import { FileSystemUploadType, uploadAsync } from "expo-file-system/legacy";
 import { router } from "expo-router";
 
 import { env } from "@/config/env";
 import { invalidateSessionAfterAuthFailure, refreshAuthSession } from "@/store/api/sessionRefresh";
+import { mediaUploadTypeFromMime } from "@/utils/chatMediaMime";
 
 export type MediaUploadType = "image" | "video" | "audio" | "file";
 
@@ -23,9 +25,37 @@ interface ApiEnvelope<T> {
   message: string;
 }
 
+type AuthRef = { auth?: { accessToken?: string | null } };
+
+function readBearer(api: BaseQueryApi): string | null | undefined {
+  return (api.getState() as AuthRef).auth?.accessToken;
+}
+
+function parseEnvelope<T>(
+  body: string,
+  status: number,
+): { ok: true; data: T } | { ok: false; error: { status: number | string; data: unknown } } {
+  let envelope: ApiEnvelope<T>;
+  try {
+    envelope = JSON.parse(body) as ApiEnvelope<T>;
+  } catch {
+    return {
+      ok: false,
+      error: {
+        status: "PARSING_ERROR",
+        data: body,
+      },
+    };
+  }
+  if (!envelope.success || !envelope.data) {
+    return { ok: false, error: { status, data: envelope } };
+  }
+  return { ok: true, data: envelope.data };
+}
+
 /**
  * mediaApi — Upload media (ảnh, video, file) cho mobile.
- * Multipart dùng `expo-file-system` `uploadAsync` (native), tránh lỗi fetch+FormData với một số URI (DocumentPicker, v.v.).
+ * Đơn: `uploadAsync` (native). Batch: `fetch` + FormData sau khi copy URI vào cache.
  */
 export const mediaApi = createApi({
   reducerPath: "mediaApi",
@@ -33,7 +63,7 @@ export const mediaApi = createApi({
     baseUrl: env.apiBaseUrl,
     timeout: 120_000,
     prepareHeaders: (headers, { getState }) => {
-      const state = getState() as { auth?: { accessToken?: string | null } };
+      const state = getState() as AuthRef;
       const token = state.auth?.accessToken;
       if (token) {
         headers.set("Authorization", `Bearer ${token}`);
@@ -52,12 +82,9 @@ export const mediaApi = createApi({
       }
     >({
       async queryFn({ file, mediaType, deliveryScope = "chat" }, api) {
-        type AuthRef = { auth?: { accessToken?: string | null } };
         const base = env.apiBaseUrl.replace(/\/$/, "");
         const url = `${base}/media/upload`;
         const mimeType = file.type?.trim() || "application/octet-stream";
-
-        const readBearer = () => (api.getState() as AuthRef).auth?.accessToken;
 
         const uploadOnce = async (bearer: string | null | undefined) =>
           uploadAsync(url, file.uri, {
@@ -70,7 +97,7 @@ export const mediaApi = createApi({
           });
 
         try {
-          let bearer = readBearer();
+          let bearer = readBearer(api);
           let result = await uploadOnce(bearer);
 
           if (result.status === 401 && bearer) {
@@ -78,14 +105,9 @@ export const mediaApi = createApi({
             if (!refreshed) {
               await invalidateSessionAfterAuthFailure(api.dispatch);
               router.replace("/(auth)/login");
-              return {
-                error: {
-                  status: 401,
-                  data: result.body,
-                },
-              };
+              return { error: { status: 401, data: result.body } };
             }
-            bearer = readBearer();
+            bearer = readBearer(api);
             result = await uploadOnce(bearer);
           }
 
@@ -94,50 +116,89 @@ export const mediaApi = createApi({
               await invalidateSessionAfterAuthFailure(api.dispatch);
               router.replace("/(auth)/login");
             }
-            return {
-              error: {
-                status: result.status,
-                data: result.body,
-              },
-            };
+            return { error: { status: result.status, data: result.body } };
           }
 
-          let envelope: ApiEnvelope<MediaUploadResult>;
-          try {
-            envelope = JSON.parse(result.body) as ApiEnvelope<MediaUploadResult>;
-          } catch {
-            return {
-              error: {
-                status: "PARSING_ERROR",
-                originalStatus: result.status,
-                data: result.body,
-                error: "Invalid JSON from upload response",
-              },
-            };
+          const parsed = parseEnvelope<MediaUploadResult>(result.body, result.status);
+          if (!parsed.ok) {
+            return { error: parsed.error };
           }
-
-          if (!envelope.success || !envelope.data) {
-            return {
-              error: {
-                status: result.status,
-                data: envelope,
-              },
-            };
-          }
-
-          return { data: envelope.data };
+          return { data: parsed.data };
         } catch (e) {
           const message = e instanceof Error ? e.message : String(e);
-          return {
-            error: {
-              status: "FETCH_ERROR",
-              error: message,
-            },
-          };
+          return { error: { status: "FETCH_ERROR", error: message } };
+        }
+      },
+    }),
+
+    /**
+     * Khớp web `/media/upload/multi` — upload tuần tự qua `uploadAsync` (giữ đúng tên file gốc).
+     */
+    uploadMediaMulti: builder.mutation<
+      MediaUploadResult[],
+      { files: { uri: string; name: string; type: string }[]; deliveryScope?: string }
+    >({
+      async queryFn({ files, deliveryScope = "chat" }, api) {
+        if (files.length === 0) {
+          return { error: { status: 400, data: { message: "No files" } } };
+        }
+
+        const base = env.apiBaseUrl.replace(/\/$/, "");
+        const url = `${base}/media/upload`;
+        const results: MediaUploadResult[] = [];
+
+        try {
+          for (const file of files) {
+            const mimeType = file.type?.trim() || "application/octet-stream";
+            const mediaType = mediaUploadTypeFromMime(mimeType);
+
+            const uploadOnce = async (bearer: string | null | undefined) =>
+              uploadAsync(url, file.uri, {
+                httpMethod: "POST",
+                uploadType: FileSystemUploadType.MULTIPART,
+                fieldName: "file",
+                mimeType,
+                parameters: { mediaType, deliveryScope },
+                headers: bearer ? { Authorization: `Bearer ${bearer}` } : {},
+              });
+
+            let bearer = readBearer(api);
+            let uploadRes = await uploadOnce(bearer);
+
+            if (uploadRes.status === 401 && bearer) {
+              const refreshed = await refreshAuthSession(api.dispatch);
+              if (!refreshed) {
+                await invalidateSessionAfterAuthFailure(api.dispatch);
+                router.replace("/(auth)/login");
+                return { error: { status: 401, data: uploadRes.body } };
+              }
+              bearer = readBearer(api);
+              uploadRes = await uploadOnce(bearer);
+            }
+
+            if (uploadRes.status < 200 || uploadRes.status >= 300) {
+              if (uploadRes.status === 401) {
+                await invalidateSessionAfterAuthFailure(api.dispatch);
+                router.replace("/(auth)/login");
+              }
+              return { error: { status: uploadRes.status, data: uploadRes.body } };
+            }
+
+            const parsed = parseEnvelope<MediaUploadResult>(uploadRes.body, uploadRes.status);
+            if (!parsed.ok) {
+              return { error: parsed.error };
+            }
+            results.push(parsed.data);
+          }
+
+          return { data: results };
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
+          return { error: { status: "FETCH_ERROR", error: message } };
         }
       },
     }),
   }),
 });
 
-export const { useUploadMediaMutation } = mediaApi;
+export const { useUploadMediaMutation, useUploadMediaMultiMutation } = mediaApi;
