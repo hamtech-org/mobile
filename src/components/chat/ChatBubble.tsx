@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactElement, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -62,6 +62,63 @@ import { resolveGroupJoinLinkFromMessageContent } from "@/utils/groupJoinLinkMes
 
 import { GroupJoinLinkCard } from "./GroupJoinLinkCard";
 import type { PollVoteModalPoll } from "./PollVoteModal";
+
+const CHAT_URL_REGEX = /((?:https?:\/\/|www\.)[^\s<>"']+)/gi;
+const TRAILING_URL_PUNCTUATION_REGEX = /[),.!?;:]+$/;
+
+function splitTrailingUrlPunctuation(raw: string): { url: string; suffix: string } {
+  const match = raw.match(TRAILING_URL_PUNCTUATION_REGEX);
+  if (!match?.[0]) return { url: raw, suffix: "" };
+  const suffix = match[0];
+  return { url: raw.slice(0, -suffix.length), suffix };
+}
+
+function hrefFromChatUrl(raw: string): string {
+  return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+}
+
+function LinkifiedChatText({
+  text,
+  className,
+  linkClassName,
+}: {
+  text: string;
+  className: string;
+  linkClassName: string;
+}): ReactElement {
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  CHAT_URL_REGEX.lastIndex = 0;
+
+  while ((match = CHAT_URL_REGEX.exec(text)) !== null) {
+    const raw = match[0];
+    const start = match.index;
+    if (start > cursor) nodes.push(text.slice(cursor, start));
+
+    const { url, suffix } = splitTrailingUrlPunctuation(raw);
+    if (url) {
+      const href = hrefFromChatUrl(url);
+      nodes.push(
+        <Text
+          key={`${start}-${url}`}
+          className={linkClassName}
+          onPress={(event) => {
+            event.stopPropagation?.();
+            void Linking.openURL(href);
+          }}
+        >
+          {url}
+        </Text>,
+      );
+    }
+    if (suffix) nodes.push(suffix);
+    cursor = start + raw.length;
+  }
+
+  if (cursor < text.length) nodes.push(text.slice(cursor));
+  return <Text className={className}>{nodes.length > 0 ? nodes : text}</Text>;
+}
 
 /** Dữ liệu nhóm để card giao việc / nút bình chọn (chỉ khi `isGroup`). */
 export interface ChatBubbleGroupExtras {
@@ -1307,11 +1364,11 @@ export const ChatBubble = ({
 
                 {!isEmojiMessage && hasCaption && !joinLinkPayload && (
                   <View className={isVisualMedia || hasFile ? "px-3 py-2" : ""}>
-                    <Text
+                    <LinkifiedChatText
+                      text={captionPlainText}
                       className={`text-[15px] leading-[22px] ${isOwn && !isVisualMedia ? "text-white" : "text-foreground"}`}
-                    >
-                      {captionPlainText}
-                    </Text>
+                      linkClassName={`font-bold underline ${isOwn && !isVisualMedia ? "text-white" : "text-primary"}`}
+                    />
                   </View>
                 )}
 
