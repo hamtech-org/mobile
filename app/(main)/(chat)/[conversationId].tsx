@@ -834,10 +834,16 @@ export default function ChatDetailScreen() {
         }
         if (!msg.isPinned) {
           const pinCount = allMessages.filter(
-            (m) => m.isPinned && !m.isRecalled && !m.isDeleted,
+            (m) =>
+              m.conversationId === msg.conversationId &&
+              m.isPinned &&
+              !m.isRecalled &&
+              !m.isDeleted,
           ).length;
           if (pinCount >= MAX_PINNED_PER_CONVERSATION) {
-            toast.error(`Đã đủ ${MAX_PINNED_PER_CONVERSATION} tin ghim trong cuộc trò chuyện này.`);
+            toast.error(
+              `Đã đủ ${MAX_PINNED_PER_CONVERSATION} tin ghim. Bỏ ghim một tin cũ để ghim tin mới.`,
+            );
             return;
           }
         }
