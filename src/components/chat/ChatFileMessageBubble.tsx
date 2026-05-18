@@ -28,10 +28,10 @@ export interface ChatFileMessageBubbleProps {
   isDark?: boolean;
   isPinned?: boolean;
   header?: ReactNode;
-  onOpen: () => void;
+  /** Chạm thẻ → MessageActionSheet. */
+  onShowActions: () => void;
   onDownload: () => void;
   onFolderHint: () => void;
-  onLongPress?: () => void;
   renderCaption?: (text: string) => ReactElement;
 }
 
@@ -51,10 +51,9 @@ export function ChatFileMessageBubble({
   isDark = false,
   isPinned = false,
   header,
-  onOpen,
+  onShowActions,
   onDownload,
   onFolderHint,
-  onLongPress,
   renderCaption,
 }: ChatFileMessageBubbleProps) {
   const hasCaption = Boolean(caption?.trim());
@@ -63,14 +62,19 @@ export function ChatFileMessageBubble({
 
   return (
     <Pressable
-      onLongPress={onLongPress}
+      onPress={onShowActions}
+      onLongPress={onShowActions}
       delayLongPress={300}
       style={chatFileMessageShellStyle(isDark, isOwn)}
-      accessibilityLabel="Tin nhắn file"
+      accessibilityLabel="Tùy chọn tin nhắn file"
     >
       {header ? <View style={[styles.header, { backgroundColor: shellBg }]}>{header}</View> : null}
 
-      <TouchableOpacity activeOpacity={0.92} onPress={onOpen} accessibilityLabel="Xem trước file">
+      <TouchableOpacity
+        activeOpacity={0.92}
+        onPress={onShowActions}
+        accessibilityLabel="Tùy chọn tin nhắn file"
+      >
         {hasPreview ? (
           <Image
             source={{ uri: previewUri! }}
@@ -94,7 +98,7 @@ export function ChatFileMessageBubble({
         mimeType={mimeType}
         mediaSavedOnDevice={mediaSavedOnDevice}
         isDark={isDark}
-        onOpen={onOpen}
+        onOpen={onShowActions}
         onDownload={onDownload}
         onFolderHint={onFolderHint}
       />
