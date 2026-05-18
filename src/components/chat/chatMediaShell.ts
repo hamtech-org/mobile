@@ -79,6 +79,26 @@ export function chatMediaMaxHeight(layout?: ChatMediaLayout): number {
   return Math.min(Dimensions.get("window").height * 0.78, 640);
 }
 
+/** Co ảnh/video vào hộp max — khớp web `object-contain` + `max-h`. */
+export function fitMediaInBox(
+  maxW: number,
+  maxH: number,
+  srcW: number,
+  srcH: number,
+): { width: number; height: number } {
+  if (srcW <= 0 || srcH <= 0) {
+    return { width: Math.round(maxW), height: Math.round(Math.min(120, maxH)) };
+  }
+  const ratio = srcW / srcH;
+  let width = maxW;
+  let height = width / ratio;
+  if (height > maxH) {
+    height = maxH;
+    width = height * ratio;
+  }
+  return { width: Math.round(width), height: Math.round(height) };
+}
+
 /** Bọc bubble media trong cột chat. */
 export function chatMediaBubbleContainStyle(
   layout: ChatMediaLayout,
@@ -95,6 +115,25 @@ export function chatMediaBubbleContainStyle(
 export function chatMediaShellStyle(isDark: boolean): ViewStyle {
   return {
     width: "100%",
+    overflow: "hidden",
+    borderRadius: CHAT_MEDIA_SHELL_RADIUS,
+    borderWidth: 1,
+    borderColor: isDark ? CHAT_MEDIA_SHELL_BORDER_DARK : CHAT_MEDIA_SHELL_BORDER,
+    backgroundColor: isDark ? CHAT_MEDIA_SHELL_BG_DARK : CHAT_MEDIA_SHELL_BG,
+    shadowColor: "#3B5B8C",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  };
+}
+
+/** Shell ảnh — bọc đúng kích thước pixel (không kéo full `visualMaxWidth`). */
+export function chatImageMessageShellStyle(width: number, isDark: boolean): ViewStyle {
+  return {
+    width,
+    maxWidth: width,
+    flexShrink: 0,
     overflow: "hidden",
     borderRadius: CHAT_MEDIA_SHELL_RADIUS,
     borderWidth: 1,
