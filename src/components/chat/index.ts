@@ -11,6 +11,8 @@ export { MuteNotificationsModal } from "./MuteNotificationsModal";
 export { ConversationPersonalSettingsModal } from "./ConversationPersonalSettingsModal";
 export { MutedConversationsFooter } from "./MutedConversationsFooter";
 export { CreateGroupModal } from "./CreateGroupModal";
+export { AddMembersModal } from "./AddMembersModal";
+export { GroupAddMembersModal } from "./GroupAddMembersModal";
 export { ChatInput } from "./ChatInput";
 export { GroupMemberSendRestrictedBar } from "./GroupMemberSendRestrictedBar";
 export type { PendingAttachment } from "./ChatInput";
