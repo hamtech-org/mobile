@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useAppSelector } from "@/hooks/useAppStore";
 import { useGetMessagesQuery, CHAT_MESSAGES_QUERY_LIMIT } from "@/store/api/chatApi";
 import type { IMessage } from "@/types/chat.types";
+import { mergeChatFileMessageFields } from "@/utils/chatMediaDisplay";
 
 const EMPTY_MESSAGE_ARRAY: IMessage[] = [];
 
@@ -119,7 +120,10 @@ export function useChatMessageData(conversationId: string | null) {
 
     // API messages thường cũ hơn socket messages trong phiên làm việc hiện tại
     base.forEach((m) => map.set(m.messageId, m));
-    socketMessages.forEach((m) => map.set(m.messageId, m));
+    socketMessages.forEach((m) => {
+      const prev = map.get(m.messageId);
+      map.set(m.messageId, prev ? mergeChatFileMessageFields(m, prev) : m);
+    });
 
     const merged = stripOptimisticEchoes(Array.from(map.values()));
     const deduped = dedupeTaskAssignedSystemMessages(merged);
