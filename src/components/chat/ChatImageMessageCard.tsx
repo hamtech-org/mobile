@@ -14,8 +14,8 @@ export interface ChatImageMessageCardProps {
   layout: ChatMediaLayout;
   isDark?: boolean;
   hasCaptionBelow?: boolean;
+  /** Chạm → MessageActionSheet (cảm xúc, thu hồi, …). */
   onPress: () => void;
-  onLongPress?: () => void;
 }
 
 /** Ảnh — khớp web: `rounded-xl border #B8C9E8 shadow-sm object-contain`. */
@@ -25,7 +25,6 @@ export function ChatImageMessageCard({
   isDark = false,
   hasCaptionBelow = false,
   onPress,
-  onLongPress,
 }: ChatImageMessageCardProps) {
   const maxH = chatMediaMaxHeight(layout);
   const [aspectRatio, setAspectRatio] = useState<number | null>(null);
@@ -64,13 +63,7 @@ export function ChatImageMessageCard({
 
   return (
     <View style={[chatMediaShellStyle(isDark), hasCaptionBelow ? styles.withCaptionBelow : null]}>
-      <Pressable
-        onPress={onPress}
-        onLongPress={onLongPress}
-        delayLongPress={350}
-        accessibilityLabel="Xem ảnh lớn"
-        style={styles.press}
-      >
+      <Pressable onPress={onPress} accessibilityLabel="Tùy chọn tin nhắn ảnh" style={styles.press}>
         <Image
           source={{ uri }}
           style={imageStyle}
