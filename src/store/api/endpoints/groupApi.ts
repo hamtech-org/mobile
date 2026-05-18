@@ -57,6 +57,14 @@ export interface GroupJoinRequestRow {
   isFriend?: boolean;
 }
 
+type MemberCountPayload = { memberCount?: number } | null;
+
+function updateInjectedQueryData(...args: unknown[]): unknown {
+  return (
+    chatApi.util as unknown as { updateQueryData: (...innerArgs: unknown[]) => unknown }
+  ).updateQueryData(...args);
+}
+
 const DEFAULT_GROUP_SETTINGS: IGroupSettings = {
   memberPermissions: {
     changeNameAvatar: true,
@@ -145,7 +153,10 @@ export const groupApi = chatApi.injectEndpoints({
       invalidatesTags: ["Conversations"],
     }),
 
-    leaveGroup: builder.mutation<ApiEnvelope<null>, { groupId: string; newOwnerUserId?: string }>({
+    leaveGroup: builder.mutation<
+      ApiEnvelope<MemberCountPayload>,
+      { groupId: string; newOwnerUserId?: string }
+    >({
       query: ({ groupId, newOwnerUserId }) => ({
         url: `/chat/groups/${groupId}/leave`,
         method: "POST",
@@ -163,7 +174,10 @@ export const groupApi = chatApi.injectEndpoints({
       invalidatesTags: ["Conversations"],
     }),
 
-    removeMember: builder.mutation<ApiEnvelope<null>, { groupId: string; userId: string }>({
+    removeMember: builder.mutation<
+      ApiEnvelope<MemberCountPayload>,
+      { groupId: string; userId: string }
+    >({
       query: ({ groupId, userId }) => ({
         url: `/chat/groups/${groupId}/members/${userId}`,
         method: "DELETE",
@@ -173,16 +187,33 @@ export const groupApi = chatApi.injectEndpoints({
         "Conversations",
       ],
       async onQueryStarted({ groupId, userId }, { dispatch, queryFulfilled }) {
-        const patch = dispatch(
-          chatApi.util.updateQueryData("getGroupMembers", groupId, (draft) => {
+        const membersPatch = dispatch(
+          updateInjectedQueryData("getGroupMembers", groupId, (draft: IGroupMember[]) => {
             const idx = draft.findIndex((m) => m.userId === userId);
             if (idx >= 0) draft.splice(idx, 1);
-          }),
-        );
+          }) as never,
+        ) as { undo: () => void };
+        const conversationsPatch = dispatch(
+          updateInjectedQueryData("getConversations", undefined, (draft: IConversation[]) => {
+            const conv = draft.find((x) => x.conversationId === groupId);
+            if (!conv || typeof conv.memberCount !== "number") return;
+            conv.memberCount = Math.max(0, conv.memberCount - 1);
+          }) as never,
+        ) as { undo: () => void };
         try {
-          await queryFulfilled;
+          const { data } = await queryFulfilled;
+          const memberCount = data?.data?.memberCount;
+          if (typeof memberCount === "number" && Number.isFinite(memberCount)) {
+            dispatch(
+              updateInjectedQueryData("getConversations", undefined, (draft: IConversation[]) => {
+                const conv = draft.find((x) => x.conversationId === groupId);
+                if (conv) conv.memberCount = Math.max(0, memberCount);
+              }) as never,
+            );
+          }
         } catch {
-          patch.undo();
+          membersPatch.undo();
+          conversationsPatch.undo();
         }
       },
     }),
