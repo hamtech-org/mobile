@@ -1,4 +1,9 @@
 import type { IConversation, IGroupMember, IGroupSettings, MemberRole } from "@/types/chat.types";
+import { normalizeGroupSettings, DEFAULT_GROUP_SETTINGS } from "@/utils/normalizeGroupSettings";
+import {
+  patchGroupProfileInConversationsCache,
+  patchGroupSettingsInCaches,
+} from "@/utils/groupRealtimeCache";
 import { chatApi, type ApiEnvelope } from "../baseChatApi";
 
 function mapApiGroupMember(raw: unknown): IGroupMember | null {
@@ -65,46 +70,6 @@ function updateInjectedQueryData(...args: unknown[]): unknown {
   ).updateQueryData(...args);
 }
 
-const DEFAULT_GROUP_SETTINGS: IGroupSettings = {
-  memberPermissions: {
-    changeNameAvatar: true,
-    pinMessages: true,
-    createNotesReminders: true,
-    createPolls: true,
-    sendMessages: true,
-  },
-  adminSettings: {
-    approvalRequired: false,
-    highlightLeaderMessages: true,
-    newMembersReadRecent: true,
-    allowJoinLink: true,
-  },
-};
-
-function normalizeGroupSettings(raw: unknown): IGroupSettings | null {
-  if (!raw || typeof raw !== "object") return null;
-  const o = raw as Record<string, unknown>;
-  const mp = o.memberPermissions as Record<string, unknown> | undefined;
-  const ad = o.adminSettings as Record<string, unknown> | undefined;
-  if (!mp || !ad) return null;
-  return {
-    memberPermissions: {
-      changeNameAvatar: Boolean(mp.changeNameAvatar),
-      pinMessages: Boolean(mp.pinMessages),
-      createNotesReminders: Boolean(mp.createNotesReminders),
-      createPolls: Boolean(mp.createPolls),
-      sendMessages: Boolean(mp.sendMessages),
-    },
-    adminSettings: {
-      approvalRequired: Boolean(ad.approvalRequired),
-      highlightLeaderMessages: Boolean(ad.highlightLeaderMessages),
-      newMembersReadRecent: Boolean(ad.newMembersReadRecent),
-      allowJoinLink: Boolean(ad.allowJoinLink),
-    },
-    joinLinkSuffix: o.joinLinkSuffix != null ? String(o.joinLinkSuffix) : undefined,
-  };
-}
-
 export const groupApi = chatApi.injectEndpoints({
   endpoints: (builder) => ({
     getGroupMembers: builder.query<IGroupMember[], string>({
@@ -127,7 +92,7 @@ export const groupApi = chatApi.injectEndpoints({
       }),
       invalidatesTags: ["Conversations"],
       async onQueryStarted({ groupId, name, avatar }, { dispatch, queryFulfilled }) {
-        const patch = dispatch(
+        const optimisticPatch = dispatch(
           (
             chatApi.util as unknown as { updateQueryData: (...args: unknown[]) => unknown }
           ).updateQueryData("getConversations", undefined, (draft: IConversation[]) => {
@@ -138,9 +103,19 @@ export const groupApi = chatApi.injectEndpoints({
           }) as never,
         ) as { undo: () => void };
         try {
-          await queryFulfilled;
+          const { data: res } = await queryFulfilled;
+          const conv = res?.data as IConversation | undefined;
+          const cid = String(conv?.conversationId ?? groupId).trim();
+          if (cid && conv) {
+            patchGroupProfileInConversationsCache(dispatch, cid, {
+              name: conv.name,
+              avatar: conv.avatar,
+              memberCount: conv.memberCount,
+              updatedAt: conv.updatedAt,
+            });
+          }
         } catch {
-          patch.undo();
+          optimisticPatch.undo();
         }
       },
     }),
@@ -285,9 +260,7 @@ export const groupApi = chatApi.injectEndpoints({
 
     getGroupSettings: builder.query<IGroupSettings, string>({
       query: (groupId) => `/chat/groups/${groupId}/settings`,
-      transformResponse: (response: ApiEnvelope<unknown>) => {
-        return normalizeGroupSettings(response.data) ?? DEFAULT_GROUP_SETTINGS;
-      },
+      transformResponse: (response: ApiEnvelope<unknown>) => normalizeGroupSettings(response.data),
       providesTags: (_result, _error, groupId) => [{ type: "GroupSettings", id: groupId }],
     }),
 
@@ -298,8 +271,18 @@ export const groupApi = chatApi.injectEndpoints({
         body,
       }),
       transformResponse: (response: ApiEnvelope<unknown>): ApiEnvelope<IGroupSettings> => {
-        const norm = normalizeGroupSettings(response.data) ?? DEFAULT_GROUP_SETTINGS;
+        const norm = normalizeGroupSettings(response.data);
         return { ...response, data: norm };
+      },
+      async onQueryStarted({ groupId }, { dispatch, queryFulfilled }) {
+        try {
+          const { data: res } = await queryFulfilled;
+          if (res?.data) {
+            patchGroupSettingsInCaches(dispatch, groupId, res.data);
+          }
+        } catch {
+          /* ignore */
+        }
       },
       invalidatesTags: (_r, _e, arg) => [
         { type: "GroupSettings", id: arg.groupId },
