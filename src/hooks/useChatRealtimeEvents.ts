@@ -48,6 +48,31 @@ function groupIdFromPayload(p: Record<string, unknown>): string {
   return String(p.conversationId ?? p.groupId ?? "").trim();
 }
 
+function groupUpdateNoticeText(
+  payload: Record<string, unknown>,
+  currentUserId?: string,
+): string | null {
+  const name = typeof payload.name === "string" && payload.name.trim() ? payload.name.trim() : "";
+  const changed =
+    payload.changed && typeof payload.changed === "object"
+      ? (payload.changed as { name?: boolean; avatar?: boolean })
+      : null;
+  const nameChanged = changed ? changed.name === true : Boolean(name);
+  const avatarChanged = changed ? changed.avatar === true : Boolean(!name && payload.avatar);
+  if (!nameChanged && !avatarChanged) return null;
+
+  const actorId = String(payload.actorId ?? "").trim();
+  const actorName = String(payload.actorName ?? "").trim();
+  const who = currentUserId && actorId && actorId === currentUserId ? "Bạn" : actorName || "Ai đó";
+
+  if (nameChanged && avatarChanged && name) {
+    return `${who} đã đổi tên nhóm thành "${name}" và cập nhật ảnh đại diện nhóm`;
+  }
+  if (nameChanged && name) return `${who} đã đổi tên nhóm thành "${name}"`;
+  if (avatarChanged) return `${who} đã cập nhật ảnh đại diện nhóm`;
+  return null;
+}
+
 /** Giống web `useChatGroupFrameNotices`: poll / task_assigned / task_joined (màu + icon). */
 function bannerVariantFromSystemKind(kind: string): ChatFrameBannerVariant | null {
   if (kind.startsWith("poll")) return "poll";
@@ -76,9 +101,9 @@ function bannerFromSystemMessage(msg: IMessage): {
   const variant = bannerVariantFromSystemKind(kind);
   if (!variant) return null;
   const atIso = normalizeIso(String(parsed.createdAt ?? msg.createdAt ?? ""));
-  /** Giống web `useChatGroupFrameNotices`: `lastMessageLineFromSystemJson` với `currentUserId` không set. */
+  const currentUserId = store.getState().auth.user?.userId ?? "";
   const text =
-    formatSystemLastMessagePreview(raw, msg.senderId, "", msg.senderDisplayName) ??
+    formatSystemLastMessagePreview(raw, msg.senderId, currentUserId, msg.senderDisplayName) ??
     "Thông báo nhóm";
   let pollId: string | undefined;
   if (variant === "poll") {
@@ -524,22 +549,21 @@ export function useChatRealtimeEvents({
         }),
       );
 
+      const currentUserId = store.getState().auth.user?.userId ?? "";
+      const noticeText = groupUpdateNoticeText(payload, currentUserId);
       if (conversationId === activeConvRef.current) {
-        const updatedName =
-          typeof payload.name === "string" && payload.name.trim() ? payload.name.trim() : "";
-        const message = updatedName
-          ? `Nhóm đã cập nhật: ${updatedName}`
-          : "Nhóm đã cập nhật thông tin";
-        const atIso = typeof payload.updatedAt === "string" ? payload.updatedAt : undefined;
-        emitFrameBanner(
-          `group:updated:${conversationId}`,
-          conversationId,
-          message,
-          atIso,
-          "task_assigned",
-        );
-      } else if (name) {
-        toast.info(`Nhóm '${name}' vừa cập nhật thông tin`);
+        if (noticeText) {
+          const atIso = typeof payload.updatedAt === "string" ? payload.updatedAt : undefined;
+          emitFrameBanner(
+            `group:updated:${conversationId}`,
+            conversationId,
+            noticeText,
+            atIso,
+            "task_assigned",
+          );
+        }
+      } else if (noticeText) {
+        toast.info(noticeText);
       }
     };
 
