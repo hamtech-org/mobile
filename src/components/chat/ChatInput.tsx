@@ -1,54 +1,68 @@
-import { useCallback, useState } from "react";
-import { Image, Pressable, Text, TextInput, useWindowDimensions, View } from "react-native";
-import { useVideoPlayer, VideoView } from "expo-video";
+import { useCallback, useEffect, useState, type ReactElement, type ReactNode } from "react";
 import {
-  Camera,
-  ChevronRight,
-  FileText,
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import {
+  BarChart2,
+  CheckSquare,
   Image as ImageIcon,
-  PlusCircle,
+  Mic,
+  Paperclip,
   SendHorizontal,
   Smile,
+  Sparkles,
   ThumbsUp,
   X,
 } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
+import EmojiPicker, { EmojiType } from "rn-emoji-keyboard";
 
+import { AiQuickRepliesMobile } from "@/components/chat/AiQuickRepliesMobile";
+import {
+  ChatPendingAttachmentsStrip,
+  type PendingAttachment,
+} from "@/components/chat/ChatPendingAttachmentsStrip";
+import {
+  CHAT_DOCUMENT_MIME_TYPES,
+  MAX_PENDING_FILES,
+  roughMaxBytesForMime,
+} from "@/constants/chat-page.constants";
 import { useIconColors } from "@/hooks/useIconColors";
+import { apiClient } from "@/services/api";
+import { pendingAttachmentFromImagePickerAsset } from "@/utils/chatMediaMime";
 import { toast } from "@/utils/appToast";
 import type { IMessage } from "@/types/chat.types";
-import { formatFileSize } from "@/utils/file";
-import EmojiPicker, { EmojiType } from "rn-emoji-keyboard";
 import { formatChatPreviewLine } from "@/utils/messageDisplay";
 
-export interface PendingAttachment {
-  localId: string;
-  uri: string;
-  name: string;
-  mimeType: string;
-  size?: number;
-}
+export type { PendingAttachment };
+
+type VoiceUiState = "idle" | "active-ui" | "cancelled-ui";
 
 interface ChatInputProps {
   onSend: (content: string) => void | Promise<void>;
-  onSendMedia?: (attachment: PendingAttachment, caption: string) => void | Promise<void>;
-  /** Tin nhắn đang reply (null = không reply) */
+  onSendMedia?: (attachments: PendingAttachment[], caption: string) => void | Promise<void>;
   replyingTo?: IMessage | null;
-  /** Dùng để format preview reply (tránh JSON thô). */
   currentUserId?: string;
   onClearReply?: () => void;
-  /** Gọi khi user đang gõ (debounced emit typing) */
   onTyping?: () => void;
+  activeConversationId?: string | null;
+  conversationName?: string;
+  isGroup?: boolean;
+  onOpenPoll?: () => void;
+  onOpenTask?: () => void;
+  onOpenAiSummary?: () => void;
 }
 
 /**
- * ChatInput — Messenger/Zalo style với:
- * - Nút add (media picker: camera, gallery, file)
- * - Reply preview bar
- * - Pill input multiline
- * - Send button / ThumbsUp
- * - Typing emit khi gõ
+ * Ô nhập chat — layout khớp web `ChatComposer.tsx`:
+ * toolbar → gợi ý AI → preview tệp (tối đa 10) → ô soạn + gửi.
  */
 export const ChatInput = ({
   onSend,
@@ -57,100 +71,182 @@ export const ChatInput = ({
   currentUserId = "",
   onClearReply,
   onTyping,
+  activeConversationId = null,
+  conversationName,
+  isGroup = false,
+  onOpenPoll,
+  onOpenTask,
+  onOpenAiSummary,
 }: ChatInputProps) => {
-  const { width: windowWidth } = useWindowDimensions();
   const [content, setContent] = useState("");
-  const [attachment, setAttachment] = useState<PendingAttachment | null>(null);
-  const [showMediaMenu, setShowMediaMenu] = useState(false);
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
+  const [showAiQuickReplies, setShowAiQuickReplies] = useState(true);
+  const [aiReplyLoading, setAiReplyLoading] = useState(false);
+  const [voiceUiState, setVoiceUiState] = useState<VoiceUiState>("idle");
+  const [isUploading, setIsUploading] = useState(false);
   const { muted, primary, foreground } = useIconColors();
-  const filePreviewMinW = Math.max(248, Math.min(Math.round(windowWidth * 0.82), 360));
   const hasText = content.trim().length > 0;
-  const hasSendable = hasText || attachment !== null;
+  const hasSendable = hasText || pendingAttachments.length > 0;
+  const inputDisabled = !activeConversationId || isUploading;
+
+  const placeholder = conversationName
+    ? `Nhập tin nhắn tới ${conversationName}...`
+    : activeConversationId
+      ? "Nhập tin nhắn..."
+      : "Chọn hội thoại để nhắn tin";
+
+  useEffect(() => {
+    if (voiceUiState !== "active-ui") return;
+    const t = setTimeout(() => setVoiceUiState("cancelled-ui"), 1200);
+    return () => clearTimeout(t);
+  }, [voiceUiState]);
+
+  useEffect(() => {
+    if (voiceUiState !== "cancelled-ui") return;
+    const t = setTimeout(() => setVoiceUiState("idle"), 900);
+    return () => clearTimeout(t);
+  }, [voiceUiState]);
+
+  useEffect(() => {
+    setPendingAttachments([]);
+  }, [activeConversationId]);
 
   const handleEmojiSelected = (emojiObject: EmojiType) => {
     setContent((prev) => prev + emojiObject.emoji);
     onTyping?.();
   };
 
-  // ── Send handler — clear ngay, gửi nền (không chờ API, không loading ô nhập) ──
-  const handleSend = useCallback(() => {
-    if (attachment && onSendMedia) {
-      const att = attachment;
+  const removePendingAttachment = useCallback((localId: string) => {
+    setPendingAttachments((prev) => prev.filter((p) => p.localId !== localId));
+  }, []);
+
+  const addPendingAttachments = useCallback((incoming: PendingAttachment[]) => {
+    if (incoming.length === 0) return;
+    setPendingAttachments((prev) => {
+      if (prev.length >= MAX_PENDING_FILES) {
+        toast.warning(`Tối đa ${MAX_PENDING_FILES} tệp mỗi lần gửi.`);
+        return prev;
+      }
+      const next = [...prev];
+      let oversizedSkipped = 0;
+      let overLimitSkipped = 0;
+      for (const item of incoming) {
+        if (next.length >= MAX_PENDING_FILES) {
+          overLimitSkipped += 1;
+          continue;
+        }
+        const size = item.size;
+        if (size != null && size > 0 && size > roughMaxBytesForMime(item.mimeType)) {
+          oversizedSkipped += 1;
+          continue;
+        }
+        next.push({
+          ...item,
+          localId: item.localId || `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        });
+      }
+      if (oversizedSkipped > 0) {
+        toast.warning(`${oversizedSkipped} tệp vượt dung lượng đã bị bỏ qua.`);
+      }
+      if (overLimitSkipped > 0) {
+        toast.info(`${overLimitSkipped} tệp vượt quá giới hạn ${MAX_PENDING_FILES}.`);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleSend = useCallback(async () => {
+    if (isUploading) return;
+
+    if (pendingAttachments.length > 0) {
+      if (!onSendMedia) {
+        toast.error("Không thể gửi file trong hội thoại này.");
+        return;
+      }
+      const batch = pendingAttachments;
       const cap = content.trim();
-      setAttachment(null);
-      setContent("");
-      setShowMediaMenu(false);
-      void Promise.resolve(onSendMedia(att, cap)).catch(() => {});
+      setIsUploading(true);
+      try {
+        await onSendMedia(batch, cap);
+        setPendingAttachments([]);
+        setContent("");
+      } catch {
+        /* toast trong handleSendMedia */
+      } finally {
+        setIsUploading(false);
+      }
       return;
     }
 
     const text = content.trim();
     if (!text) return;
     setContent("");
-    void Promise.resolve(onSend(text)).catch(() => {});
-  }, [content, attachment, onSend, onSendMedia]);
-
-  // ── Media picker — Gallery ───────────────────────────────
-  const pickImage = useCallback(async () => {
-    setShowMediaMenu(false);
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images", "videos"],
-      quality: 0.8,
-      allowsMultipleSelection: false,
-    });
-    if (result.canceled || !result.assets[0]) return;
-    const asset = result.assets[0];
-    setAttachment({
-      localId: `${Date.now()}`,
-      uri: asset.uri,
-      name: asset.fileName ?? `media_${Date.now()}`,
-      mimeType: asset.mimeType ?? "image/jpeg",
-      size: asset.fileSize,
-    });
-  }, []);
-
-  // ── Media picker — Camera ────────────────────────────────
-  const takePhoto = useCallback(async () => {
-    setShowMediaMenu(false);
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) {
-      toast.error("Cần quyền sử dụng camera để chụp ảnh");
-      return;
+    try {
+      await Promise.resolve(onSend(text));
+    } catch {
+      setContent(text);
     }
-    const result = await ImagePicker.launchCameraAsync({
-      quality: 0.8,
-    });
-    if (result.canceled || !result.assets[0]) return;
-    const asset = result.assets[0];
-    setAttachment({
-      localId: `${Date.now()}`,
-      uri: asset.uri,
-      name: asset.fileName ?? `photo_${Date.now()}.jpg`,
-      mimeType: asset.mimeType ?? "image/jpeg",
-      size: asset.fileSize,
-    });
-  }, []);
+  }, [content, pendingAttachments, onSend, onSendMedia, isUploading]);
 
-  // ── Media picker — File/Document ─────────────────────────
+  const pickImage = useCallback(async () => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        toast.error("Cần quyền truy cập thư viện ảnh để gửi media.");
+        return;
+      }
+      const remaining = MAX_PENDING_FILES - pendingAttachments.length;
+      if (remaining <= 0) {
+        toast.warning(`Tối đa ${MAX_PENDING_FILES} tệp mỗi lần gửi.`);
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images", "videos"],
+        quality: 0.8,
+        allowsMultipleSelection: true,
+        selectionLimit: remaining,
+      });
+      if (result.canceled || !result.assets.length) return;
+      const mapped = result.assets.map((asset) => {
+        const picked = pendingAttachmentFromImagePickerAsset(asset);
+        return {
+          localId: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+          ...picked,
+        };
+      });
+      addPendingAttachments(mapped);
+    } catch {
+      toast.error("Không mở được thư viện ảnh.");
+    }
+  }, [pendingAttachments.length, addPendingAttachments]);
+
   const pickFile = useCallback(async () => {
-    setShowMediaMenu(false);
-    const result = await DocumentPicker.getDocumentAsync({
-      type: "*/*",
-      copyToCacheDirectory: true,
-    });
-    if (result.canceled || !result.assets?.[0]) return;
-    const asset = result.assets[0];
-    setAttachment({
-      localId: `${Date.now()}`,
-      uri: asset.uri,
-      name: asset.name,
-      mimeType: asset.mimeType ?? "application/octet-stream",
-      size: asset.size ?? undefined,
-    });
-  }, []);
+    try {
+      const remaining = MAX_PENDING_FILES - pendingAttachments.length;
+      if (remaining <= 0) {
+        toast.warning(`Tối đa ${MAX_PENDING_FILES} tệp mỗi lần gửi.`);
+        return;
+      }
+      const result = await DocumentPicker.getDocumentAsync({
+        type: CHAT_DOCUMENT_MIME_TYPES,
+        multiple: true,
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled || !result.assets?.length) return;
+      const mapped = result.assets.slice(0, remaining).map((asset) => ({
+        localId: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        uri: asset.uri,
+        name: asset.name,
+        mimeType: asset.mimeType ?? "application/octet-stream",
+        size: asset.size ?? undefined,
+      }));
+      addPendingAttachments(mapped);
+    } catch {
+      toast.error("Không chọn được file.");
+    }
+  }, [pendingAttachments.length, addPendingAttachments]);
 
-  // ── Text change ──────────────────────────────────────────
   const handleTextChange = useCallback(
     (text: string) => {
       setContent(text);
@@ -159,252 +255,393 @@ export const ChatInput = ({
     [onTyping],
   );
 
+  const handleVoiceUiClick = () => {
+    if (inputDisabled) return;
+    setVoiceUiState((prev) => (prev === "active-ui" ? "idle" : "active-ui"));
+  };
+
+  const handleAiReplySuggest = async () => {
+    if (!activeConversationId || !currentUserId || !replyingTo) return;
+    if (replyingTo.isRecalled) {
+      toast.info("Tin nhắn đã thu hồi, không thể gợi ý trả lời.");
+      return;
+    }
+    setAiReplyLoading(true);
+    try {
+      const res = await apiClient.post<{
+        success: boolean;
+        data: { suggestions: string[] };
+      }>("/ai/suggest-reply-context", {
+        conversationId: activeConversationId,
+        meUserId: currentUserId,
+        theirUserId: replyingTo.senderId,
+        anchorMessageId: replyingTo.messageId,
+      });
+      const first = (res.data?.data?.suggestions ?? [])[0]?.trim();
+      if (!first) {
+        toast.info("AI chưa trả về gợi ý phù hợp.");
+        return;
+      }
+      setContent(first);
+    } catch {
+      toast.error("Gợi ý trả lời thất bại. Vui lòng thử lại.");
+    } finally {
+      setAiReplyLoading(false);
+    }
+  };
+
   return (
-    <View className="border-t border-border/20 bg-background">
-      {/* Reply preview bar */}
-      {replyingTo && (
-        <View className="flex-row items-center border-b border-border/20 bg-muted/30 px-4 py-2.5">
-          <View className="min-w-0 flex-1 border-l-[3px] border-primary pl-3">
-            <Text className="text-[11px] font-bold text-primary" numberOfLines={1}>
-              Trả lời {replyingTo.senderDisplayName ?? replyingTo.senderId}
+    <View style={styles.root}>
+      {replyingTo ? (
+        <View style={styles.replyBar}>
+          <View style={styles.replyBarText}>
+            <Text style={[styles.replyTitle, { color: primary }]} numberOfLines={1}>
+              Đang trả lời {replyingTo.senderDisplayName ?? replyingTo.senderId}
             </Text>
-            <Text className="text-[12px] text-muted-foreground" numberOfLines={1}>
-              {formatChatPreviewLine(replyingTo, currentUserId)}
+            <Text style={[styles.replyPreview, { color: muted }]} numberOfLines={2}>
+              {replyingTo.isRecalled
+                ? "Tin nhắn đã được thu hồi"
+                : formatChatPreviewLine(replyingTo, currentUserId)}
             </Text>
           </View>
           <Pressable
+            onPress={() => void handleAiReplySuggest()}
+            disabled={!activeConversationId || aiReplyLoading || Boolean(replyingTo.isRecalled)}
+            style={styles.iconBtn}
+            accessibilityLabel="AI gợi ý câu trả lời"
+          >
+            {aiReplyLoading ? (
+              <ActivityIndicator size="small" color={primary} />
+            ) : (
+              <Sparkles size={16} color={primary} strokeWidth={2} />
+            )}
+          </Pressable>
+          <Pressable
             onPress={onClearReply}
-            className="rounded-full p-1.5 active:bg-muted"
+            style={styles.iconBtn}
             hitSlop={8}
+            accessibilityLabel="Hủy trả lời"
           >
             <X size={16} color={muted} strokeWidth={2} />
           </Pressable>
         </View>
-      )}
+      ) : null}
 
-      {/* Attachment preview — ảnh/video/file trước khi gửi */}
-      {attachment && (
-        <View className="border-b border-border/15 bg-muted/25 px-3 pb-1 pt-2">
-          <View
-            className={[
-              "overflow-hidden rounded-2xl border border-border/20 bg-muted/40",
-              attachment.mimeType.startsWith("image/") || attachment.mimeType.startsWith("video/")
-                ? "max-h-[240px]"
-                : "",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-          >
-            {attachment.mimeType.startsWith("image/") ? (
-              <Image
-                source={{ uri: attachment.uri }}
-                className="max-h-[220px] min-h-[180px] w-full"
-                resizeMode="cover"
-                accessibilityLabel="Xem trước ảnh"
-              />
-            ) : attachment.mimeType.startsWith("video/") ? (
-              <AttachmentVideoPreview key={attachment.uri} uri={attachment.uri} />
-            ) : (
-              <View
-                className="mx-1 flex-row items-center gap-3 rounded-xl border border-border/25 bg-white px-3.5 py-3.5"
-                style={{ minWidth: filePreviewMinW }}
-              >
-                <View className="h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                  <FileText size={24} color={primary} strokeWidth={2} />
-                </View>
-                <View className="min-w-0 flex-1 pr-1">
-                  <Text
-                    className="text-[15px] font-semibold leading-5 text-foreground"
-                    numberOfLines={2}
-                  >
-                    {attachment.name}
-                  </Text>
-                  {(() => {
-                    const meta = [
-                      attachment.size != null && attachment.size > 0
-                        ? formatFileSize(attachment.size)
-                        : "",
-                      attachment.mimeType?.includes("/")
-                        ? (attachment.mimeType.split("/").pop() ?? "").toUpperCase()
-                        : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" · ");
-                    return meta.length > 0 ? (
-                      <Text className="mt-1 text-[12px] text-muted-foreground" numberOfLines={1}>
-                        {meta}
-                      </Text>
-                    ) : null;
-                  })()}
-                </View>
-                <ChevronRight size={20} color={muted} strokeWidth={2} />
-              </View>
-            )}
-          </View>
-          <View className="flex-row items-center justify-end gap-2 py-2">
-            <Pressable
-              onPress={() => {
-                setAttachment(null);
-                setShowMediaMenu(true);
-              }}
-              className="rounded-full bg-muted/70 px-3 py-1.5 active:opacity-80"
-            >
-              <Text className="text-xs font-medium text-foreground">Chọn lại</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setAttachment(null)}
-              className="rounded-full px-3 py-1.5 active:bg-destructive/15"
-            >
-              <Text className="text-xs font-medium text-destructive">Xóa</Text>
-            </Pressable>
-          </View>
-        </View>
-      )}
+      {pendingAttachments.length > 0 ? (
+        <ChatPendingAttachmentsStrip
+          attachments={pendingAttachments}
+          onRemove={removePendingAttachment}
+          removeDisabled={isUploading}
+        />
+      ) : null}
 
-      {/* Input row */}
-      <View className="min-h-[56px] flex-row items-end gap-1 px-2 pt-4">
-        {/* Nút Add — toggle media menu */}
-        <View className="h-11 w-11 items-center justify-center">
-          <Pressable
-            onPress={() => setShowMediaMenu(!showMediaMenu)}
-            className="active:opacity-70"
-            hitSlop={10}
-          >
-            <PlusCircle
-              size={28}
-              color={showMediaMenu ? foreground : primary}
-              strokeWidth={1.5}
-              style={showMediaMenu ? { transform: [{ rotate: "45deg" }] } : undefined}
-            />
-          </Pressable>
-        </View>
-
-        {/* Pill Input */}
-        <View
-          className="flex-1 flex-row items-center rounded-[22px] bg-muted px-4"
-          style={{ minHeight: 44, paddingVertical: 4 }}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.toolbarScroll}
+        contentContainerStyle={styles.toolbarContent}
+      >
+        <ToolbarIcon
+          onPress={() => setIsEmojiPickerOpen(true)}
+          accessibilityLabel="Emoji"
+          disabled={inputDisabled}
         >
+          <Smile size={20} color={muted} strokeWidth={2} />
+        </ToolbarIcon>
+        <ToolbarIcon
+          onPress={() => void pickImage()}
+          accessibilityLabel="Thêm ảnh hoặc video"
+          disabled={inputDisabled}
+        >
+          <ImageIcon size={20} color={muted} strokeWidth={2} />
+        </ToolbarIcon>
+        <ToolbarIcon
+          onPress={() => void pickFile()}
+          accessibilityLabel="Thêm tệp tài liệu"
+          disabled={inputDisabled}
+        >
+          <Paperclip size={20} color={muted} strokeWidth={2} />
+        </ToolbarIcon>
+        <ToolbarIcon
+          onPress={handleVoiceUiClick}
+          accessibilityLabel="Voice preview"
+          disabled={inputDisabled}
+        >
+          {voiceUiState === "active-ui" ? (
+            <ActivityIndicator size="small" color={primary} />
+          ) : (
+            <Mic
+              size={20}
+              color={voiceUiState === "cancelled-ui" ? "#f97316" : muted}
+              strokeWidth={2}
+            />
+          )}
+        </ToolbarIcon>
+
+        <View style={styles.toolbarDivider} />
+
+        <ToolbarIcon
+          onPress={() => setShowAiQuickReplies((p) => !p)}
+          accessibilityLabel={showAiQuickReplies ? "Tắt gợi ý AI" : "Bật gợi ý AI"}
+          disabled={inputDisabled}
+          active={showAiQuickReplies}
+        >
+          <Sparkles size={20} color={showAiQuickReplies ? primary : muted} strokeWidth={2} />
+        </ToolbarIcon>
+
+        {isGroup && onOpenPoll ? (
+          <ToolbarIcon onPress={onOpenPoll} accessibilityLabel="Tạo bình chọn">
+            <BarChart2 size={20} color={muted} strokeWidth={2} />
+          </ToolbarIcon>
+        ) : null}
+        {isGroup && onOpenTask ? (
+          <ToolbarIcon onPress={onOpenTask} accessibilityLabel="Giao việc hoặc nhắc hẹn">
+            <CheckSquare size={20} color={muted} strokeWidth={2} />
+          </ToolbarIcon>
+        ) : null}
+        {isGroup && onOpenAiSummary ? (
+          <Pressable
+            onPress={onOpenAiSummary}
+            disabled={inputDisabled}
+            style={[styles.summaryBtn, inputDisabled && styles.disabled]}
+            accessibilityLabel="Tóm tắt tin nhắn"
+          >
+            <Sparkles size={16} color={primary} strokeWidth={2} />
+            <Text style={[styles.summaryBtnText, { color: primary }]}>Tóm tắt Tin nhắn</Text>
+          </Pressable>
+        ) : null}
+      </ScrollView>
+
+      {showAiQuickReplies ? (
+        <View style={styles.aiBlock}>
+          <AiQuickRepliesMobile
+            activeConversationId={activeConversationId}
+            inputText={content}
+            onPickReply={(text) => {
+              setContent(text);
+              onTyping?.();
+            }}
+          />
+        </View>
+      ) : null}
+
+      <View style={styles.composeRow}>
+        <View style={styles.inputBox}>
           <TextInput
-            className="m-0 flex-1 p-0 text-[16px] text-foreground"
-            placeholder="Aa"
+            placeholder={placeholder}
             placeholderTextColor={muted}
             value={content}
             onChangeText={handleTextChange}
             multiline
-            style={{
-              minHeight: 36,
-              maxHeight: 120,
-              textAlignVertical: "center",
-              paddingTop: 4,
-              paddingBottom: 4,
-            }}
+            editable={!inputDisabled}
+            style={styles.textInput}
           />
-          <Pressable onPress={() => setIsEmojiPickerOpen(true)} hitSlop={10}>
-            <Smile size={24} color={muted} strokeWidth={1.5} />
+        </View>
+        {hasSendable ? (
+          <Pressable
+            onPress={() => void handleSend()}
+            disabled={inputDisabled}
+            style={[styles.sendBtn, { backgroundColor: primary }, inputDisabled && styles.disabled]}
+            accessibilityLabel="Gửi tin nhắn"
+          >
+            {isUploading ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <SendHorizontal size={20} color="#fff" strokeWidth={2} />
+            )}
           </Pressable>
-        </View>
-
-        {/* Nút Send hoặc Like */}
-        <View className="h-11 w-11 items-center justify-center">
-          {hasSendable ? (
-            <Pressable
-              onPress={handleSend}
-              className="size-9 items-center justify-center rounded-full bg-primary active:opacity-80"
-            >
-              <SendHorizontal size={18} color="white" strokeWidth={2.0} />
-            </Pressable>
-          ) : (
-            <Pressable
-              onPress={() => {
-                void Promise.resolve(onSend("👍")).catch(() => {});
-              }}
-              className="active:opacity-70"
-              hitSlop={10}
-            >
-              <ThumbsUp size={26} color={primary} strokeWidth={1.5} />
-            </Pressable>
-          )}
-        </View>
+        ) : (
+          <Pressable
+            onPress={() => void Promise.resolve(onSend("👍")).catch(() => {})}
+            disabled={inputDisabled}
+            style={[styles.likeBtn, inputDisabled && styles.disabled]}
+            accessibilityLabel="Gửi like"
+          >
+            <ThumbsUp size={20} color={primary} strokeWidth={2} />
+          </Pressable>
+        )}
       </View>
 
-      {/* Media menu popup */}
-      {showMediaMenu && (
-        <View className="flex-row justify-around border-t border-border/15 bg-muted/20 px-6 py-3">
-          <MediaMenuItem
-            icon={<ImageIcon size={22} color={primary} strokeWidth={1.5} />}
-            label="Ảnh/Video"
-            onPress={pickImage}
-          />
-          <MediaMenuItem
-            icon={<Camera size={22} color={primary} strokeWidth={1.5} />}
-            label="Chụp ảnh"
-            onPress={takePhoto}
-          />
-          <MediaMenuItem
-            icon={<FileText size={22} color={primary} strokeWidth={1.5} />}
-            label="Tài liệu"
-            onPress={pickFile}
-          />
-        </View>
-      )}
-
-      <EmojiPicker
-        open={isEmojiPickerOpen}
-        onClose={() => setIsEmojiPickerOpen(false)}
-        onEmojiSelected={handleEmojiSelected}
-        theme={{
-          backdrop: "#00000088",
-          knob: primary,
-          container: "#1e1e1e", // or use a variable if you have one
-          header: foreground,
-          skinTonesContainer: "#252427",
-          category: {
-            icon: muted,
-            iconActive: primary,
-            container: "#252427",
-            containerActive: "#333333",
-          },
-        }}
-      />
+      {isEmojiPickerOpen ? (
+        <EmojiPicker
+          open
+          onClose={() => setIsEmojiPickerOpen(false)}
+          onEmojiSelected={handleEmojiSelected}
+          theme={{
+            backdrop: "#00000088",
+            knob: primary,
+            container: "#1e1e1e",
+            header: foreground,
+            skinTonesContainer: "#252427",
+            category: {
+              icon: muted,
+              iconActive: primary,
+              container: "#252427",
+              containerActive: "#333333",
+            },
+          }}
+        />
+      ) : null}
     </View>
   );
 };
 
-/** Preview video trước khi gửi — dùng expo-video thay cho expo-av (deprecated). */
-function AttachmentVideoPreview({ uri }: { uri: string }) {
-  const player = useVideoPlayer(uri, (p) => {
-    p.loop = false;
-  });
+const styles = StyleSheet.create({
+  root: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "rgba(0,0,0,0.08)",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: "#fff",
+  },
+  replyBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: "#0068FF",
+    backgroundColor: "rgba(0,0,0,0.04)",
+  },
+  replyBarText: {
+    flex: 1,
+    minWidth: 0,
+    marginRight: 8,
+  },
+  replyTitle: {
+    fontSize: 11,
+    fontWeight: "700",
+    marginBottom: 2,
+  },
+  replyPreview: {
+    fontSize: 12,
+  },
+  iconBtn: {
+    padding: 6,
+    marginLeft: 4,
+  },
+  toolbarScroll: {
+    marginBottom: 12,
+    flexGrow: 0,
+  },
+  toolbarContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingRight: 8,
+  },
+  toolbarDivider: {
+    width: 1,
+    height: 20,
+    backgroundColor: "rgba(0,0,0,0.12)",
+    marginHorizontal: 4,
+  },
+  summaryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(0,104,255,0.2)",
+    backgroundColor: "rgba(0,104,255,0.05)",
+  },
+  summaryBtnText: {
+    marginLeft: 8,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  aiBlock: {
+    marginBottom: 12,
+  },
+  composeRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+  },
+  inputBox: {
+    flex: 1,
+    minHeight: 40,
+    marginRight: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.1)",
+    backgroundColor: "rgba(0,0,0,0.04)",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  textInput: {
+    margin: 0,
+    padding: 0,
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#050505",
+    minHeight: 40,
+    maxHeight: 128,
+    textAlignVertical: "top",
+  },
+  sendBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  likeBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.1)",
+    backgroundColor: "rgba(0,0,0,0.04)",
+  },
+  disabled: {
+    opacity: 0.4,
+  },
+});
 
-  return (
-    <VideoView
-      player={player}
-      style={{ width: "100%", height: 200 }}
-      contentFit="cover"
-      nativeControls
-      accessibilityLabel="Xem trước video"
-    />
-  );
-}
-
-// ── Media Menu Item ──────────────────────────────────────────────────────
-
-function MediaMenuItem({
-  icon,
-  label,
+function ToolbarIcon({
+  children,
   onPress,
+  accessibilityLabel,
+  disabled,
+  active,
 }: {
-  icon: React.ReactNode;
-  label: string;
+  children: ReactNode;
   onPress: () => void;
-}) {
+  accessibilityLabel: string;
+  disabled?: boolean;
+  active?: boolean;
+}): ReactElement {
   return (
     <Pressable
       onPress={onPress}
-      className="items-center gap-1.5 rounded-xl px-4 py-2 active:bg-muted/50"
+      disabled={disabled}
+      accessibilityLabel={accessibilityLabel}
+      style={[
+        toolbarIconStyles.btn,
+        active && toolbarIconStyles.btnActive,
+        disabled && toolbarIconStyles.btnDisabled,
+      ]}
     >
-      {icon}
-      <Text className="text-[12px] font-medium text-foreground">{label}</Text>
+      {children}
     </Pressable>
   );
 }
+
+const toolbarIconStyles = StyleSheet.create({
+  btn: {
+    borderRadius: 8,
+    padding: 8,
+    marginRight: 2,
+  },
+  btnActive: {
+    backgroundColor: "rgba(0,104,255,0.1)",
+  },
+  btnDisabled: {
+    opacity: 0.4,
+  },
+});
