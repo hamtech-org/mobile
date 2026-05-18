@@ -78,6 +78,53 @@ export function resolveGroupMemberRole(args: {
   return undefined;
 }
 
+type NormalizableMemberRow = { userId?: string; role?: string };
+
+type GroupMembersNormalizeMeta = {
+  leaderId?: string | null;
+  creatorId?: string | null;
+};
+
+/** Chuẩn hóa danh sách thành viên + vai trò (đồng bộ web `normalizeGroupMembersList`). */
+export function normalizeGroupMembersList<T extends NormalizableMemberRow>(
+  members: T[] | undefined | null,
+  meta?: GroupMembersNormalizeMeta,
+): (T & { userId: string; role: MemberRole })[] {
+  const byUserId = new Map<string, T>();
+  for (const row of members ?? []) {
+    const userId = String(row.userId ?? "").trim();
+    if (!userId) continue;
+    byUserId.set(userId, row);
+  }
+
+  const deduped = Array.from(byUserId.values());
+  const lookup: RoleLookupMember[] = deduped.map((m) => ({
+    userId: String(m.userId ?? "").trim(),
+    role: m.role ?? undefined,
+  }));
+
+  return deduped.map((row) => {
+    const userId = String(row.userId ?? "").trim();
+    const fromRow = String(row.role ?? "")
+      .trim()
+      .toLowerCase();
+    const fromRowRole: MemberRole | undefined =
+      fromRow === "owner" || fromRow === "admin" || fromRow === "member" ? fromRow : undefined;
+    const role =
+      resolveGroupMemberRole({
+        userId,
+        members: lookup,
+        conversationLeaderId: meta?.leaderId,
+        conversationCreatorId: meta?.creatorId,
+      }) ??
+      fromRowRole ??
+      "member";
+    const safeRole: MemberRole =
+      role === "owner" || role === "admin" || role === "member" ? role : "member";
+    return { ...row, userId, role: safeRole };
+  });
+}
+
 function resolveRoleForCheck(args: {
   conversation?: GroupPermissionConversation | null;
   userRole?: MemberRole;
