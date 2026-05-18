@@ -320,7 +320,7 @@ export function GroupManageModal({
         setMemberManageTab("list");
       } else if (init === "requests") {
         setPanel("members");
-        setMemberManageTab("list");
+        setMemberManageTab("pending");
       } else {
         setPanel(init);
         setBulletinNotesTab("all");
@@ -820,15 +820,6 @@ export function GroupManageModal({
       const canDemote = m.role === "admin" && (canKickMembers || isSelfAdmin);
       const canPromote = canKickMembers && m.role === "member" && !adminSlotsFull;
       const name = memberRowDisplayName(m, effectiveUserId);
-      const kick = () => {
-        if (kickGloballyDisabled) {
-          toast.warning(
-            `Nhóm phải còn tối thiểu ${MIN_GROUP_MEMBERS} người — không thể mời thêm ai ra (hiện ${members.length} người).`,
-          );
-          return;
-        }
-        confirmRemove(m);
-      };
       const buttons: {
         text: string;
         style?: "destructive" | "cancel";
@@ -846,23 +837,10 @@ export function GroupManageModal({
           onPress: () => confirmPromote(m),
         });
       }
-      if (!membersLeadersOnly && canKickMembers && m.userId !== effectiveUserId) {
-        buttons.push({ text: "Kick", style: "destructive", onPress: kick });
-      }
       buttons.push({ text: "Hủy", style: "cancel" });
       Alert.alert(name, undefined, buttons);
     },
-    [
-      adminSlotsFull,
-      canKickMembers,
-      confirmDemote,
-      confirmPromote,
-      confirmRemove,
-      effectiveUserId,
-      kickGloballyDisabled,
-      members.length,
-      membersLeadersOnly,
-    ],
+    [adminSlotsFull, canKickMembers, confirmDemote, confirmPromote, effectiveUserId],
   );
 
   const runLeave = useCallback(
@@ -1604,6 +1582,63 @@ export function GroupManageModal({
 
   const renderMembers = () => (
     <View style={{ flex: 1 }}>
+      {canModerateMembers && !membersLeadersOnly ? (
+        <View style={styles.mmTabsRow}>
+          <Pressable
+            onPress={() => setMemberManageTab("list")}
+            style={[
+              styles.mmTab,
+              memberManageTab === "list" ? styles.mmTabActive : styles.mmTabIdle,
+            ]}
+            accessibilityRole="button"
+            accessibilityState={{ selected: memberManageTab === "list" }}
+          >
+            <Users
+              size={15}
+              color={memberManageTab === "list" ? "#fff" : Z.sub}
+              strokeWidth={2.25}
+            />
+            <Text
+              style={[
+                styles.mmTabText,
+                memberManageTab === "list" ? styles.mmTabTextActive : styles.mmTabTextIdle,
+              ]}
+            >
+              Thành viên ({members.length})
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setMemberManageTab("pending")}
+            style={[
+              styles.mmTab,
+              memberManageTab === "pending" ? styles.mmTabActive : styles.mmTabIdle,
+            ]}
+            accessibilityRole="button"
+            accessibilityState={{ selected: memberManageTab === "pending" }}
+          >
+            <UserPlus
+              size={15}
+              color={memberManageTab === "pending" ? "#fff" : Z.sub}
+              strokeWidth={2.25}
+            />
+            <Text
+              style={[
+                styles.mmTabText,
+                memberManageTab === "pending" ? styles.mmTabTextActive : styles.mmTabTextIdle,
+              ]}
+            >
+              Chờ duyệt
+            </Text>
+            {joinRequests.length > 0 ? (
+              <View style={styles.mmPendingCountBadge}>
+                <Text style={styles.mmPendingCountBadgeText}>
+                  {joinRequests.length > 99 ? "99+" : joinRequests.length}
+                </Text>
+              </View>
+            ) : null}
+          </Pressable>
+        </View>
+      ) : null}
       {isFetching ? (
         <ActivityIndicator style={{ marginTop: 24 }} color={Z.primary} />
       ) : memberManageTab === "list" || !canModerateMembers || membersLeadersOnly ? (
@@ -1618,13 +1653,15 @@ export function GroupManageModal({
           }
           renderItem={({ item: m }) => {
             const isSelfAdmin = m.role === "admin" && m.userId === effectiveUserId;
-            const canAct = membersLeadersOnly
-              ? (canKickMembers || isSelfAdmin) && m.role === "admin"
-              : isSelfAdmin ||
-                (canKickMembers &&
-                  Boolean(effectiveUserId) &&
-                  m.userId !== effectiveUserId &&
-                  m.role !== "owner");
+            const canKickThis =
+              !membersLeadersOnly &&
+              canKickMembers &&
+              Boolean(effectiveUserId) &&
+              m.userId !== effectiveUserId &&
+              m.role !== "owner";
+            const canRoleAction =
+              ((canKickMembers || isSelfAdmin) && m.role === "admin") ||
+              (canKickMembers && m.role === "member" && !adminSlotsFull);
             return (
               <View style={styles.mmMemberRow}>
                 <Avatar uri={m.avatar || undefined} name={m.displayName} size="sm" />
@@ -1642,7 +1679,24 @@ export function GroupManageModal({
                     <Text style={styles.mmRolePillAdminText}>Phó nhóm</Text>
                   </View>
                 ) : null}
-                {canAct ? (
+                {canKickThis ? (
+                  <Pressable
+                    style={styles.kickOutBtn}
+                    onPress={() => {
+                      if (kickGloballyDisabled) {
+                        toast.warning(
+                          `Nhóm phải còn tối thiểu ${MIN_GROUP_MEMBERS} người — không thể mời thêm ai ra (hiện ${members.length} người).`,
+                        );
+                        return;
+                      }
+                      confirmRemove(m);
+                    }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={styles.kickOutBtnText}>Kick</Text>
+                  </Pressable>
+                ) : null}
+                {canRoleAction ? (
                   <Pressable
                     style={styles.mmMoreBtn}
                     onPress={() => openMemberRowMenu(m)}
@@ -1682,6 +1736,7 @@ export function GroupManageModal({
                       void (async () => {
                         try {
                           await sendFriendReq({ userId: r.userId }).unwrap();
+                          void refetchRequests();
                           toast.success("Đã kết bạn");
                         } catch (e: unknown) {
                           const st =
