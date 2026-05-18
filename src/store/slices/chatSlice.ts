@@ -22,6 +22,10 @@ interface ChatState {
   replyingTo: IMessage | null;
   frameBanner: ChatFrameBanner | null;
   messageJoinCutoffMsByConversation: Record<string, number>;
+  /** Tăng khi socket báo thay đổi nhóm; refetch members/tasks/polls (đồng bộ web). */
+  groupBoardRefreshTickByConversationId: Record<string, number>;
+  /** Thành viên đã rời/bị kick (socket) — lọc khỏi danh sách UI realtime. */
+  removedGroupMemberIdsByConversationId: Record<string, string[]>;
 }
 
 const initialState: ChatState = {
@@ -31,6 +35,8 @@ const initialState: ChatState = {
   replyingTo: null,
   frameBanner: null,
   messageJoinCutoffMsByConversation: {},
+  groupBoardRefreshTickByConversationId: {},
+  removedGroupMemberIdsByConversationId: {},
 };
 
 const chatSlice = createSlice({
@@ -237,6 +243,32 @@ const chatSlice = createSlice({
       if (!id) return;
       delete state.messages[id];
     },
+
+    bumpGroupBoardRefresh: (state, action: PayloadAction<{ conversationId: string }>) => {
+      const id = String(action.payload.conversationId ?? "").trim();
+      if (!id) return;
+      const prev = state.groupBoardRefreshTickByConversationId[id] ?? 0;
+      state.groupBoardRefreshTickByConversationId[id] = prev + 1;
+    },
+
+    markGroupMemberRemovedRealtime: (
+      state,
+      action: PayloadAction<{ conversationId: string; userId: string }>,
+    ) => {
+      const cid = String(action.payload.conversationId ?? "").trim();
+      const uid = String(action.payload.userId ?? "").trim();
+      if (!cid || !uid) return;
+      const prev = state.removedGroupMemberIdsByConversationId[cid] ?? [];
+      if (!prev.includes(uid)) {
+        state.removedGroupMemberIdsByConversationId[cid] = [...prev, uid];
+      }
+    },
+
+    resetRemovedGroupMembersRealtime: (state, action: PayloadAction<string>) => {
+      const cid = String(action.payload ?? "").trim();
+      if (!cid) return;
+      delete state.removedGroupMemberIdsByConversationId[cid];
+    },
   },
 });
 
@@ -259,6 +291,9 @@ export const {
   clearChatFrameBanner,
   setMessageJoinCutoff,
   clearConversationMessages,
+  bumpGroupBoardRefresh,
+  markGroupMemberRemovedRealtime,
+  resetRemovedGroupMembersRealtime,
 } = chatSlice.actions;
 
 export const chatReducer = chatSlice.reducer;
