@@ -9,7 +9,9 @@ import {
   Video as VideoIcon,
 } from "lucide-react-native";
 
+import { ChatFileTypeBadge } from "@/components/chat/ChatFileTypeBadge";
 import type { IMessage } from "@/types/chat.types";
+import { resolveChatFileBubbleMeta } from "@/utils/chatMediaDisplay";
 import {
   bulletinPinnedPreviewLine,
   mediaThumbForPinnedRow,
@@ -63,6 +65,7 @@ export function BulletinPinnedMessageCard({
   const showPreview = shouldShowPinnedBulletinPreview(kind, title, preview);
   const thumb = kind === "image" || kind === "video" ? mediaThumbForPinnedRow(msg) : undefined;
   const meta = pinnedBulletinMetaLine(who, when);
+  const fileMeta = kind === "file" ? resolveChatFileBubbleMeta(msg) : null;
 
   return (
     <Pressable
@@ -75,10 +78,18 @@ export function BulletinPinnedMessageCard({
       ]}
     >
       <View style={styles.row}>
-        <View style={styles.iconWrap}>
-          <View style={[styles.kindCircle, { backgroundColor: accent }]}>
-            <Icon size={18} color="#fff" strokeWidth={2} />
-          </View>
+        <View style={[styles.iconWrap, kind === "file" ? styles.iconWrapFile : null]}>
+          {kind === "file" && fileMeta ? (
+            <ChatFileTypeBadge
+              fileName={fileMeta.fileName}
+              mimeType={fileMeta.mimeType}
+              size="sm"
+            />
+          ) : (
+            <View style={[styles.kindCircle, { backgroundColor: accent }]}>
+              <Icon size={18} color="#fff" strokeWidth={2} />
+            </View>
+          )}
           <View style={styles.pinBadge}>
             <Pin size={10} color={Z.primary} strokeWidth={2.5} />
           </View>
@@ -137,6 +148,9 @@ const styles = StyleSheet.create({
   iconWrap: {
     width: 36,
     height: 36,
+  },
+  iconWrapFile: {
+    height: 40,
   },
   kindCircle: {
     width: 36,
