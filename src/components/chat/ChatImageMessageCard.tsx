@@ -1,5 +1,5 @@
 import { Image } from "expo-image";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 
 import {
@@ -33,13 +33,17 @@ export function ChatImageMessageCard({
   const previewBg = isDark ? CHAT_IMAGE_PREVIEW_BG_DARK : CHAT_IMAGE_PREVIEW_BG;
   const [sourceSize, setSourceSize] = useState<{ w: number; h: number } | null>(null);
 
+  useEffect(() => {
+    setSourceSize(null);
+  }, [uri]);
+
   const displayBox = useMemo(() => {
     if (!sourceSize) return null;
     return fitMediaInBox(maxW, maxH, sourceSize.w, sourceSize.h);
   }, [sourceSize, maxW, maxH]);
 
-  const shellWidth = displayBox?.width ?? maxW;
-  const placeholderHeight = Math.min(120, maxH);
+  const shellWidth = displayBox?.width ?? Math.min(96, maxW);
+  const shellHeight = displayBox?.height ?? Math.min(72, maxH);
 
   return (
     <View
@@ -51,19 +55,11 @@ export function ChatImageMessageCard({
       <Pressable onPress={onPress} accessibilityLabel="Tùy chọn tin nhắn ảnh">
         <Image
           source={{ uri }}
-          style={
-            displayBox
-              ? {
-                  width: displayBox.width,
-                  height: displayBox.height,
-                  backgroundColor: previewBg,
-                }
-              : {
-                  width: maxW,
-                  height: placeholderHeight,
-                  backgroundColor: previewBg,
-                }
-          }
+          style={{
+            width: shellWidth,
+            height: shellHeight,
+            backgroundColor: previewBg,
+          }}
           contentFit="contain"
           transition={150}
           onLoad={(event) => {
