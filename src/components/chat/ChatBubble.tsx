@@ -1279,7 +1279,7 @@ export const ChatBubble = ({
       const ok = await downloadChatFileToDevice(downloadUrl, fileName, message.mediaType);
       if (ok) {
         setMediaSavedOnDevice(true);
-        toast.success("Chọn Lưu vào Tệp hoặc ứng dụng để lưu file.");
+        toast.success("Đã lưu file vào Tài liệu.");
       } else {
         toast.error("Không tải được file.");
       }
