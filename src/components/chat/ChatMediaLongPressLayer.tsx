@@ -12,8 +12,8 @@ interface ChatMediaLongPressLayerProps {
 }
 
 /**
- * Lớp bắt giữ tin — dùng trên video (che native player) và vùng file.
- * Chạm nhanh → `onPress`; giữ ~350ms → `onLongPress` (mở MessageActionSheet).
+ * Lớp bắt sự kiện media — dùng trên video (che native player).
+ * Chạm / giữ → mở MessageActionSheet (cảm xúc, trả lời, thu hồi, …).
  */
 export function ChatMediaLongPressLayer({
   children,
