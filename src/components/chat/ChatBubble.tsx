@@ -1227,9 +1227,9 @@ export const ChatBubble = ({
   const pressableMediaStyle: ViewStyle | undefined =
     widenMediaBubble && !hasFile
       ? {
-          width: "100%",
           maxWidth: mediaBubbleMaxWidth,
           alignSelf: isOwn ? "flex-end" : "flex-start",
+          ...(hasVideo && !hasImage ? { width: "100%" as const } : {}),
         }
       : undefined;
 
@@ -1349,7 +1349,9 @@ export const ChatBubble = ({
             style={pressableMediaStyle}
             className={
               widenMediaBubble
-                ? "w-full min-w-0"
+                ? hasImage && !hasVideo
+                  ? "min-w-0"
+                  : "w-full min-w-0"
                 : isOwn
                   ? "min-w-0 max-w-[78%] self-end"
                   : "min-w-0 max-w-[78%] self-start"
