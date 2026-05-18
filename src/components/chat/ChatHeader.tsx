@@ -1,5 +1,5 @@
 import { Pressable, Text, View } from "react-native";
-import { ChevronLeft, Info, Phone, Search, Video } from "lucide-react-native";
+import { ChevronLeft, Info, Pencil, Phone, Search, UserPlus, Video } from "lucide-react-native";
 
 import { Avatar } from "@/components/common/Avatar";
 import { safeRouterBack } from "@/utils/navigation";
@@ -10,7 +10,7 @@ interface ChatHeaderProps {
   conversation: IConversation;
   /** Trạng thái online (chat 1-1) */
   isOnline?: boolean;
-  /** Số thành viên (chat group) */
+  /** Số thành viên (chat group) — ưu tiên từ API members */
   memberCount?: number;
   /** Danh sách người đang gõ */
   typingUsers?: TypingUserEntry[];
@@ -22,6 +22,10 @@ interface ChatHeaderProps {
   onPressSearch?: () => void;
   onPressCall?: () => void;
   onPressVideoCall?: () => void;
+  /** Nhóm: thêm thành viên (giống web UserPlus). */
+  onPressAddMember?: () => void;
+  /** Nhóm: sửa tên nhóm (giống web Edit3). */
+  onPressEditGroup?: () => void;
   videoCtaVariant?: "icon" | "join";
   videoCtaLabel?: string;
 }
@@ -30,7 +34,7 @@ interface ChatHeaderProps {
  * ChatHeader — header cho màn hình chat detail.
  * - Back button
  * - Avatar + tên conversation + subtitle (typing / online / member count)
- * - Action buttons: Video call, Audio call, Info
+ * - Action buttons: group add/edit, search, video, info
  */
 export const ChatHeader = ({
   conversation,
@@ -43,6 +47,8 @@ export const ChatHeader = ({
   onPressSearch,
   onPressCall,
   onPressVideoCall,
+  onPressAddMember,
+  onPressEditGroup,
   videoCtaVariant = "icon",
   videoCtaLabel,
 }: ChatHeaderProps) => {
@@ -50,23 +56,28 @@ export const ChatHeader = ({
   const { foreground, primary } = useIconColors();
   const handleBack = onBack ?? (() => safeRouterBack("/(main)/(chat)"));
 
-  // Lọc typing users (bỏ chính mình)
   const othersTyping = currentUserId
     ? typingUsers.filter((u) => u.userId !== currentUserId)
     : typingUsers;
 
-  // Subtitle: typing > online status > member count
+  const groupMemberDisplayCount =
+    isGroup && memberCount != null && memberCount > 0
+      ? memberCount
+      : isGroup
+        ? (conversation.memberCount ?? 0)
+        : 0;
+
   let subtitle: string;
   let subtitleColor = "text-muted-foreground";
 
   if (othersTyping.length > 0) {
     subtitle =
       othersTyping.length === 1
-        ? `${othersTyping[0].displayName || "Ai đó"} đang gõ...`
-        : `${othersTyping.length} người đang gõ...`;
+        ? `${othersTyping[0].displayName || "Ai đó"} đang nhập...`
+        : `${othersTyping.length} người đang nhập...`;
     subtitleColor = "text-primary";
   } else if (isGroup) {
-    subtitle = memberCount !== undefined ? `${memberCount} thành viên` : "Nhóm";
+    subtitle = `${groupMemberDisplayCount} thành viên`;
   } else {
     subtitle = isOnline ? "Đang hoạt động" : "Offline";
     if (isOnline) subtitleColor = "text-green-500";
@@ -74,12 +85,10 @@ export const ChatHeader = ({
 
   return (
     <View className="flex-row items-center border-b border-border/30 bg-background px-2 py-2">
-      {/* Back */}
       <Pressable onPress={handleBack} className="p-2 active:opacity-60" hitSlop={8}>
         <ChevronLeft size={28} color={foreground} strokeWidth={1.5} />
       </Pressable>
 
-      {/* Avatar + info */}
       <Pressable
         onPress={onPressInfo}
         className="flex-1 flex-row items-center gap-3 px-1 active:opacity-80"
@@ -91,18 +100,33 @@ export const ChatHeader = ({
           showOnlineDot={!isGroup && isOnline}
           isGroup={isGroup}
         />
-        <View className="flex-1">
-          <Text className="text-[18px] font-bold text-foreground" numberOfLines={1}>
-            {conversation.name ?? "Hội thoại"}
-          </Text>
+        <View className="min-w-0 flex-1">
+          <View className="flex-row items-center gap-1">
+            <Text className="flex-shrink text-[18px] font-bold text-foreground" numberOfLines={1}>
+              {conversation.name ?? "Hội thoại"}
+            </Text>
+            {isGroup && onPressEditGroup ? (
+              <Pressable
+                onPress={onPressEditGroup}
+                hitSlop={8}
+                className="rounded-full p-1 active:bg-muted/60"
+              >
+                <Pencil size={14} color={primary} strokeWidth={2} />
+              </Pressable>
+            ) : null}
+          </View>
           <Text className={`text-[13px] ${subtitleColor}`} numberOfLines={1}>
             {subtitle}
           </Text>
         </View>
       </Pressable>
 
-      {/* Actions — thứ tự giống web: tìm cạnh gọi, rồi video, rồi thông tin */}
       <View className="flex-row items-center">
+        {isGroup && onPressAddMember ? (
+          <Pressable onPress={onPressAddMember} className="p-2 active:opacity-60" hitSlop={6}>
+            <UserPlus size={24} color={primary} strokeWidth={1.75} />
+          </Pressable>
+        ) : null}
         <Pressable
           onPress={onPressSearch}
           disabled={!onPressSearch}
@@ -119,7 +143,7 @@ export const ChatHeader = ({
         {videoCtaVariant === "join" ? (
           <Pressable
             onPress={onPressVideoCall}
-            className="ml-1 flex-row items-center gap-2 rounded-full bg-green-600 px-3 py-2 active:opacity-80"
+            className="ml-1 flex-row items-center gap-2 rounded-full bg-emerald-600 px-3 py-2 active:opacity-80"
             hitSlop={6}
           >
             <Video size={20} color="#fff" strokeWidth={1.7} />
@@ -130,9 +154,12 @@ export const ChatHeader = ({
             <Video size={25} color={primary} strokeWidth={1.5} />
           </Pressable>
         )}
-        <Pressable onPress={onPressInfo} className="p-2 active:opacity-60" hitSlop={6}>
-          <Info size={25} color={foreground} strokeWidth={1.5} />
-        </Pressable>
+        {/* Nhóm: không hiện nút Info (web chỉ có thêm TV / tìm / video); mở tùy chọn qua avatar + tên. */}
+        {!isGroup ? (
+          <Pressable onPress={onPressInfo} className="p-2 active:opacity-60" hitSlop={6}>
+            <Info size={25} color={foreground} strokeWidth={1.5} />
+          </Pressable>
+        ) : null}
       </View>
     </View>
   );
