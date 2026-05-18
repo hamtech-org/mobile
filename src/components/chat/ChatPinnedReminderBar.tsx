@@ -9,6 +9,7 @@ import {
   Link2,
   MessageSquare,
   MoreHorizontal,
+  Pin,
   PinOff,
   Video as VideoIcon,
 } from "lucide-react-native";
@@ -16,10 +17,24 @@ import {
 import { useIconColors } from "@/hooks/useIconColors";
 import type { IMessage } from "@/types/chat.types";
 import { formatChatPreviewLine } from "@/utils/messageDisplay";
+import { chatFileTypeAccent } from "@/utils/chatMediaDisplay";
+import {
+  pinnedChatFileDisplayName,
+  pinnedMessageAccent,
+  pinnedMessageKind,
+  pinnedMessageKindTitle,
+  pollQuestionFromPinnedMessage,
+  type PinnedMessageKind,
+} from "@/utils/pinnedMessageDisplay";
 import { normalizeMediaUrl } from "@/utils/url";
 
-const ACCENT_BLUE = "#0068FF";
-const ACCENT_GREEN = "#10b981";
+const KIND_ICONS: Record<PinnedMessageKind, typeof MessageSquare> = {
+  message: MessageSquare,
+  poll: BarChart2,
+  image: ImageIcon,
+  video: VideoIcon,
+  file: FileText,
+};
 
 function extractFirstHttpUrl(content: string): string | null {
   const m = (content ?? "").trim().match(/https?:\/\/[^\s<]+/);
@@ -122,13 +137,14 @@ function PinnedRowPreview({
   }
 
   if (msg.type === "file") {
-    const name = msg.mediaOriginalName?.trim() || "Tệp tin";
+    const name = pinnedChatFileDisplayName(msg);
+    const fileAccent = chatFileTypeAccent(name, msg.mediaType);
     return (
       <View className="flex-row items-center" style={{ flexShrink: 1 }}>
         <Text className="text-[13px] font-semibold text-foreground" numberOfLines={1}>
           {sender}:{" "}
         </Text>
-        <FileText size={14} color={mutedColor} style={{ marginRight: 4 }} />
+        <FileText size={14} color={fileAccent} style={{ marginRight: 4 }} />
         <Text className="text-[13px] text-muted-foreground" numberOfLines={1}>
           {name}
         </Text>
@@ -177,7 +193,11 @@ function PinnedRow({ msg, viewerUserId, onPress, onUnpin }: PinnedRowProps): Rea
   const { muted } = useIconColors();
   const moreBtnRef = useRef<View>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
-  const pollQuestion = useMemo(() => pollQuestionFromMsg(msg), [msg]);
+  const pollQuestion = useMemo(() => pollQuestionFromPinnedMessage(msg), [msg]);
+  const kind = pinnedMessageKind(msg);
+  const kindLabel = pinnedMessageKindTitle(msg);
+  const accent = pinnedMessageAccent(msg);
+  const Icon = KIND_ICONS[kind];
 
   const openMenu = useCallback(() => {
     moreBtnRef.current?.measureInWindow((x, y, _w, h) => {
@@ -205,18 +225,14 @@ function PinnedRow({ msg, viewerUserId, onPress, onUnpin }: PinnedRowProps): Rea
               borderRadius: 18,
               alignItems: "center",
               justifyContent: "center",
-              backgroundColor: pollQuestion ? ACCENT_GREEN : ACCENT_BLUE,
+              backgroundColor: accent,
             }}
           >
-            {pollQuestion ? (
-              <BarChart2 size={18} color="#fff" strokeWidth={2} />
-            ) : (
-              <MessageSquare size={18} color="#fff" strokeWidth={2} />
-            )}
+            <Icon size={18} color="#fff" strokeWidth={2} />
           </View>
           <View className="min-w-0 flex-1 pt-0.5">
             <Text className="text-[13px] font-bold text-foreground" numberOfLines={1}>
-              {pollQuestion ? "Bình chọn" : "Tin nhắn"}
+              {kindLabel}
             </Text>
             <View className="mt-0.5">
               {pollQuestion ? (
@@ -326,10 +342,10 @@ export function ChatPinnedReminderBar({
               borderRadius: 14,
               alignItems: "center",
               justifyContent: "center",
-              backgroundColor: ACCENT_BLUE,
+              backgroundColor: "#0068FF",
             }}
           >
-            <MessageSquare size={14} color="#fff" strokeWidth={2} />
+            <Pin size={14} color="#fff" strokeWidth={2.25} />
           </View>
           <Text className="text-[14px] font-semibold text-foreground" numberOfLines={1}>
             Danh sách ghim ({total})
