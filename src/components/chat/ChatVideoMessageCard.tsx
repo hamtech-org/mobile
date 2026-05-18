@@ -22,10 +22,11 @@ export interface ChatVideoMessageCardProps {
   metaLine?: string | null;
   mediaSavedOnDevice?: boolean;
   videoPlayer: ReactNode;
+  /** Chạm vùng video → MessageActionSheet. */
+  onPress: () => void;
   onFullscreen: () => void;
   onFolderHint: () => void;
   onDownload: () => void;
-  onLongPress?: () => void;
 }
 
 /** Video — khớp web: player 16:9 + footer trắng/violet + nút rounded-xl. */
@@ -37,10 +38,10 @@ export function ChatVideoMessageCard({
   metaLine,
   mediaSavedOnDevice = false,
   videoPlayer,
+  onPress,
   onFullscreen,
   onFolderHint,
   onDownload,
-  onLongPress,
 }: ChatVideoMessageCardProps) {
   const footer = isDark ? FOOTER.dark : FOOTER.light;
   const videoActionBtn = chatMediaVideoActionBtnStyle(isDark);
@@ -56,9 +57,9 @@ export function ChatVideoMessageCard({
         {videoPlayer}
         <ChatMediaLongPressLayer
           fill
-          onPress={onFullscreen}
-          onLongPress={onLongPress}
-          accessibilityLabel="Chạm phóng to, giữ để mở tùy chọn tin nhắn"
+          onPress={onPress}
+          onLongPress={onPress}
+          accessibilityLabel="Tùy chọn tin nhắn video"
         />
         <Pressable
           onPress={onFullscreen}
@@ -80,9 +81,10 @@ export function ChatVideoMessageCard({
         ]}
       >
         <ChatMediaLongPressLayer
-          onLongPress={onLongPress}
+          onPress={onPress}
+          onLongPress={onPress}
           style={styles.footerMain}
-          accessibilityLabel="Giữ để mở tùy chọn tin nhắn"
+          accessibilityLabel="Tùy chọn tin nhắn video"
         >
           <View style={[styles.iconBox, { backgroundColor: footer.iconBg }]}>
             <Video size={20} color={footer.iconColor} strokeWidth={2} />
