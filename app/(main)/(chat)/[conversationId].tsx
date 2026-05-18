@@ -20,6 +20,10 @@ import {
   type PollVoteModalPoll,
 } from "@/components/chat";
 import { ChatPinnedReminderBar } from "@/components/chat/ChatPinnedReminderBar";
+import {
+  ChatMediaLightbox,
+  type ChatMediaLightboxState,
+} from "@/components/chat/ChatMediaLightbox";
 import { GroupManageModal, type GroupManagePanel } from "@/components/chat/GroupManageModal";
 import { GroupAddMembersModal } from "@/components/chat/GroupAddMembersModal";
 import { GroupPollModal } from "@/components/chat/GroupPollModal";
@@ -52,6 +56,12 @@ import type { IMessage, TypingUserEntry } from "@/types/chat.types";
 import { prepareLocalFileForUpload } from "@/utils/uploadAttachment";
 import { toast } from "@/utils/appToast";
 import { formatChatPreviewLine } from "@/utils/messageDisplay";
+import {
+  chatMediaDownloadUrl,
+  getChatMediaLightboxStateFromMessage,
+  resolveChatFileBubbleMeta,
+} from "@/utils/chatMediaDisplay";
+import { openOrShareChatFile } from "@/utils/chatMediaDownload";
 import {
   canUserCreatePollInGroup,
   canUserCreateTaskInGroup,
@@ -137,6 +147,7 @@ export default function ChatDetailScreen() {
   const jumpHighlightClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [jumpHighlightMessageId, setJumpHighlightMessageId] = useState<string | null>(null);
   const [selectedMessage, setSelectedMessage] = useState<IMessage | null>(null);
+  const [mediaLightbox, setMediaLightbox] = useState<ChatMediaLightboxState>(null);
   const [activePollId, setActivePollId] = useState<string | null>(null);
   const [votingIndex, setVotingIndex] = useState<number | null>(null);
   const [groupManageOpen, setGroupManageOpen] = useState(false);
@@ -665,6 +676,26 @@ export default function ChatDetailScreen() {
     setTimeout(() => setSelectedMessage(msg), 120);
   }, []);
 
+  const handlePreviewMediaFromSheet = useCallback((msg: IMessage) => {
+    const state = getChatMediaLightboxStateFromMessage(msg);
+    if (state) setMediaLightbox(state);
+  }, []);
+
+  const handleOpenFileFromSheet = useCallback(async (msg: IMessage) => {
+    const url = chatMediaDownloadUrl(msg);
+    if (!url) {
+      toast.error("Không có file để mở.");
+      return;
+    }
+    const { fileName } = resolveChatFileBubbleMeta(msg);
+    try {
+      const ok = await openOrShareChatFile(url, fileName, msg.mediaType);
+      if (!ok) toast.error("Không mở được file.");
+    } catch {
+      toast.error("Không mở được file.");
+    }
+  }, []);
+
   const handleReply = useCallback(
     (msg: IMessage) => {
       dispatch(setReplyingTo(msg));
@@ -997,6 +1028,7 @@ export default function ChatDetailScreen() {
               onPressReplyTo={handleJumpToMessage}
               isJumpHighlighted={jumpHighlightMessageId === item.messageId}
               groupExtras={groupExtras}
+              onMediaLightbox={setMediaLightbox}
             />
           )}
           ListEmptyComponent={
@@ -1112,7 +1144,11 @@ export default function ChatDetailScreen() {
         onDelete={deleteMessage}
         onTogglePin={handleTogglePinForSheet}
         onReact={reactMessage}
+        onPreviewMedia={handlePreviewMediaFromSheet}
+        onOpenFile={handleOpenFileFromSheet}
       />
+
+      <ChatMediaLightbox state={mediaLightbox} onClose={() => setMediaLightbox(null)} />
 
       <ChatInConversationSearchModal
         visible={inChatSearchOpen}
