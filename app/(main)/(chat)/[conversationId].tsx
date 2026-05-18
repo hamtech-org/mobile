@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocalSearchParams } from "expo-router";
-import { Alert, FlatList, Keyboard, View } from "react-native";
+import { Alert, FlatList, Keyboard, Text, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 
@@ -21,10 +21,14 @@ import {
 } from "@/components/chat";
 import { ChatPinnedReminderBar } from "@/components/chat/ChatPinnedReminderBar";
 import { GroupManageModal, type GroupManagePanel } from "@/components/chat/GroupManageModal";
+import { GroupAddMembersModal } from "@/components/chat/GroupAddMembersModal";
+import { GroupPollModal } from "@/components/chat/GroupPollModal";
+import { GroupTaskModal } from "@/components/chat/GroupTaskModal";
 import { MessageSquare } from "lucide-react-native";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Loading } from "@/components/common/Loading";
-import { useUploadMediaMutation } from "@/store/api/mediaApi";
+import { useUploadMediaMultiMutation } from "@/store/api/mediaApi";
+import { messageTypeFromUploadResult } from "@/constants/chat-page.constants";
 import {
   useDeleteTaskMutation,
   useGetConversationsQuery,
@@ -49,10 +53,14 @@ import { prepareLocalFileForUpload } from "@/utils/uploadAttachment";
 import { toast } from "@/utils/appToast";
 import { formatChatPreviewLine } from "@/utils/messageDisplay";
 import {
+  canUserCreatePollInGroup,
+  canUserCreateTaskInGroup,
   canUserPinMessageInGroup,
   canUserSendMessageInGroup,
   resolveGroupMemberRole,
 } from "@/utils/groupConversationPermissions";
+import { filterGroupMembersExcludingRemoved } from "@/utils/groupMembersRealtime";
+import { isTaskJoinDeadlinePassed } from "@/utils/taskJoin";
 import { MAX_PINNED_PER_CONVERSATION } from "@/constants/chatPin";
 
 const EMPTY_TYPING_USERS: TypingUserEntry[] = [];
@@ -138,6 +146,10 @@ export default function ChatDetailScreen() {
   );
   const [personalSettingsOpen, setPersonalSettingsOpen] = useState(false);
   const [inChatSearchOpen, setInChatSearchOpen] = useState(false);
+  const [groupPollModalOpen, setGroupPollModalOpen] = useState(false);
+  const [groupTaskModalOpen, setGroupTaskModalOpen] = useState(false);
+  const [openAiSummaryOnGroupModal, setOpenAiSummaryOnGroupModal] = useState(false);
+  const [addMembersOpen, setAddMembersOpen] = useState(false);
 
   const { allMessages, isLoading, latestMessageId } = useChatMessageData(conversationId);
 
@@ -188,7 +200,7 @@ export default function ChatDetailScreen() {
     emitTyping,
   } = useChat();
 
-  const [uploadMedia] = useUploadMediaMutation();
+  const [uploadMediaMulti] = useUploadMediaMultiMutation();
 
   const { data: convList } = useGetConversationsQuery();
   const conversation = useMemo(
@@ -198,9 +210,23 @@ export default function ChatDetailScreen() {
 
   const isGroup = conversation?.type === "group";
 
-  const { data: groupMembersForPerm = [] } = useGetGroupMembersQuery(conversationId!, {
+  const { data: groupMembersRaw = [] } = useGetGroupMembersQuery(conversationId!, {
     skip: !isGroup || !conversationId,
   });
+
+  const groupMembersForPerm = useMemo(() => {
+    if (!conversationId) return [];
+    return filterGroupMembersExcludingRemoved(conversationId, groupMembersRaw);
+  }, [conversationId, groupMembersRaw]);
+
+  const resolvedGroupMemberCount = useMemo(() => {
+    if (!isGroup) return undefined;
+    const fromList = groupMembersForPerm.length;
+    if (fromList > 0) return fromList;
+    return conversation?.memberCount;
+  }, [isGroup, groupMembersForPerm.length, conversation?.memberCount]);
+
+  const groupDisbanded = Boolean(isGroup && conversation?.isDeleted);
 
   const myRoleInGroup = useMemo(() => {
     if (!currentUserId) return undefined;
@@ -212,8 +238,29 @@ export default function ChatDetailScreen() {
   }, [groupMembersForPerm, currentUserId, conversation?.creatorId]);
 
   const canSendInGroup = useMemo(() => {
+    if (groupDisbanded) return false;
     if (!isGroup || !conversation) return true;
     return canUserSendMessageInGroup({
+      conversation,
+      userRole: myRoleInGroup,
+      userId: currentUserId ?? "",
+      members: groupMembersForPerm,
+    });
+  }, [groupDisbanded, isGroup, conversation, myRoleInGroup, currentUserId, groupMembersForPerm]);
+
+  const canCreatePollInGroup = useMemo(() => {
+    if (!isGroup || !conversation) return false;
+    return canUserCreatePollInGroup({
+      conversation,
+      userRole: myRoleInGroup,
+      userId: currentUserId ?? "",
+      members: groupMembersForPerm,
+    });
+  }, [isGroup, conversation, myRoleInGroup, currentUserId, groupMembersForPerm]);
+
+  const canCreateTaskInGroup = useMemo(() => {
+    if (!isGroup || !conversation) return false;
+    return canUserCreateTaskInGroup({
       conversation,
       userRole: myRoleInGroup,
       userId: currentUserId ?? "",
@@ -384,6 +431,37 @@ export default function ChatDetailScreen() {
     [conversationId, currentUserId, groupTasksFromApi, localParticipantsByTaskId],
   );
 
+  const handleTaskJoinedFromBulletin = useCallback(
+    async (taskId: string) => {
+      if (!conversationId || !currentUserId) return;
+      const id = String(taskId).trim();
+      if (!id) return;
+      const rawTask = groupTasksFromApi.find(
+        (t) => String((t as { taskId?: string }).taskId) === id,
+      ) as { dueDate?: string; participants?: string[] } | undefined;
+      if (rawTask?.dueDate && isTaskJoinDeadlinePassed(String(rawTask.dueDate))) {
+        toast.error("Đã quá hạn, không thể xác nhận tham gia");
+        return;
+      }
+      const existing = localParticipantsByTaskId[id] ?? rawTask?.participants ?? [];
+      if (existing.includes(currentUserId)) return;
+      try {
+        await joinTask(id);
+        onTaskJoined(id);
+      } catch {
+        toast.error("Không thể tham gia công việc");
+      }
+    },
+    [
+      conversationId,
+      currentUserId,
+      groupTasksFromApi,
+      joinTask,
+      localParticipantsByTaskId,
+      onTaskJoined,
+    ],
+  );
+
   const handleTogglePollVote = useCallback(
     async (pollId: string, optionIndex: number) => {
       if (!conversationId || !currentUserId) return;
@@ -469,20 +547,26 @@ export default function ChatDetailScreen() {
   );
 
   const handleSendMedia = useCallback(
-    async (attachment: PendingAttachment, caption: string) => {
-      if (!conversationId) return;
-      if (!canSendInGroup) return;
+    async (attachments: PendingAttachment[], caption: string) => {
+      if (!conversationId) {
+        toast.error("Không tìm thấy hội thoại.");
+        throw new Error("no_conversation");
+      }
+      if (!canSendInGroup) {
+        toast.error("Bạn không có quyền gửi tin trong nhóm này.");
+        throw new Error("no_permission");
+      }
+      if (attachments.length === 0) return;
 
       const replySnapshot = replyingTo;
       if (replySnapshot) {
         dispatch(clearReplyingTo());
       }
 
-      const mediaType = attachment.mimeType.startsWith("image/")
-        ? "image"
-        : attachment.mimeType.startsWith("video/")
-          ? "video"
-          : "file";
+      const replyToId =
+        replySnapshot?.messageId && !replySnapshot.messageId.startsWith("optimistic-")
+          ? replySnapshot.messageId
+          : undefined;
 
       const clientReplyToDetails = replySnapshot
         ? {
@@ -495,43 +579,85 @@ export default function ChatDetailScreen() {
         : undefined;
 
       try {
-        const file = await prepareLocalFileForUpload({
-          uri: attachment.uri,
-          name: attachment.name,
-          mimeType: attachment.mimeType,
-        });
+        const preparedFiles = await Promise.all(
+          attachments.map((attachment) =>
+            prepareLocalFileForUpload({
+              uri: attachment.uri,
+              name: attachment.name,
+              mimeType: attachment.mimeType,
+            }),
+          ),
+        );
 
-        const uploadRes = await uploadMedia({
-          file: {
-            uri: file.uri,
-            name: file.name,
-            type: file.type,
-          },
-          mediaType,
+        const uploadResults = await uploadMediaMulti({
+          files: preparedFiles.map((f) => ({
+            uri: f.uri,
+            name: f.name,
+            type: f.type,
+          })),
         }).unwrap();
 
-        await sendMediaMessage(
-          conversationId,
-          mediaType,
-          caption,
-          uploadRes.mediaId,
-          replySnapshot?.messageId,
-          {
-            optimisticLocalUri: file.uri,
-            optimisticMediaName: file.name,
-            optimisticMediaSize: attachment.size,
-            optimisticMimeType: attachment.mimeType,
-            clientReplyToDetails,
-          },
-        );
+        if (!uploadResults?.length) {
+          throw new Error("upload_missing_results");
+        }
+
+        const captionFirst = caption.trim().length > 0 ? caption.trim() : " ";
+
+        for (let i = 0; i < uploadResults.length; i++) {
+          const result = uploadResults[i]!;
+          const attachment = attachments[i];
+          const prepared = preparedFiles[i];
+          if (!result?.mediaId) {
+            throw new Error("upload_missing_media_id");
+          }
+
+          const displayName = attachment?.name?.trim() || prepared?.name;
+          const displayMime = result.mimeType?.trim() || attachment?.mimeType;
+
+          await sendMediaMessage(
+            conversationId,
+            messageTypeFromUploadResult(result),
+            i === 0 ? captionFirst : " ",
+            result.mediaId,
+            i === 0 ? replyToId : undefined,
+            {
+              optimisticLocalUri: prepared?.uri,
+              optimisticMediaName: displayName,
+              optimisticMediaSize: result.size ?? attachment?.size,
+              optimisticMimeType: displayMime,
+              clientReplyToDetails: i === 0 ? clientReplyToDetails : undefined,
+            },
+          );
+        }
 
         listRef.current?.scrollToOffset({ offset: 0, animated: true });
       } catch (err) {
         console.error("Upload/Send failed:", err);
-        toast.error("Không thể gửi file. Vui lòng thử lại.");
+        const apiMsg =
+          err &&
+          typeof err === "object" &&
+          "data" in err &&
+          (err as { data?: { message?: string; error?: { message?: string } } }).data
+            ? String(
+                (err as { data?: { message?: string; error?: { message?: string } } }).data?.error
+                  ?.message ??
+                  (err as { data?: { message?: string } }).data?.message ??
+                  "",
+              ).trim()
+            : "";
+        toast.error(apiMsg || "Gửi tệp thất bại. Vui lòng thử lại.");
+        throw err;
       }
     },
-    [conversationId, uploadMedia, sendMediaMessage, replyingTo, dispatch, currentUserId],
+    [
+      conversationId,
+      canSendInGroup,
+      uploadMediaMulti,
+      sendMediaMessage,
+      replyingTo,
+      dispatch,
+      currentUserId,
+    ],
   );
 
   const handleLongPressMessage = useCallback((msg: IMessage) => {
@@ -760,11 +886,23 @@ export default function ChatDetailScreen() {
           conversation={conversation}
           currentUserId={currentUserId}
           typingUsers={typingUsers}
-          memberCount={conversation.memberCount}
+          memberCount={resolvedGroupMemberCount}
           onPressSearch={() => setInChatSearchOpen(true)}
+          onPressAddMember={isGroup ? () => setAddMembersOpen(true) : undefined}
+          onPressEditGroup={
+            isGroup
+              ? () => {
+                  setOpenAiSummaryOnGroupModal(false);
+                  setGroupModalInitial("rename");
+                  setOpenGroupTaskEditorId(null);
+                  setGroupManageOpen(true);
+                }
+              : undefined
+          }
           onPressInfo={
             isGroup
               ? () => {
+                  setOpenAiSummaryOnGroupModal(false);
                   setGroupModalInitial(undefined);
                   setOpenGroupTaskEditorId(null);
                   setGroupManageOpen(true);
@@ -785,7 +923,9 @@ export default function ChatDetailScreen() {
             setGroupManageOpen(false);
             setGroupModalInitial(undefined);
             setOpenGroupTaskEditorId(null);
+            setOpenAiSummaryOnGroupModal(false);
           }}
+          openAiSummaryWhenVisible={openAiSummaryOnGroupModal}
           conversation={conversation}
           currentUserId={currentUserId}
           initialPanel={groupModalInitial}
@@ -795,6 +935,21 @@ export default function ChatDetailScreen() {
           onOpenPollVote={(pollId) => setActivePollId(pollId)}
           onClosePoll={handleClosePoll}
           onAddPollOption={handleAddPollOption}
+          onTaskJoined={handleTaskJoinedFromBulletin}
+          onEditTaskFromBulletin={(task) => {
+            const taskId = String((task as { taskId?: string }).taskId ?? "").trim();
+            if (taskId) handleEditGroupTask(taskId);
+          }}
+          onDeleteTaskFromBulletin={handleDeleteGroupTask}
+        />
+      ) : null}
+
+      {isGroup && conversation ? (
+        <GroupAddMembersModal
+          visible={addMembersOpen}
+          onClose={() => setAddMembersOpen(false)}
+          groupId={conversationId!}
+          conversation={conversation}
         />
       ) : null}
 
@@ -812,13 +967,6 @@ export default function ChatDetailScreen() {
         onJumpToMessage={handleJumpToMessage}
         onTogglePin={handleTogglePinForSheet}
       />
-
-      {frameBanner && frameBanner.conversationId === conversationId ? (
-        <ChatFrameBanner
-          banner={frameBanner}
-          onOpenPoll={isGroup ? (pollId) => setActivePollId(pollId) : undefined}
-        />
-      ) : null}
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <FlatList
@@ -864,26 +1012,84 @@ export default function ChatDetailScreen() {
           className="border-t border-border/40 bg-background/95 dark:bg-background"
           style={{ paddingBottom: insets.bottom }}
         >
+          {isGroup && frameBanner && frameBanner.conversationId === conversationId ? (
+            <ChatFrameBanner
+              banner={frameBanner}
+              onOpenPoll={(pollId) => setActivePollId(pollId)}
+            />
+          ) : null}
           <TypingIndicator typingUsers={typingUsers} currentUserId={currentUserId ?? ""} />
-          {canSendInGroup ? (
+          {groupDisbanded ? (
+            <View className="border-t border-border/30 bg-muted/30 px-4 py-5">
+              <Text className="text-center text-[15px] font-semibold text-foreground">
+                Nhóm đã được giải tán
+              </Text>
+              <Text className="mt-1 text-center text-sm text-muted-foreground">
+                Không thể gửi tin nhắn mới trong cuộc trò chuyện này.
+              </Text>
+            </View>
+          ) : canSendInGroup ? (
             <ChatInput
               onSend={handleSendMessage}
               onSendMedia={handleSendMedia}
               replyingTo={replyingTo}
               currentUserId={currentUserId ?? ""}
+              activeConversationId={conversationId ?? null}
+              conversationName={conversation?.name ?? undefined}
               onClearReply={() => dispatch(clearReplyingTo())}
               onTyping={handleTyping}
+              isGroup={isGroup}
+              onOpenPoll={
+                isGroup && canCreatePollInGroup
+                  ? () => setGroupPollModalOpen(true)
+                  : isGroup
+                    ? () => toast.error("Nhóm không cho phép thành viên tạo bình chọn.")
+                    : undefined
+              }
+              onOpenTask={
+                isGroup && canCreateTaskInGroup
+                  ? () => setGroupTaskModalOpen(true)
+                  : isGroup
+                    ? () => toast.error("Nhóm không cho phép thành viên tạo công việc / nhắc hẹn.")
+                    : undefined
+              }
+              onOpenAiSummary={
+                isGroup
+                  ? () => {
+                      setOpenAiSummaryOnGroupModal(true);
+                      setGroupModalInitial(undefined);
+                      setGroupManageOpen(true);
+                    }
+                  : undefined
+              }
             />
           ) : (
-            <GroupMemberSendRestrictedBar
-              onLearnMore={() => {
-                setGroupModalInitial("settings");
-                setGroupManageOpen(true);
-              }}
-            />
+            <GroupMemberSendRestrictedBar />
           )}
         </View>
       </KeyboardAvoidingView>
+
+      {isGroup && conversationId ? (
+        <>
+          <GroupPollModal
+            visible={groupPollModalOpen}
+            onClose={() => setGroupPollModalOpen(false)}
+            groupId={conversationId}
+            canCreatePollUi={canCreatePollInGroup}
+          />
+          <GroupTaskModal
+            visible={groupTaskModalOpen}
+            onClose={() => setGroupTaskModalOpen(false)}
+            groupId={conversationId}
+            members={groupMembersForPerm.map((m) => ({
+              userId: m.userId,
+              displayName: m.displayName,
+              avatar: m.avatar,
+            }))}
+            currentUserId={currentUserId}
+          />
+        </>
+      ) : null}
 
       <PollVoteModal
         visible={Boolean(activePollId && activePoll)}
