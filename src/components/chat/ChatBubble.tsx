@@ -67,10 +67,7 @@ import { mergePollWithGroupList, parsePollPayloadFromMessageContent } from "@/ut
 import { resolveGroupJoinLinkFromMessageContent } from "@/utils/groupJoinLinkMessage";
 import { ChatFileMessageBubble } from "@/components/chat/ChatFileMessageBubble";
 import { ChatImageMessageCard } from "@/components/chat/ChatImageMessageCard";
-import {
-  ChatMediaLightbox,
-  type ChatMediaLightboxState,
-} from "@/components/chat/ChatMediaLightbox";
+import type { ChatMediaLightboxState } from "@/components/chat/ChatMediaLightbox";
 import { ChatVideoMessageCard } from "@/components/chat/ChatVideoMessageCard";
 import { chatMediaCaptionStyle, getChatMediaLayout } from "@/components/chat/chatMediaShell";
 import {
