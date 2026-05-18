@@ -79,7 +79,10 @@ export function chatMediaMaxHeight(layout?: ChatMediaLayout): number {
   return Math.min(Dimensions.get("window").height * 0.78, 640);
 }
 
-/** Co ảnh/video vào hộp max — khớp web `object-contain` + `max-h`. */
+/**
+ * Kích thước hiển thị theo từng ảnh: giữ tỷ lệ gốc, chỉ thu nhỏ khi vượt max.
+ * Không phóng to (không ép full `visualMaxWidth` cho mọi tin).
+ */
 export function fitMediaInBox(
   maxW: number,
   maxH: number,
@@ -87,16 +90,13 @@ export function fitMediaInBox(
   srcH: number,
 ): { width: number; height: number } {
   if (srcW <= 0 || srcH <= 0) {
-    return { width: Math.round(maxW), height: Math.round(Math.min(120, maxH)) };
+    return { width: Math.min(96, maxW), height: Math.min(72, maxH) };
   }
-  const ratio = srcW / srcH;
-  let width = maxW;
-  let height = width / ratio;
-  if (height > maxH) {
-    height = maxH;
-    width = height * ratio;
-  }
-  return { width: Math.round(width), height: Math.round(height) };
+  const scale = Math.min(maxW / srcW, maxH / srcH, 1);
+  return {
+    width: Math.max(1, Math.round(srcW * scale)),
+    height: Math.max(1, Math.round(srcH * scale)),
+  };
 }
 
 /** Bọc bubble media trong cột chat. */
