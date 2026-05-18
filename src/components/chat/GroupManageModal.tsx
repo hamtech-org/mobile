@@ -77,6 +77,7 @@ import {
 } from "@/utils/chatMediaDisplay";
 import { openOrShareChatFile } from "@/utils/chatMediaDownload";
 
+import { BulletinPinnedMessageCard } from "@/components/chat/BulletinPinnedMessageCard";
 import { Avatar } from "@/components/common/Avatar";
 import { MAX_PINNED_PER_CONVERSATION } from "@/constants/chatPin";
 import { MIN_GROUP_MEMBERS } from "@/constants/group";
@@ -1946,37 +1947,16 @@ export function GroupManageModal({
         </Text>
       );
     }
-    return pinnedList.map((m) => {
-      const who = String(m.senderDisplayName ?? "").trim() || "Thành viên";
-      const when = formatBulletinFooterTime(m.createdAt);
-      const rawContent = String(m.content ?? "").trim();
-      const preview = rawContent.length > 180 ? `${rawContent.slice(0, 180)}…` : rawContent || "…";
-      return (
-        <Pressable
-          key={m.messageId}
-          onPress={() => jumpToPinnedMessage(m.messageId)}
-          disabled={!onJumpToMessage}
-          style={({ pressed }) => [
-            styles.bulletinPinCard,
-            pressed && onJumpToMessage ? { opacity: 0.92 } : null,
-            !onJumpToMessage ? { opacity: 0.85 } : null,
-          ]}
-        >
-          <View style={styles.bulletinPinCardTop}>
-            <Pin size={18} color={Z.primary} strokeWidth={2} />
-            <Text style={styles.bulletinPinWho} numberOfLines={1}>
-              {who}
-            </Text>
-            <Text style={styles.bulletinPinWhen} numberOfLines={1}>
-              {when || "—"}
-            </Text>
-          </View>
-          <Text style={styles.bulletinPinPreview} numberOfLines={8}>
-            {preview}
-          </Text>
-        </Pressable>
-      );
-    });
+    return pinnedList.map((m) => (
+      <BulletinPinnedMessageCard
+        key={m.messageId}
+        msg={m}
+        when={formatBulletinFooterTime(m.createdAt)}
+        viewerUserId={effectiveUserId ?? ""}
+        onPress={() => jumpToPinnedMessage(m.messageId)}
+        disabled={!onJumpToMessage}
+      />
+    ));
   };
 
   const renderPollCards = (emptyHint: string) => {
