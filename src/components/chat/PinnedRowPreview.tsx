@@ -1,14 +1,14 @@
 import type { ReactElement } from "react";
 import { Image, Text, View } from "react-native";
-import { FileText, Image as ImageIcon, Link2, Video as VideoIcon } from "lucide-react-native";
+import { Image as ImageIcon, Link2, Video as VideoIcon } from "lucide-react-native";
 
+import { ChatFileTypeBadge } from "@/components/chat/ChatFileTypeBadge";
 import type { IMessage } from "@/types/chat.types";
-import { chatFileTypeAccent } from "@/utils/chatMediaDisplay";
 import {
   formatPinnedMessagePreviewLine,
   mediaThumbForPinnedRow,
-  pinnedChatFileDisplayName,
 } from "@/utils/pinnedMessageDisplay";
+import { resolveChatFileBubbleMeta } from "@/utils/chatMediaDisplay";
 
 function extractFirstHttpUrl(content: string): string | null {
   const m = (content ?? "").trim().match(/https?:\/\/[^\s<]+/);
@@ -35,8 +35,8 @@ export function PinnedRowPreview({
 
   if (msg.type === "image") {
     return (
-      <View className="flex-row items-center" style={{ flexShrink: 1 }}>
-        <Text className="text-[13px] font-semibold text-foreground" numberOfLines={1}>
+      <View className="min-w-0 flex-1 flex-row items-center overflow-hidden">
+        <Text className="shrink-0 text-[13px] font-semibold text-foreground" numberOfLines={1}>
           {sender}:{" "}
         </Text>
         {thumb ? (
@@ -63,8 +63,8 @@ export function PinnedRowPreview({
 
   if (msg.type === "video") {
     return (
-      <View className="flex-row items-center" style={{ flexShrink: 1 }}>
-        <Text className="text-[13px] font-semibold text-foreground" numberOfLines={1}>
+      <View className="min-w-0 flex-1 flex-row items-center overflow-hidden">
+        <Text className="shrink-0 text-[13px] font-semibold text-foreground" numberOfLines={1}>
           {sender}:{" "}
         </Text>
         {thumb ? (
@@ -90,16 +90,20 @@ export function PinnedRowPreview({
   }
 
   if (msg.type === "file") {
-    const name = pinnedChatFileDisplayName(msg);
-    const fileAccent = chatFileTypeAccent(name, msg.mediaType);
+    const { fileName, mimeType } = resolveChatFileBubbleMeta(msg);
     return (
-      <View className="flex-row items-center" style={{ flexShrink: 1 }}>
-        <Text className="text-[13px] font-semibold text-foreground" numberOfLines={1}>
+      <View className="min-w-0 flex-1 flex-row items-center overflow-hidden">
+        <Text className="shrink-0 text-[13px] font-semibold text-foreground" numberOfLines={1}>
           {sender}:{" "}
         </Text>
-        <FileText size={14} color={fileAccent} style={{ marginRight: 4 }} />
-        <Text className="text-[13px] text-muted-foreground" numberOfLines={1}>
-          {name}
+        <ChatFileTypeBadge fileName={fileName} mimeType={mimeType} size="xs" />
+        <Text
+          className="min-w-0 flex-1 text-[13px] text-muted-foreground"
+          numberOfLines={1}
+          ellipsizeMode="tail"
+          style={{ marginLeft: 6 }}
+        >
+          {fileName}
         </Text>
       </View>
     );
@@ -109,12 +113,16 @@ export function PinnedRowPreview({
     const url = extractFirstHttpUrl(msg.content ?? "");
     if (url) {
       return (
-        <View className="flex-row items-center" style={{ flexShrink: 1 }}>
-          <Text className="text-[13px] font-semibold text-foreground" numberOfLines={1}>
+        <View className="min-w-0 flex-1 flex-row items-center overflow-hidden">
+          <Text className="shrink-0 text-[13px] font-semibold text-foreground" numberOfLines={1}>
             {sender}:{" "}
           </Text>
           <Link2 size={13} color={mutedColor} style={{ marginRight: 4 }} />
-          <Text className="text-[13px] text-muted-foreground" numberOfLines={1}>
+          <Text
+            className="min-w-0 flex-1 text-[13px] text-muted-foreground"
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
             Link · {truncateUrl(url)}
           </Text>
         </View>
@@ -124,11 +132,15 @@ export function PinnedRowPreview({
 
   const line = formatPinnedMessagePreviewLine(msg);
   return (
-    <View className="flex-row items-center" style={{ flexShrink: 1 }}>
-      <Text className="text-[13px] font-semibold text-foreground" numberOfLines={1}>
+    <View className="min-w-0 flex-1 flex-row items-center overflow-hidden">
+      <Text className="shrink-0 text-[13px] font-semibold text-foreground" numberOfLines={1}>
         {sender}:{" "}
       </Text>
-      <Text className="flex-1 text-[13px] text-muted-foreground" numberOfLines={1}>
+      <Text
+        className="min-w-0 flex-1 text-[13px] text-muted-foreground"
+        numberOfLines={1}
+        ellipsizeMode="tail"
+      >
         {line}
       </Text>
     </View>
