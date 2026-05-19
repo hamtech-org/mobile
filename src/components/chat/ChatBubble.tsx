@@ -67,7 +67,7 @@ import { isTaskJoinDeadlinePassed } from "@/utils/taskJoin";
 import { mergePollWithGroupList, parsePollPayloadFromMessageContent } from "@/utils/groupPollMerge";
 import { resolveGroupJoinLinkFromMessageContent } from "@/utils/groupJoinLinkMessage";
 import { ChatFileMessageBubble } from "@/components/chat/ChatFileMessageBubble";
-import { ChatImageMessageCard } from "@/components/chat/ChatImageMessageCard";
+import { ChatImageMessageWithJoinQr } from "@/components/chat/ChatImageMessageWithJoinQr";
 import type { ChatMediaLightboxState } from "@/components/chat/ChatMediaLightbox";
 import { ChatVideoMessageCard } from "@/components/chat/ChatVideoMessageCard";
 import { chatMediaCaptionStyle, getChatMediaLayout } from "@/components/chat/chatMediaShell";
@@ -1413,7 +1413,9 @@ export const ChatBubble = ({
                     />
 
                     {hasImage && imageUri ? (
-                      <ChatImageMessageCard
+                      <ChatImageMessageWithJoinQr
+                        messageId={message.messageId}
+                        scanEnabled={!isDeleted && !isRecalled}
                         uri={imageUri}
                         layout={mediaLayout}
                         isDark={isDark}
