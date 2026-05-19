@@ -1,8 +1,9 @@
-import { useMemo } from "react";
-import { useAppSelector } from "@/hooks/useAppStore";
-import { useGetMessagesQuery, CHAT_MESSAGES_QUERY_LIMIT } from "@/store/api/chatApi";
+import { useCallback, useMemo, useState } from "react";
+import { useAppDispatch, useAppSelector } from "@/hooks/useAppStore";
+import { chatApi, useGetMessagesQuery, CHAT_MESSAGES_QUERY_LIMIT } from "@/store/api/chatApi";
 import type { IMessage } from "@/types/chat.types";
 import { mergeChatFileMessageFields } from "@/utils/chatMediaDisplay";
+import { orderPinnedMessagesMRU } from "@/utils/pinnedMessageOrder";
 
 const EMPTY_MESSAGE_ARRAY: IMessage[] = [];
 
@@ -96,6 +97,11 @@ function dedupeTaskAssignedSystemMessages(messages: IMessage[]): IMessage[] {
  * Đảm bảo tin nhắn realtime hiện ngay lập tức và đồng bộ với lịch sử fetch.
  */
 export function useChatMessageData(conversationId: string | null) {
+  const dispatch = useAppDispatch();
+  const [pinnedMessageOrderByConv, setPinnedMessageOrderByConv] = useState<
+    Record<string, string[]>
+  >({});
+
   // 1. Socket messages từ Redux store (được cập nhật bởi useChatRealtimeEvents)
   const socketMessages = useAppSelector((state) => {
     if (!conversationId) return EMPTY_MESSAGE_ARRAY;
@@ -133,15 +139,50 @@ export function useChatMessageData(conversationId: string | null) {
     );
   }, [apiMessages, socketMessages]);
 
+  const pinnedMessagesOrdered = useMemo(() => {
+    if (!conversationId) return [];
+    const pinned = allMessages.filter((m) => m.isPinned && !m.isRecalled && !m.isDeleted);
+    const order = pinnedMessageOrderByConv[conversationId] ?? [];
+    return orderPinnedMessagesMRU(pinned, order);
+  }, [allMessages, conversationId, pinnedMessageOrderByConv]);
+
+  const patchMessageInCache = useCallback(
+    (cid: string, messageId: string, patch: Partial<IMessage>) => {
+      dispatch(
+        chatApi.util.updateQueryData(
+          "getMessages",
+          { conversationId: cid, limit: CHAT_MESSAGES_QUERY_LIMIT },
+          (draft) => {
+            const m = draft.find((x) => x.messageId === messageId);
+            if (m) Object.assign(m, patch);
+          },
+        ),
+      );
+    },
+    [dispatch],
+  );
+
   const result = useMemo(
     () => ({
       allMessages,
+      pinnedMessagesOrdered,
+      pinnedMessageOrderByConv,
+      setPinnedMessageOrderByConv,
+      patchMessageInCache,
       isLoading,
       isError,
       refetch,
       latestMessageId: allMessages.length > 0 ? allMessages[0].messageId : undefined,
     }),
-    [allMessages, isLoading, isError, refetch],
+    [
+      allMessages,
+      pinnedMessagesOrdered,
+      pinnedMessageOrderByConv,
+      patchMessageInCache,
+      isLoading,
+      isError,
+      refetch,
+    ],
   );
 
   return result;
