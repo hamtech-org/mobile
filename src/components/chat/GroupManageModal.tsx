@@ -2517,22 +2517,6 @@ export function GroupManageModal({
                   >
                     <Plus size={26} color={Z.primary} strokeWidth={2.25} />
                   </Pressable>
-                ) : panel === "members" && canKickMembers ? (
-                  <Pressable
-                    onPress={openPromoteFlow}
-                    disabled={busy || changingRole || adminSlotsFull}
-                    style={({ pressed }) => [
-                      styles.mmPromoteHeaderBtn,
-                      pressed ? { opacity: 0.85 } : null,
-                      adminSlotsFull ? { opacity: 0.45 } : null,
-                    ]}
-                    hitSlop={8}
-                    accessibilityLabel="Bổ nhiệm phó nhóm"
-                  >
-                    <Text style={styles.mmPromoteHeaderBtnText} numberOfLines={1}>
-                      + Bổ nhiệm
-                    </Text>
-                  </Pressable>
                 ) : panel === "bulletinFeed" && canCreatePollUi ? (
                   <View>
                     <Pressable
