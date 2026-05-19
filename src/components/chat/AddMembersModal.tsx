@@ -9,7 +9,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { Check, Link2, Search, Share2, UserPlus, X } from "lucide-react-native";
+import { Check, Search, UserPlus, X } from "lucide-react-native";
 
 import { Avatar } from "@/components/common/Avatar";
 import type { FriendListItem } from "@/store/api/userApi";
@@ -32,9 +32,6 @@ export type AddMembersModalProps = {
   onToggleSelect: (userId: string) => void;
   onConfirm: () => void;
   isSubmitting?: boolean;
-  showJoinLinkActions?: boolean;
-  onOpenJoinLink?: () => void;
-  onShareJoinLink?: () => void;
 };
 
 function friendSubtitle(friend: FriendListItem, isInGroup: boolean): string {
@@ -61,9 +58,6 @@ export function AddMembersModal({
   onToggleSelect,
   onConfirm,
   isSubmitting = false,
-  showJoinLinkActions = false,
-  onOpenJoinLink,
-  onShareJoinLink,
 }: AddMembersModalProps): ReactElement {
   const [query, setQuery] = useState("");
 
@@ -107,30 +101,6 @@ export function AddMembersModal({
           </View>
 
           <View style={styles.toolbar}>
-            {showJoinLinkActions && (onOpenJoinLink || onShareJoinLink) ? (
-              <View style={styles.linkRow}>
-                {onOpenJoinLink ? (
-                  <Pressable
-                    style={styles.linkBtn}
-                    onPress={onOpenJoinLink}
-                    disabled={isSubmitting}
-                  >
-                    <Link2 size={16} color={C.primary} strokeWidth={2} />
-                    <Text style={styles.linkBtnText}>Link nhóm</Text>
-                  </Pressable>
-                ) : null}
-                {onShareJoinLink ? (
-                  <Pressable
-                    style={styles.linkBtn}
-                    onPress={onShareJoinLink}
-                    disabled={isSubmitting}
-                  >
-                    <Share2 size={16} color={C.primary} strokeWidth={2} />
-                    <Text style={styles.linkBtnText}>Chia sẻ link</Text>
-                  </Pressable>
-                ) : null}
-              </View>
-            ) : null}
             <View style={styles.searchWrap}>
               <Search size={16} color={C.sub} strokeWidth={2} style={styles.searchIcon} />
               <TextInput
@@ -265,24 +235,9 @@ const styles = StyleSheet.create({
   toolbar: {
     paddingHorizontal: 20,
     paddingVertical: 16,
-    gap: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: C.line,
   },
-  linkRow: { flexDirection: "row", gap: 8 },
-  linkBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(0,104,255,0.3)",
-    backgroundColor: "rgba(240,249,255,0.9)",
-  },
-  linkBtnText: { fontSize: 14, fontWeight: "600", color: C.primary },
   searchWrap: {
     flexDirection: "row",
     alignItems: "center",
