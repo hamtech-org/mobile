@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { useAppDispatch, useAppSelector } from "@/hooks/useAppStore";
 import { chatApi, useGetMessagesQuery, CHAT_MESSAGES_QUERY_LIMIT } from "@/store/api/chatApi";
 import type { IMessage } from "@/types/chat.types";
@@ -98,9 +98,7 @@ function dedupeTaskAssignedSystemMessages(messages: IMessage[]): IMessage[] {
  */
 export function useChatMessageData(conversationId: string | null) {
   const dispatch = useAppDispatch();
-  const [pinnedMessageOrderByConv, setPinnedMessageOrderByConv] = useState<
-    Record<string, string[]>
-  >({});
+  const pinnedMessageOrderByConv = useAppSelector((s) => s.chat.pinnedMessageOrderByConv);
 
   // 1. Socket messages từ Redux store (được cập nhật bởi useChatRealtimeEvents)
   const socketMessages = useAppSelector((state) => {
@@ -166,23 +164,13 @@ export function useChatMessageData(conversationId: string | null) {
     () => ({
       allMessages,
       pinnedMessagesOrdered,
-      pinnedMessageOrderByConv,
-      setPinnedMessageOrderByConv,
       patchMessageInCache,
       isLoading,
       isError,
       refetch,
       latestMessageId: allMessages.length > 0 ? allMessages[0].messageId : undefined,
     }),
-    [
-      allMessages,
-      pinnedMessagesOrdered,
-      pinnedMessageOrderByConv,
-      patchMessageInCache,
-      isLoading,
-      isError,
-      refetch,
-    ],
+    [allMessages, pinnedMessagesOrdered, patchMessageInCache, isLoading, isError, refetch],
   );
 
   return result;
