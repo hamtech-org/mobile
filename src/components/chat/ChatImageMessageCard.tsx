@@ -2,12 +2,14 @@ import { Image } from "expo-image";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 
+import { ChatJumpHighlightWrap } from "@/components/chat/ChatJumpHighlight";
 import {
   chatImageMessageShellStyle,
   chatMediaMaxHeight,
   fitMediaInBox,
   CHAT_IMAGE_PREVIEW_BG,
   CHAT_IMAGE_PREVIEW_BG_DARK,
+  CHAT_MEDIA_SHELL_RADIUS,
   type ChatMediaLayout,
 } from "@/components/chat/chatMediaShell";
 
@@ -16,6 +18,7 @@ export interface ChatImageMessageCardProps {
   layout: ChatMediaLayout;
   isDark?: boolean;
   hasCaptionBelow?: boolean;
+  isJumpHighlighted?: boolean;
   /** Chạm → MessageActionSheet (cảm xúc, thu hồi, …). */
   onPress: () => void;
 }
@@ -26,6 +29,7 @@ export function ChatImageMessageCard({
   layout,
   isDark = false,
   hasCaptionBelow = false,
+  isJumpHighlighted = false,
   onPress,
 }: ChatImageMessageCardProps) {
   const maxH = chatMediaMaxHeight(layout);
@@ -46,7 +50,9 @@ export function ChatImageMessageCard({
   const shellHeight = displayBox?.height ?? Math.min(72, maxH);
 
   return (
-    <View
+    <ChatJumpHighlightWrap
+      active={isJumpHighlighted}
+      borderRadius={CHAT_MEDIA_SHELL_RADIUS}
       style={[
         chatImageMessageShellStyle(shellWidth, isDark),
         hasCaptionBelow ? styles.withCaptionBelow : null,
@@ -70,7 +76,7 @@ export function ChatImageMessageCard({
           }}
         />
       </Pressable>
-    </View>
+    </ChatJumpHighlightWrap>
   );
 }
 
