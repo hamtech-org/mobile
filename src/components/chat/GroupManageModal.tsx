@@ -32,7 +32,6 @@ import {
   Pin,
   Pencil,
   LogOut,
-  Link2,
   ImageIcon,
   FileText,
   Clock,
@@ -1960,14 +1959,6 @@ export function GroupManageModal({
               </Text>
             </Pressable>
             <View style={styles.gmJoinActionsRow}>
-              <Pressable
-                accessibilityLabel="Xem link & QR"
-                disabled={!joinSuffix}
-                onPress={openJoinLinkScreen}
-                style={({ pressed }) => [styles.gmJoinIconBtn, pressed ? { opacity: 0.75 } : null]}
-              >
-                <Link2 size={18} color={Z.primary} strokeWidth={2} />
-              </Pressable>
               <Pressable
                 accessibilityLabel="Sao chép"
                 disabled={!joinSuffix}
@@ -4025,20 +4016,20 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginTop: 4,
     marginBottom: 8,
-    paddingVertical: 10,
+    paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 12,
     backgroundColor: "#F0F9FF",
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "#BFDBFE",
-    flexDirection: "column",
-    alignItems: "stretch",
-    gap: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   gmJoinUrlCol: {
     flex: 1,
+    flexShrink: 1,
     minWidth: 0,
-    paddingRight: 8,
   },
   gmJoinUrlText: {
     fontSize: 12,
@@ -4048,17 +4039,16 @@ const styles = StyleSheet.create({
   },
   gmJoinActionsRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
     alignItems: "center",
     justifyContent: "flex-end",
-    gap: 4,
+    gap: 10,
     flexShrink: 0,
   },
   gmJoinIconBtn: {
     padding: 0,
     borderRadius: 10,
-    width: 44,
-    height: 44,
+    width: 36,
+    height: 36,
     alignItems: "center",
     justifyContent: "center",
   },
