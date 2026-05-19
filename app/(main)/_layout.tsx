@@ -1,7 +1,7 @@
 import { Fragment } from "react";
 import { Tabs } from "expo-router";
 import { useColorScheme } from "react-native";
-import { MessageCircleMore, Newspaper, User, Users } from "lucide-react-native";
+import { MessageCircleMore, Newspaper, Radio, User, Users } from "lucide-react-native";
 
 import { ChatSocketBootstrap } from "@/components/chat/ChatSocketBootstrap";
 
@@ -15,6 +15,7 @@ const TABS: TabConfig[] = [
   { name: "(chat)", title: "Tin nhắn", Icon: MessageCircleMore },
   { name: "(contacts)", title: "Danh bạ", Icon: Users },
   { name: "(newsfeed)", title: "Bảng tin", Icon: Newspaper },
+  { name: "(live)", title: "Live", Icon: Radio },
   { name: "(profile)", title: "Tôi", Icon: User },
 ];
 

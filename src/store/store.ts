@@ -12,6 +12,7 @@ import { newsfeedReducer } from "./slices/newsfeedSlice";
 import { notificationReducer } from "./slices/notificationSlice";
 import { uiReducer } from "./slices/uiSlice";
 import { newsfeedApi } from "./api/newsfeedApi";
+import { liveApi } from "./api/liveApi";
 
 export const store = configureStore({
   reducer: {
@@ -27,6 +28,7 @@ export const store = configureStore({
     [mediaApi.reducerPath]: mediaApi.reducer,
     [userApi.reducerPath]: userApi.reducer,
     [newsfeedApi.reducerPath]: newsfeedApi.reducer,
+    [liveApi.reducerPath]: liveApi.reducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(
@@ -35,6 +37,7 @@ export const store = configureStore({
       mediaApi.middleware,
       userApi.middleware,
       newsfeedApi.middleware,
+      liveApi.middleware,
     ),
 });
 
