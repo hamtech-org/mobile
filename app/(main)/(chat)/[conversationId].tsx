@@ -167,7 +167,7 @@ export default function ChatDetailScreen() {
   const pinnedMessages = useMemo(
     () =>
       allMessages
-        .filter((m) => m.isPinned)
+        .filter((m) => m.isPinned && !m.isRecalled && !m.isDeleted)
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
     [allMessages],
   );
