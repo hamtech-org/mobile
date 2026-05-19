@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -193,8 +193,11 @@ export function GroupTaskModal({
     setAssignees((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
+  const submitInFlightRef = useRef(false);
+
   const submit = async () => {
-    if (!canSubmit || submitting) return;
+    if (!canSubmit || submitting || submitInFlightRef.current) return;
+    submitInFlightRef.current = true;
     const cleanSubtasks = subtaskRows
       .map((r) => ({
         assigneeId: String(r.assigneeId ?? ""),
@@ -229,6 +232,8 @@ export function GroupTaskModal({
       onClose();
     } catch {
       toast.error(existingTask ? "Không thể cập nhật công việc" : "Không thể tạo công việc");
+    } finally {
+      submitInFlightRef.current = false;
     }
   };
 

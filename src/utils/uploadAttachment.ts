@@ -1,4 +1,4 @@
-import { cacheDirectory, copyAsync } from "expo-file-system/legacy";
+import { cacheDirectory, copyAsync, getInfoAsync } from "expo-file-system/legacy";
 
 export interface LocalUploadFileInput {
   uri: string;
@@ -21,16 +21,22 @@ function safeFileBaseName(name: string): string {
   return n.length > 180 ? n.slice(0, 180) : n;
 }
 
-function isMediaUriSkippableCopy(uri: string, mimeType: string): boolean {
-  if (!uri.startsWith("file://")) return false;
-  const t = mimeType.toLowerCase();
-  return t.startsWith("image/") || t.startsWith("video/") || t.startsWith("audio/");
+async function uniqueCachePath(baseDir: string, fileName: string): Promise<string> {
+  const safe = safeFileBaseName(fileName);
+  let candidate = `${baseDir}${safe}`;
+  const info = await getInfoAsync(candidate);
+  if (!info.exists) return candidate;
+  const dot = safe.lastIndexOf(".");
+  const stem = dot > 0 ? safe.slice(0, dot) : safe;
+  const ext = dot > 0 ? safe.slice(dot) : "";
+  candidate = `${baseDir}${stem}_${Date.now()}${ext}`;
+  return candidate;
 }
 
 /**
  * Chuẩn bị file local trước khi upload.
- * - `content://` hoặc file tài liệu: copy sang `file://` trong cache (ổn định cho native upload).
- * - Ảnh/video/audio đã `file://` (máy ảnh, thư viện): giữ nguyên, tránh copy file lớn hai lần.
+ * Giữ **tên file gốc** trong cache để multipart / uploadAsync gửi đúng `originalname` lên server
+ * (khớp web `File.name`).
  */
 export async function prepareLocalFileForUpload(
   input: LocalUploadFileInput,
@@ -39,21 +45,19 @@ export async function prepareLocalFileForUpload(
   const type = input.mimeType?.trim() || "application/octet-stream";
   const uri = input.uri.trim();
 
-  if (isMediaUriSkippableCopy(uri, type)) {
-    return { uri, name, type };
-  }
-
   const baseDir = cacheDirectory;
   if (!baseDir) {
     return { uri, name, type };
   }
 
-  const extFromName = name.includes(".") ? (name.split(".").pop() ?? "") : "";
-  const cleaned = extFromName.replace(/[^a-zA-Z0-9]/g, "").slice(0, 12);
-  const ext =
-    cleaned || (type.startsWith("image/") ? "jpg" : type.startsWith("video/") ? "mp4" : "bin");
+  if (uri.startsWith("file://") && uri.startsWith(baseDir)) {
+    const base = uri.slice(uri.lastIndexOf("/") + 1);
+    if (base === name) {
+      return { uri, name, type };
+    }
+  }
 
-  const dest = `${baseDir}upload_${Date.now()}_${Math.random().toString(36).slice(2, 9)}.${ext}`;
+  const dest = await uniqueCachePath(baseDir, name);
   await copyAsync({ from: uri, to: dest });
   return { uri: dest, name, type };
 }

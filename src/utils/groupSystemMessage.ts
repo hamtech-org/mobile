@@ -11,6 +11,10 @@ type GroupSystemPayload = {
   successor?: GroupSystemPerson;
   target?: GroupSystemPerson;
   selfDemote?: boolean;
+  previousName?: string;
+  newName?: string;
+  nameChanged?: boolean;
+  avatarChanged?: boolean;
 };
 
 function labelPerson(
@@ -110,8 +114,56 @@ export function formatGroupSystemChatLine(
       }
       return `${actorLabel} đã hạ ${targetLabel} xuống thành viên`;
     }
+    if (kind === "group_profile_updated") {
+      const who = labelPerson(obj.actor, currentUserId, "Ai đó");
+      const nameChanged = obj.nameChanged === true;
+      const avatarChanged = obj.avatarChanged === true;
+      const newName = String(obj.newName ?? "").trim();
+      const previousName = String(obj.previousName ?? "").trim();
+      if (nameChanged && avatarChanged) {
+        if (newName) {
+          return `${who} đã đổi tên nhóm thành "${newName}" và cập nhật ảnh đại diện nhóm`;
+        }
+        return `${who} đã cập nhật thông tin nhóm`;
+      }
+      if (nameChanged) {
+        if (previousName && newName && previousName !== newName) {
+          return `${who} đã đổi tên nhóm từ '${previousName}' thành '${newName}'`;
+        }
+        if (newName) return `${who} đã đổi tên nhóm thành '${newName}'`;
+        return `${who} đã đổi tên nhóm`;
+      }
+      if (avatarChanged) return `${who} đã cập nhật ảnh đại diện nhóm`;
+    }
     return null;
   } catch {
     return null;
   }
+}
+
+export function formatLegacyGroupProfileSystemLine(
+  raw: string,
+  ctx: {
+    senderId?: string | null;
+    currentUserId?: string | null;
+    senderDisplayName?: string | null;
+  },
+): string | null {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed || trimmed.startsWith("{")) return null;
+
+  const isSelf = Boolean(ctx.currentUserId && ctx.senderId && ctx.senderId === ctx.currentUserId);
+  const who = isSelf
+    ? "Bạn"
+    : String(ctx.senderDisplayName ?? "").trim() ||
+      trimmed.split(/\s+(?:đã\s+)?đổi tên nhóm/i)[0]?.trim() ||
+      trimmed.split(/\s+đã cập nhật ảnh đại diện nhóm/i)[0]?.trim() ||
+      "Ai đó";
+
+  if (trimmed.includes("đã cập nhật ảnh đại diện nhóm")) {
+    return `${who} đã cập nhật ảnh đại diện nhóm`;
+  }
+  const nameTail = trimmed.match(/(?:đã\s+)?đổi tên nhóm(.*)$/i)?.[1] ?? "";
+  if (nameTail) return `${who} đã đổi tên nhóm${nameTail}`;
+  return null;
 }

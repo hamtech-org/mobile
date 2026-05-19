@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback, useEffect } from "react";
 import { router } from "expo-router";
-import { FlatList, Pressable, Text, View, Alert } from "react-native";
+import { FlatList, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   CloudOff,
@@ -253,13 +253,8 @@ export default function ChatListScreen() {
         <Pressable
           className="size-10 shrink-0 items-center justify-center rounded-lg active:bg-muted/60"
           hitSlop={6}
-          onPress={() =>
-            Alert.alert("Tạo mới", undefined, [
-              { text: "Tạo nhóm", onPress: () => setCreateGroupOpen(true) },
-              { text: "Hủy", style: "cancel" },
-            ])
-          }
-          accessibilityLabel="Tạo nhóm"
+          onPress={() => setCreateGroupOpen(true)}
+          accessibilityLabel="Tạo nhóm mới"
         >
           <Users size={20} color={primary} strokeWidth={1.5} />
         </Pressable>
