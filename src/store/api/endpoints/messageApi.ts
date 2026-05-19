@@ -64,6 +64,21 @@ export interface ReactMessageRequest {
   emoji: string;
 }
 
+export type MessageGalleryKind = "media" | "file" | "link";
+
+export interface MessageGalleryItem {
+  messageId: string;
+  senderId: string;
+  senderDisplayName: string | null;
+  type: MessageType;
+  content: string;
+  mediaUrl: string | null;
+  mediaType: string | null;
+  thumbnailUrl: string | null;
+  mediaOriginalName: string | null;
+  createdAt: string;
+}
+
 function newOptimisticId(): string {
   return `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -200,6 +215,17 @@ export const messageApi = chatApi.injectEndpoints({
         `/chat/conversations/${conversationId}/messages?limit=${limit}`,
       transformResponse: (response: ApiEnvelope<IMessage[]>) => response.data,
       providesTags: (_result, _error, arg) => [{ type: "Messages", id: arg.conversationId }],
+    }),
+
+    getMessageGallery: builder.query<
+      MessageGalleryItem[],
+      { conversationId: string; category: MessageGalleryKind; limit?: number }
+    >({
+      query: ({ conversationId, category, limit = 120 }) => ({
+        url: `/chat/conversations/${conversationId}/gallery`,
+        params: { category, limit },
+      }),
+      transformResponse: (response: ApiEnvelope<MessageGalleryItem[]>) => response.data ?? [],
     }),
 
     sendMessage: builder.mutation<ApiEnvelope<IMessage>, SendMessageRequest>({
@@ -520,6 +546,7 @@ export const messageApi = chatApi.injectEndpoints({
 
 export const {
   useGetMessagesQuery,
+  useGetMessageGalleryQuery,
   useSendMessageMutation,
   useEditMessageMutation,
   useDeleteMessageMutation,
