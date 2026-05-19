@@ -640,22 +640,22 @@ const styles = StyleSheet.create({
   composeRow: {
     flexDirection: "row",
     alignItems: "flex-end",
+    gap: 8,
   },
   inputBox: {
     flex: 1,
-    minHeight: 40,
-    marginRight: 8,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: "rgba(0,0,0,0.1)",
     backgroundColor: "rgba(0,0,0,0.04)",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    overflow: "hidden",
   },
   textInput: {
     margin: 0,
-    padding: 0,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     fontSize: 14,
+    lineHeight: 20,
     fontWeight: "500",
     color: "#050505",
     minHeight: 40,
@@ -665,6 +665,7 @@ const styles = StyleSheet.create({
   sendBtn: {
     width: 40,
     height: 40,
+    flexShrink: 0,
     borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
@@ -672,6 +673,7 @@ const styles = StyleSheet.create({
   likeBtn: {
     width: 40,
     height: 40,
+    flexShrink: 0,
     borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
