@@ -1,7 +1,6 @@
 import type { ReactElement } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { ConversationGalleryIcon } from "@/components/chat/conversationGallery/ConversationGalleryIcon";
 import {
   CONVERSATION_GALLERY_KINDS,
   CONVERSATION_GALLERY_THEME,
@@ -31,11 +30,6 @@ export function ConversationGalleryTabBar({
               isActive ? { backgroundColor: theme.tint, borderColor: theme.tint } : null,
             ]}
           >
-            <ConversationGalleryIcon
-              kind={kind}
-              color={isActive ? "#FFFFFF" : theme.tint}
-              size={14}
-            />
             <Text
               style={[styles.tabText, isActive ? styles.tabTextActive : { color: theme.tint }]}
               numberOfLines={1}
@@ -61,10 +55,8 @@ const styles = StyleSheet.create({
   },
   tab: {
     flex: 1,
-    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 5,
     paddingVertical: 8,
     paddingHorizontal: 6,
     borderRadius: 12,
