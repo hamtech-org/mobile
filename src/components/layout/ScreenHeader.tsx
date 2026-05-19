@@ -21,6 +21,8 @@ interface ScreenHeaderProps {
   onBack?: () => void;
   /** Các nút action phải header (tối đa 3) */
   rightActions?: HeaderAction[];
+  /** Slot tùy chỉnh bên phải (ưu tiên hơn rightActions) */
+  rightSlot?: React.ReactNode;
   /** Component custom thay thế title (ví dụ: Avatar + tên cho chat header) */
   titleContent?: React.ReactNode;
 }
@@ -37,6 +39,7 @@ export const ScreenHeader = ({
   subtitle,
   onBack,
   rightActions = [],
+  rightSlot,
   titleContent,
 }: ScreenHeaderProps) => {
   const handleBack = onBack ?? (() => safeRouterBack("/(main)"));
@@ -71,8 +74,9 @@ export const ScreenHeader = ({
         )}
       </View>
 
-      {/* Right action buttons */}
-      {rightActions.length > 0 ? (
+      {rightSlot ? (
+        <View className="flex-row items-center">{rightSlot}</View>
+      ) : rightActions.length > 0 ? (
         <View className="flex-row items-center gap-1">
           {rightActions.map((action, index) => (
             <Pressable
