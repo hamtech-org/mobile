@@ -25,6 +25,20 @@ export const CHAT_VIDEO_FOOTER_BORDER_DARK = "rgba(255,255,255,0.10)";
 export const CHAT_FILE_CARD_WIDTH = 268;
 
 export const CHAT_MEDIA_SHELL_RADIUS = 12;
+/** Viền nhảy tới tin ghim — khớp web `border-blue-500`. */
+export const CHAT_JUMP_HIGHLIGHT_BORDER = "#3b82f6";
+export const CHAT_JUMP_HIGHLIGHT_BG = "rgba(59, 130, 246, 0.12)";
+
+/** Gộp shell media/file với viền highlight bọc sát thẻ (không padding ngoài). */
+export function withJumpHighlightShell(base: ViewStyle, isHighlighted: boolean): ViewStyle {
+  if (!isHighlighted) return base;
+  return {
+    ...base,
+    borderWidth: 2,
+    borderColor: CHAT_JUMP_HIGHLIGHT_BORDER,
+    backgroundColor: base.backgroundColor != null ? base.backgroundColor : CHAT_MEDIA_SHELL_BG,
+  };
+}
 export const CHAT_MEDIA_ACTION_RADIUS_FILE = 8;
 export const CHAT_MEDIA_ACTION_RADIUS_VIDEO = 12;
 export const CHAT_MEDIA_CAPTION_RADIUS = 8;
