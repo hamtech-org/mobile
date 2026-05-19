@@ -1337,7 +1337,6 @@ export const ChatBubble = ({
             mediaSavedOnDevice={mediaSavedOnDevice}
             isOwn={isOwn}
             isDark={isDark}
-            isPinned={Boolean(message.isPinned)}
             isJumpHighlighted={isJumpHighlighted}
             header={
               message.replyToDetails ? (
