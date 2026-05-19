@@ -4,6 +4,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useColorScheme } from "nativewind";
 
 import { Button } from "@/components/common/Button";
+import { ScreenHeader } from "@/components/layout/ScreenHeader";
+import { NotificationBellButton } from "@/components/notifications/NotificationBellButton";
 import { useAuth } from "@/hooks/useAuth";
 
 export default function ProfileScreen() {
@@ -17,9 +19,8 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
-      <View className="flex-1 gap-4 px-6 py-6">
-        <Text className="text-2xl font-bold text-foreground">Profile</Text>
-
+      <ScreenHeader title="Tôi" rightSlot={<NotificationBellButton />} />
+      <View className="flex-1 gap-4 px-6 py-4">
         {/* Dark mode toggle */}
         <Pressable
           onPress={toggleTheme}
