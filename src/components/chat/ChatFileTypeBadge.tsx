@@ -6,8 +6,8 @@ import { chatFileTypeAccent, chatFileTypeLabel } from "@/utils/chatMediaDisplay"
 type ChatFileTypeBadgeProps = {
   fileName: string;
   mimeType?: string | null;
-  /** `md` khớp thẻ file chat; `sm` cho hàng ghim. */
-  size?: "sm" | "md";
+  /** `md` khớp thẻ file chat; `sm` cho hàng ghim; `lg` cho danh sách file trong quản lý nhóm. */
+  size?: "sm" | "md" | "lg";
 };
 
 /** Badge PDF / XLSX / DOC… — dùng `EXT_TYPE_LABEL` trong `chatMediaDisplay`. */
@@ -18,7 +18,7 @@ export function ChatFileTypeBadge({
 }: ChatFileTypeBadgeProps): ReactElement {
   const label = chatFileTypeLabel(fileName, mimeType);
   const accent = chatFileTypeAccent(fileName, mimeType);
-  const box = size === "sm" ? styles.boxSm : styles.boxMd;
+  const box = size === "sm" ? styles.boxSm : size === "lg" ? styles.boxLg : styles.boxMd;
 
   return (
     <View style={[box, { backgroundColor: accent }]}>
@@ -44,9 +44,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     flexShrink: 0,
   },
+  boxLg: {
+    width: 54,
+    height: 54,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
   text: {
     color: "#FFFFFF",
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: "800",
     letterSpacing: 0.4,
   },
