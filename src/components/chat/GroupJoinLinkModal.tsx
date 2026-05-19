@@ -1,8 +1,10 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { ActivityIndicator, Modal, Pressable, Text, View } from "react-native";
 import { router } from "expo-router";
 import * as Clipboard from "expo-clipboard";
-import { ArrowLeft, Copy, Download, Share2 } from "lucide-react-native";
+import * as FileSystem from "expo-file-system/legacy";
+import * as MediaLibrary from "expo-media-library";
+import { ArrowLeft, Copy, Download, Share2, Users } from "lucide-react-native";
 import QRCode from "react-native-qrcode-svg";
 
 import { Avatar } from "@/components/common/Avatar";
@@ -12,11 +14,19 @@ import {
   useGetGroupJoinPreviewQuery,
   useJoinGroupViaLinkMutation,
 } from "@/store/api/endpoints/joinApi";
-import { joinLinkMessageDomain } from "@/utils/groupJoinLinkMessage";
 import { useGroupJoinLinkModal } from "@/contexts/GroupJoinLinkModalContext";
 import { toast } from "@/utils/appToast";
 
 const PRIMARY = "#0068FF";
+
+type QrSvgRef = { toDataURL: (callback: (dataUrl: string) => void) => void };
+
+async function ensureMediaLibraryPermission(): Promise<boolean> {
+  const current = await MediaLibrary.getPermissionsAsync();
+  if (current.granted) return true;
+  const req = await MediaLibrary.requestPermissionsAsync();
+  return req.granted;
+}
 
 type Props = {
   open: boolean;
@@ -27,6 +37,7 @@ type Props = {
 export function GroupJoinLinkModal({ open, data, onClose }: Props) {
   const isAuthenticated = useAppSelector((s) => s.auth.isAuthenticated);
   const { openShareGroupJoinLinkPicker } = useGroupJoinLinkModal();
+  const qrRef = useRef<QrSvgRef | null>(null);
   const suffix = data?.suffix ?? "";
   const joinUrl = data?.url ?? "";
 
@@ -36,7 +47,9 @@ export function GroupJoinLinkModal({ open, data, onClose }: Props) {
   const [joinViaLink, { isLoading: joining }] = useJoinGroupViaLinkMutation();
   const groupName = data?.groupName ?? preview?.name ?? "Nhóm chat";
   const groupAvatar = data?.groupAvatar ?? preview?.avatar;
-  const domain = joinLinkMessageDomain(joinUrl);
+  const conversationIdForChat = preview?.conversationId ?? data?.conversationId;
+  const showMemberBanner = Boolean(preview && !previewLoading && preview.isMember);
+  const showMemberCount = Boolean(preview && !previewLoading);
 
   const handleCopy = useCallback(async () => {
     if (!joinUrl) return;
@@ -48,6 +61,33 @@ export function GroupJoinLinkModal({ open, data, onClose }: Props) {
     if (!data) return;
     openShareGroupJoinLinkPicker(data);
   }, [data, openShareGroupJoinLinkPicker]);
+
+  const handleSaveQr = useCallback(() => {
+    const svg = qrRef.current;
+    if (!svg) return;
+    svg.toDataURL(async (dataUrl) => {
+      try {
+        const base64 = dataUrl.includes(",") ? (dataUrl.split(",")[1] ?? "") : dataUrl;
+        if (!base64) {
+          toast.error("Không lưu được mã QR");
+          return;
+        }
+        const filename = `hamtech-join-${suffix || "group"}.png`;
+        const dest = `${FileSystem.cacheDirectory}${filename}`;
+        await FileSystem.writeAsStringAsync(dest, base64, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        if (!(await ensureMediaLibraryPermission())) {
+          toast.error("Cần quyền truy cập thư viện ảnh để lưu mã QR");
+          return;
+        }
+        await MediaLibrary.saveToLibraryAsync(dest);
+        toast.success("Đã tải mã QR");
+      } catch {
+        toast.error("Không lưu được mã QR");
+      }
+    });
+  }, [suffix]);
 
   const handleJoin = async () => {
     if (!suffix) return;
@@ -82,15 +122,40 @@ export function GroupJoinLinkModal({ open, data, onClose }: Props) {
           </Text>
         </View>
 
-        <View className="flex-1 items-center px-6 pt-8">
+        <View className="flex-1 items-center px-6 pt-6">
+          {showMemberBanner ? (
+            <Text className="mb-3 text-center text-[14px] text-slate-500">
+              Bạn đã là thành viên nhóm này.
+            </Text>
+          ) : null}
+
           <Avatar uri={groupAvatar || undefined} name={groupName} size="xl" isGroup />
           <Text className="mt-4 text-center text-[18px] font-bold text-slate-900">{groupName}</Text>
+
+          {showMemberCount ? (
+            <View className="mt-1.5 flex-row items-center justify-center gap-1.5">
+              <Users color="#64748b" size={16} />
+              <Text className="text-[14px] text-slate-500">
+                {preview?.memberCount ?? 0} thành viên
+              </Text>
+            </View>
+          ) : null}
+
           <Text className="mt-2 px-4 text-center text-[14px] leading-snug text-slate-500">
             Mời mọi người tham gia nhóm bằng mã QR hoặc link dưới đây:
           </Text>
 
           <View className="mt-8 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-            <QRCode value={joinUrl} size={200} color="#0a1629" backgroundColor="#ffffff" />
+            <QRCode
+              value={joinUrl}
+              size={200}
+              color="#0a1629"
+              backgroundColor="#ffffff"
+              ecl="M"
+              getRef={(c) => {
+                qrRef.current = c as QrSvgRef | null;
+              }}
+            />
           </View>
 
           <Pressable
@@ -109,7 +174,7 @@ export function GroupJoinLinkModal({ open, data, onClose }: Props) {
           <View className="mt-10 flex-row justify-center gap-10">
             <ActionChip icon={Copy} label="Sao chép link" onPress={() => void handleCopy()} />
             <ActionChip icon={Share2} label="Chia sẻ link" onPress={() => void handleShare()} />
-            <ActionChip icon={Download} label="Chia sẻ QR" onPress={() => void handleShare()} />
+            <ActionChip icon={Download} label="Lưu mã QR" onPress={() => void handleSaveQr()} />
           </View>
 
           {previewLoading ? (
@@ -125,11 +190,11 @@ export function GroupJoinLinkModal({ open, data, onClose }: Props) {
                 {joining ? "Đang xử lý…" : "Tham gia nhóm"}
               </Text>
             </Pressable>
-          ) : preview?.isMember && data?.conversationId ? (
+          ) : preview?.isMember && conversationIdForChat ? (
             <Pressable
               onPress={() => {
                 onClose();
-                router.push(`/(main)/(chat)/${data.conversationId}`);
+                router.push(`/(main)/(chat)/${conversationIdForChat}`);
               }}
               className="mt-8 w-full max-w-[280px] items-center rounded-xl border border-slate-200 py-3"
             >
