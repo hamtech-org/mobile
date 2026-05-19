@@ -1,6 +1,5 @@
 import type { ReactElement, ReactNode } from "react";
 import { Image, Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { Pin } from "lucide-react-native";
 
 import { ChatJumpHighlightWrap } from "@/components/chat/ChatJumpHighlight";
 import {
@@ -28,7 +27,6 @@ export interface ChatFileMessageBubbleProps {
   mediaSavedOnDevice?: boolean;
   isOwn?: boolean;
   isDark?: boolean;
-  isPinned?: boolean;
   isJumpHighlighted?: boolean;
   header?: ReactNode;
   /** Chạm thẻ → MessageActionSheet. */
@@ -52,7 +50,6 @@ export function ChatFileMessageBubble({
   mediaSavedOnDevice = false,
   isOwn = false,
   isDark = false,
-  isPinned = false,
   isJumpHighlighted = false,
   header,
   onShowActions,
@@ -134,13 +131,6 @@ export function ChatFileMessageBubble({
             </View>
           </View>
         ) : null}
-
-        {isPinned ? (
-          <View style={[styles.pinnedRow, { backgroundColor: shellBg }]}>
-            <Pin size={11} color="#0068ff" strokeWidth={2.25} />
-            <Text style={styles.pinnedLabel}>Đã ghim</Text>
-          </View>
-        ) : null}
       </Pressable>
     </ChatJumpHighlightWrap>
   );
@@ -170,19 +160,5 @@ const styles = StyleSheet.create({
   captionText: {
     fontSize: 13,
     lineHeight: 18,
-  },
-  pinnedRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    alignSelf: "flex-end",
-    paddingHorizontal: 12,
-    paddingBottom: 6,
-    width: CHAT_FILE_CARD_WIDTH,
-  },
-  pinnedLabel: {
-    fontSize: 10,
-    fontWeight: "500",
-    color: "#0068ff",
   },
 });
