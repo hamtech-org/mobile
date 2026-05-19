@@ -698,10 +698,12 @@ export function GroupManageModal({
     return out;
   }, [messages]);
 
+  const pinnedMessageOrder = useAppSelector((s) => s.chat.pinnedMessageOrderByConv[groupId] ?? []);
+
   const pinnedList = useMemo(() => {
     const pinned = messages.filter((m) => m.isPinned && !m.isRecalled && !m.isDeleted);
-    return orderPinnedMessagesMRU(pinned, []);
-  }, [messages]);
+    return orderPinnedMessagesMRU(pinned, pinnedMessageOrder);
+  }, [messages, pinnedMessageOrder]);
 
   const memberNameById = useMemo(() => {
     const m = new Map<string, string>();
