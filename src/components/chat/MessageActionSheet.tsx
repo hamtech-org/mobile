@@ -1,23 +1,42 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import BottomSheet, {
   BottomSheetBackdrop,
   BottomSheetView,
   type BottomSheetBackdropProps,
 } from "@gorhom/bottom-sheet";
-import { Copy, CornerUpLeft, Pencil, Pin, PinOff, RotateCcw, Trash2 } from "lucide-react-native";
+import {
+  Copy,
+  CornerUpLeft,
+  Download,
+  ExternalLink,
+  Image as ImageIcon,
+  Maximize2,
+  Pencil,
+  Pin,
+  PinOff,
+  RotateCcw,
+  Share2,
+  Trash2,
+} from "lucide-react-native";
 import * as Clipboard from "expo-clipboard";
+import * as FileSystem from "expo-file-system/legacy";
 
 import { useIconColors } from "@/hooks/useIconColors";
 import type { IMessage } from "@/types/chat.types";
+import { chatMediaDownloadFilename, chatMediaDownloadUrl } from "@/utils/chatMediaDisplay";
+import {
+  downloadChatFileToDevice,
+  downloadChatMediaToCache,
+  openOrShareChatFile,
+  saveChatMediaToLibrary,
+} from "@/utils/chatMediaDownload";
 import { toast } from "@/utils/appToast";
+import { canPinMessage, QUICK_REACT_EMOJIS } from "@/utils/chatMessageActions";
 
 interface MessageActionSheetProps {
-  /** Tin nhắn đang được chọn (null = ẩn sheet) */
   message: IMessage | null;
-  /** Có phải tin nhắn của chính mình không */
   isOwn: boolean;
-  /** Callbacks */
   onReply: (msg: IMessage) => void;
   onEdit: (msg: IMessage) => void;
   onRecall: (msg: IMessage) => void;
@@ -25,14 +44,34 @@ interface MessageActionSheetProps {
   onTogglePin: (msg: IMessage) => void;
   onReact: (msg: IMessage, emoji: string) => void;
   onClose: () => void;
+  onMediaSaved?: (messageId: string) => void;
+  /** Xem ảnh/video toàn màn hình sau khi đóng sheet. */
+  onPreviewMedia?: (msg: IMessage) => void;
+  /** Mở file (PDF, …) sau khi đóng sheet. */
+  onOpenFile?: (msg: IMessage) => void;
 }
 
-const QUICK_EMOJIS = ["❤️", "👍", "😂", "😮", "😢", "😡"];
+function isMediaActionMessage(msg: IMessage | null): msg is IMessage {
+  return (
+    !!msg &&
+    (msg.type === "image" ||
+      msg.type === "sticker" ||
+      msg.type === "video" ||
+      msg.type === "file") &&
+    Boolean(msg.mediaUrl)
+  );
+}
+
+function isImageCopyMessage(msg: IMessage): boolean {
+  return msg.type === "image" || msg.type === "sticker";
+}
+
+function hasCopyableCaption(msg: IMessage): boolean {
+  return Boolean((msg.content ?? "").trim());
+}
 
 /**
- * MessageActionSheet — Bottom Sheet hiện khi long-press message.
- * - Quick emoji react row
- * - Reply, Copy, Edit (own), Recall (own), Pin/Unpin, Delete
+ * Bottom sheet khi giữ tin — dùng chung cho chữ, ảnh, video, file (giống ảnh mẫu).
  */
 export const MessageActionSheet = ({
   message,
@@ -44,16 +83,19 @@ export const MessageActionSheet = ({
   onTogglePin,
   onReact,
   onClose,
+  onMediaSaved,
+  onPreviewMedia,
+  onOpenFile,
 }: MessageActionSheetProps) => {
   const bottomSheetRef = useRef<BottomSheet>(null);
-  const snapPoints = useMemo(() => ["35%"], []);
+  const isMediaMessage = isMediaActionMessage(message);
+  const snapPoints = useMemo(() => [isMediaMessage ? "58%" : "44%"], [isMediaMessage]);
   const { foreground, muted } = useIconColors();
 
   const handleAction = useCallback(
     (action: (msg: IMessage) => void) => {
       if (!message) return;
       onClose();
-      // Delay nhẹ để animation sheet đóng xong
       setTimeout(() => action(message), 150);
     },
     [message, onClose],
@@ -65,6 +107,105 @@ export const MessageActionSheet = ({
     onClose();
     toast.success("Đã sao chép");
   }, [message, onClose]);
+
+  const handleShareMedia = useCallback(async () => {
+    if (!message) return;
+    onClose();
+    const downloadUrl = chatMediaDownloadUrl(message);
+    if (!downloadUrl) {
+      toast.error("Không có file để chia sẻ.");
+      return;
+    }
+
+    try {
+      const ok = await openOrShareChatFile(
+        downloadUrl,
+        chatMediaDownloadFilename(
+          message,
+          message.type === "video" ? "video" : message.type === "file" ? "file" : "media",
+        ),
+        message.mediaType,
+      );
+      toast[ok ? "success" : "error"](
+        ok ? "Đã mở bảng chia sẻ" : "Không chia sẻ được. Thử lại sau.",
+      );
+    } catch {
+      toast.error("Không chia sẻ được. Thử lại sau.");
+    }
+  }, [message, onClose]);
+
+  const handleCopyImage = useCallback(async () => {
+    if (!message || !isImageCopyMessage(message)) return;
+    onClose();
+    const downloadUrl = chatMediaDownloadUrl(message);
+    if (!downloadUrl) {
+      toast.error("Không có hình ảnh để copy.");
+      return;
+    }
+
+    try {
+      const { ok, localUri } = await downloadChatMediaToCache(
+        downloadUrl,
+        chatMediaDownloadFilename(message, message.type === "sticker" ? "sticker" : "image"),
+      );
+      if (!ok || !localUri) {
+        toast.error("Không copy được hình ảnh.");
+        return;
+      }
+      const base64 = await FileSystem.readAsStringAsync(localUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      await Clipboard.setImageAsync(base64);
+      toast.success("Đã copy hình ảnh");
+    } catch {
+      toast.error("Không copy được hình ảnh.");
+    }
+  }, [message, onClose]);
+
+  const handleSaveMedia = useCallback(async () => {
+    if (!message) return;
+    const messageId = message.messageId;
+    onClose();
+    const downloadUrl = chatMediaDownloadUrl(message);
+    if (!downloadUrl) {
+      toast.error("Không có file để lưu.");
+      return;
+    }
+
+    try {
+      if (message.type === "image" || message.type === "sticker") {
+        const ok = await saveChatMediaToLibrary(
+          downloadUrl,
+          chatMediaDownloadFilename(message, message.type === "sticker" ? "sticker" : "image"),
+          "image",
+        );
+        if (ok) onMediaSaved?.(messageId);
+        toast[ok ? "success" : "error"](ok ? "Đã lưu ảnh" : "Không lưu được ảnh.");
+        return;
+      }
+      if (message.type === "video") {
+        const ok = await saveChatMediaToLibrary(
+          downloadUrl,
+          chatMediaDownloadFilename(message, "video"),
+          "video",
+        );
+        if (ok) onMediaSaved?.(messageId);
+        toast[ok ? "success" : "error"](ok ? "Đã lưu video" : "Không lưu được video.");
+        return;
+      }
+      if (message.type === "file") {
+        const ok = await downloadChatFileToDevice(
+          downloadUrl,
+          chatMediaDownloadFilename(message, "file"),
+          message.mediaType,
+        );
+        if (ok) onMediaSaved?.(messageId);
+        toast[ok ? "success" : "error"](ok ? "Đã lưu file vào Tài liệu." : "Không tải được file.");
+      }
+    } catch {
+      toast.error("Không lưu được. Thử lại sau.");
+    }
+  }, [message, onClose, onMediaSaved]);
 
   const handleEmojiReact = useCallback(
     (emoji: string) => {
@@ -90,6 +231,9 @@ export const MessageActionSheet = ({
 
   if (!message) return null;
 
+  const showCopy = message.type === "text" || (isMediaMessage && hasCopyableCaption(message));
+  const showEdit = isOwn && message.type === "text";
+
   return (
     <BottomSheet
       ref={bottomSheetRef}
@@ -101,10 +245,9 @@ export const MessageActionSheet = ({
       backgroundStyle={{ backgroundColor: "transparent" }}
       handleIndicatorStyle={{ backgroundColor: muted, width: 40 }}
     >
-      <BottomSheetView className="flex-1 rounded-t-3xl bg-card px-4 pb-6">
-        {/* Quick emoji react row */}
+      <BottomSheetView className="flex-1 rounded-t-3xl bg-card px-4 pb-8">
         <View className="flex-row justify-center gap-3 border-b border-border/30 py-3">
-          {QUICK_EMOJIS.map((emoji) => (
+          {QUICK_REACT_EMOJIS.map((emoji) => (
             <Pressable
               key={emoji}
               onPress={() => handleEmojiReact(emoji)}
@@ -115,56 +258,100 @@ export const MessageActionSheet = ({
           ))}
         </View>
 
-        {/* Actions */}
-        <View className="mt-2">
-          {/* Reply */}
+        <View className="mt-1">
           <ActionItem
             icon={<CornerUpLeft size={20} color={foreground} strokeWidth={1.5} />}
             label="Trả lời"
             onPress={() => handleAction(onReply)}
           />
 
-          {/* Copy */}
-          {message.type === "text" && (
+          {showCopy ? (
             <ActionItem
               icon={<Copy size={20} color={foreground} strokeWidth={1.5} />}
               label="Sao chép"
-              onPress={handleCopy}
+              onPress={() => void handleCopy()}
             />
-          )}
+          ) : null}
 
-          {/* Edit (own only) */}
-          {isOwn && message.type === "text" && (
+          {showEdit ? (
             <ActionItem
               icon={<Pencil size={20} color={foreground} strokeWidth={1.5} />}
               label="Chỉnh sửa"
               onPress={() => handleAction(onEdit)}
             />
-          )}
+          ) : null}
 
-          {/* Pin/Unpin */}
-          <ActionItem
-            icon={
-              message.isPinned ? (
-                <PinOff size={20} color={foreground} strokeWidth={1.5} />
-              ) : (
-                <Pin size={20} color={foreground} strokeWidth={1.5} />
-              )
-            }
-            label={message.isPinned ? "Bỏ ghim" : "Ghim"}
-            onPress={() => handleAction(onTogglePin)}
-          />
+          {isMediaMessage &&
+          message &&
+          (message.type === "image" || message.type === "sticker" || message.type === "video") &&
+          onPreviewMedia ? (
+            <ActionItem
+              icon={
+                message.type === "video" ? (
+                  <Maximize2 size={20} color={foreground} strokeWidth={1.5} />
+                ) : (
+                  <ImageIcon size={20} color={foreground} strokeWidth={1.5} />
+                )
+              }
+              label={message.type === "video" ? "Xem video toàn màn hình" : "Xem ảnh lớn"}
+              onPress={() => handleAction(onPreviewMedia)}
+            />
+          ) : null}
 
-          {/* Recall (own only) */}
-          {isOwn && (
+          {isMediaMessage && message?.type === "file" && onOpenFile ? (
+            <ActionItem
+              icon={<ExternalLink size={20} color={foreground} strokeWidth={1.5} />}
+              label="Mở file"
+              onPress={() => handleAction(onOpenFile)}
+            />
+          ) : null}
+
+          {isMediaMessage ? (
+            <ActionItem
+              icon={<Share2 size={20} color={foreground} strokeWidth={1.5} />}
+              label="Chia sẻ"
+              onPress={() => void handleShareMedia()}
+            />
+          ) : null}
+
+          {isMediaMessage && isImageCopyMessage(message) ? (
+            <ActionItem
+              icon={<ImageIcon size={20} color={foreground} strokeWidth={1.5} />}
+              label="Copy hình ảnh"
+              onPress={() => void handleCopyImage()}
+            />
+          ) : null}
+
+          {isMediaMessage ? (
+            <ActionItem
+              icon={<Download size={20} color={foreground} strokeWidth={1.5} />}
+              label="Lưu về máy"
+              onPress={() => void handleSaveMedia()}
+            />
+          ) : null}
+
+          {canPinMessage(message) ? (
+            <ActionItem
+              icon={
+                message.isPinned ? (
+                  <PinOff size={20} color={foreground} strokeWidth={1.5} />
+                ) : (
+                  <Pin size={20} color={foreground} strokeWidth={1.5} />
+                )
+              }
+              label={message.isPinned ? "Bỏ ghim tin nhắn" : "Ghim tin nhắn"}
+              onPress={() => handleAction(onTogglePin)}
+            />
+          ) : null}
+
+          {isOwn ? (
             <ActionItem
               icon={<RotateCcw size={20} color={foreground} strokeWidth={1.5} />}
               label="Thu hồi"
               onPress={() => handleAction(onRecall)}
             />
-          )}
+          ) : null}
 
-          {/* Delete */}
           <ActionItem
             icon={<Trash2 size={20} color="#ef4444" strokeWidth={1.5} />}
             label="Xóa"
@@ -177,15 +364,13 @@ export const MessageActionSheet = ({
   );
 };
 
-// ── Action Item ─────────────────────────────────────────────────────────
-
 function ActionItem({
   icon,
   label,
   labelColor,
   onPress,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   labelColor?: string;
   onPress: () => void;
