@@ -221,6 +221,35 @@ export default function ChatDetailScreen() {
     return filterGroupMembersExcludingRemoved(conversationId, groupMembersRaw);
   }, [conversationId, groupMembersRaw]);
 
+  const conversationSearchMembers = useMemo(() => {
+    if (groupMembersForPerm.length > 0) {
+      return groupMembersForPerm.map((m) => ({
+        userId: m.userId,
+        displayName: m.displayName,
+      }));
+    }
+    if (!conversation || conversation.type === "group") return [];
+    const otherId = conversation.otherUserId?.trim();
+    if (!otherId) return [];
+    const rows: { userId: string; displayName: string | null }[] = [];
+    const selfId = currentUserId?.trim();
+    if (selfId) rows.push({ userId: selfId, displayName: "Bạn" });
+    rows.push({ userId: otherId, displayName: (conversation.name ?? "").trim() || null });
+    return rows;
+  }, [groupMembersForPerm, conversation, currentUserId]);
+
+  const memberAvatarById = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const m of groupMembersForPerm) {
+      const url = m.avatar?.trim();
+      if (url) map[m.userId] = url;
+    }
+    const otherId = conversation?.otherUserId?.trim();
+    const avatar = conversation?.avatar?.trim();
+    if (otherId && avatar) map[otherId] = avatar;
+    return map;
+  }, [groupMembersForPerm, conversation?.otherUserId, conversation?.avatar]);
+
   const resolvedGroupMemberCount = useMemo(() => {
     if (!isGroup) return undefined;
     const fromList = groupMembersForPerm.length;
@@ -1139,6 +1168,10 @@ export default function ChatDetailScreen() {
         onClose={() => setInChatSearchOpen(false)}
         messages={allMessages}
         currentUserId={currentUserId}
+        conversationId={conversationId}
+        conversationTitle={conversation?.name ?? undefined}
+        conversationMembers={conversationSearchMembers}
+        memberAvatarById={memberAvatarById}
         onSelectMessage={handleJumpToMessage}
       />
     </SafeAreaView>
