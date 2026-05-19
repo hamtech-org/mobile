@@ -78,7 +78,7 @@ import {
 import { openOrShareChatFile } from "@/utils/chatMediaDownload";
 
 import { BulletinPinnedMessageCard } from "@/components/chat/BulletinPinnedMessageCard";
-import { ChatFileTypeBadge } from "@/components/chat/ChatFileTypeBadge";
+import { ChatSharedFileRow } from "@/components/chat/ChatSharedFileRow";
 import { BulletinTaskCard } from "@/components/chat/BulletinTaskCard";
 import { Avatar } from "@/components/common/Avatar";
 import { MAX_PINNED_PER_CONVERSATION } from "@/constants/chatPin";
@@ -2048,16 +2048,20 @@ export function GroupManageModal({
         </Text>
       );
     }
-    return pinnedList.map((m) => (
-      <BulletinPinnedMessageCard
-        key={m.messageId}
-        msg={m}
-        when={formatBulletinFooterTime(m.createdAt)}
-        viewerUserId={effectiveUserId ?? ""}
-        onPress={() => jumpToPinnedMessage(m.messageId)}
-        disabled={!onJumpToMessage}
-      />
-    ));
+    return (
+      <View style={styles.bulletinPinnedList}>
+        {pinnedList.map((m) => (
+          <BulletinPinnedMessageCard
+            key={m.messageId}
+            msg={m}
+            when={formatBulletinFooterTime(m.createdAt)}
+            viewerUserId={effectiveUserId ?? ""}
+            onPress={() => jumpToPinnedMessage(m.messageId)}
+            disabled={!onJumpToMessage}
+          />
+        ))}
+      </View>
+    );
   };
 
   const renderPollCards = (emptyHint: string) => {
@@ -2335,14 +2339,11 @@ export function GroupManageModal({
       const fileMessages = mediaMessages.filter((m) => m.type === "file");
       return (
         <FlatList
+          style={styles.mediaFileList}
           data={fileMessages}
           keyExtractor={(m) => m.messageId}
-          contentContainerStyle={{
-            paddingTop: 14,
-            paddingBottom: 24,
-            paddingHorizontal: 22,
-            gap: 10,
-          }}
+          contentContainerStyle={styles.mediaFileListContent}
+          showsVerticalScrollIndicator={false}
           ListEmptyComponent={
             <Text
               style={[styles.help, { textAlign: "center", marginTop: 24, paddingHorizontal: 16 }]}
@@ -2350,17 +2351,17 @@ export function GroupManageModal({
               Chưa có file được chia sẻ.
             </Text>
           }
+          ItemSeparatorComponent={() => <View style={styles.mediaFileListSeparator} />}
           renderItem={({ item: m }) => {
             const { fileName, mimeType } = resolveChatFileBubbleMeta(m);
             const who =
               memberNameById.get(m.senderId) ?? m.senderDisplayName?.trim() ?? "Thành viên";
             const when = formatBulletinFooterTime(m.createdAt);
             return (
-              <Pressable
-                style={({ pressed }) => [
-                  styles.mediaFileRow,
-                  pressed ? styles.mediaFileRowPressed : null,
-                ]}
+              <ChatSharedFileRow
+                fileName={fileName}
+                mimeType={mimeType}
+                metaLine={`${who} · ${when || "—"}`}
                 onPress={() => {
                   if (!m.mediaUrl) return;
                   void openOrShareChatFile(
@@ -2369,17 +2370,7 @@ export function GroupManageModal({
                     m.mediaType,
                   );
                 }}
-              >
-                <ChatFileTypeBadge fileName={fileName} mimeType={mimeType} size="lg" />
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.mediaFileName} numberOfLines={1}>
-                    {fileName}
-                  </Text>
-                  <Text style={styles.mediaFileMeta} numberOfLines={1}>
-                    {who} · {when || "—"}
-                  </Text>
-                </View>
-              </Pressable>
+              />
             );
           }}
         />
@@ -2732,7 +2723,11 @@ export function GroupManageModal({
                 </Pressable>
               </View>
               <Text
-                style={[styles.topTitleCenter, panel === "members" ? styles.mmTopTitle : null]}
+                style={[
+                  styles.topTitleCenter,
+                  panel === "members" ? styles.mmTopTitle : null,
+                  panel === "media" ? styles.mediaTopTitle : null,
+                ]}
                 numberOfLines={1}
               >
                 {headerTitle}
@@ -3499,6 +3494,11 @@ const styles = StyleSheet.create({
     textAlign: "center",
     letterSpacing: -0.2,
   },
+  mediaTopTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    letterSpacing: 0,
+  },
   body: { flex: 1, backgroundColor: Z.bg },
   scroll: { flex: 1, backgroundColor: Z.subBg },
   homeScrollContent: { paddingBottom: 48 },
@@ -3801,40 +3801,17 @@ const styles = StyleSheet.create({
   aiSheetTitle: { fontSize: 16, fontWeight: "700", color: Z.text },
   aiSheetSub: { fontSize: 11, color: Z.sub, marginTop: 2, fontWeight: "600" },
   thumbPlaceholder: { backgroundColor: Z.subBg, alignItems: "center", justifyContent: "center" },
-  mediaFileRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.08)",
+  mediaFileList: {
+    flex: 1,
     backgroundColor: Z.bg,
-    marginBottom: 12,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
   },
-  mediaFileRowPressed: {
-    borderColor: "rgba(0,104,255,0.35)",
-    shadowColor: "#0068FF",
-    shadowOpacity: 0.16,
-    elevation: 3,
+  mediaFileListContent: {
+    paddingTop: 14,
+    paddingBottom: 28,
+    paddingHorizontal: 16,
   },
-  mediaFileName: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: Z.text,
-    lineHeight: 24,
-  },
-  mediaFileMeta: {
-    marginTop: 5,
-    fontSize: 15,
-    color: Z.sub,
-    lineHeight: 20,
+  mediaFileListSeparator: {
+    height: 12,
   },
   menuRow: {
     flexDirection: "row",
@@ -4533,6 +4510,9 @@ const styles = StyleSheet.create({
     color: Z.sub,
     marginBottom: 8,
     marginTop: 4,
+  },
+  bulletinPinnedList: {
+    gap: 12,
   },
   bulletinPinCard: {
     borderWidth: 1,
