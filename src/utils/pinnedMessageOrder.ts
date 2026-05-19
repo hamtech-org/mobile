@@ -1,5 +1,18 @@
 import type { IMessage } from "@/types/chat.types";
 
+/** Cập nhật MRU khi ghim/bỏ ghim — đồng bộ web `useChatRealtimeEvents` / `useMessagePinController`. */
+export function applyPinnedMruOrderUpdate(
+  orderIds: string[],
+  messageId: string,
+  isPinned: boolean,
+): string[] {
+  const cur = orderIds ?? [];
+  if (isPinned) {
+    return [messageId, ...cur.filter((id) => id !== messageId)];
+  }
+  return cur.filter((id) => id !== messageId);
+}
+
 /** Sắp tin ghim theo MRU — đồng bộ web `useChatMessageData.pinnedMessagesOrdered`. */
 export function orderPinnedMessagesMRU(pinned: IMessage[], orderIds: string[]): IMessage[] {
   if (pinned.length === 0) return [];
