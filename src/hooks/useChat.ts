@@ -206,7 +206,7 @@ export const useChat = () => {
   const togglePinMessage = useCallback(
     async (msg: IMessage): Promise<void> => {
       const conversationId = msg.conversationId;
-      const actorLabel = msg.senderId === currentUserId ? "Bạn" : "Ai đó";
+      const actorLabel = "Bạn";
       const nextPinned = !msg.isPinned;
       const mutation = msg.isPinned ? unpinMessageMutation : pinMessageMutation;
       await mutation({
@@ -223,7 +223,7 @@ export const useChat = () => {
       );
       pushLocalPinSystemLine({ conversationId, actorLabel, pinned: nextPinned });
     },
-    [pinMessageMutation, unpinMessageMutation, dispatch, currentUserId, pushLocalPinSystemLine],
+    [pinMessageMutation, unpinMessageMutation, dispatch, pushLocalPinSystemLine],
   );
 
   // ── Thả cảm xúc ───────────────────────────────────────────────────
