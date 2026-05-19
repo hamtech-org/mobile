@@ -198,7 +198,7 @@ const Z = {
   sub: "#6B7280",
   border: "#E5E7EB",
   primary: "#0068FF",
-  red: "#DC2626",
+  red: "#EF4444",
   line: "#E5E7EB",
 };
 
@@ -498,6 +498,10 @@ export function GroupManageModal({
     () => members.filter((m) => m.userId !== effectiveUserId),
     [members, effectiveUserId],
   );
+
+  const effectiveMemberCount = members.length;
+  const leaveBlockedByMinMembers = effectiveMemberCount <= MIN_GROUP_MEMBERS;
+  const leaveMinMembersHint = `Nhóm cần còn tối thiểu ${MIN_GROUP_MEMBERS} thành viên sau khi có người rời (hiện ${effectiveMemberCount} người). Hãy mời thêm thành viên hoặc giải tán nhóm.`;
 
   const joinSuffix = settings?.joinLinkSuffix;
   const joinUrl = joinUrlFromSuffix(joinSuffix);
@@ -876,9 +880,13 @@ export function GroupManageModal({
   );
 
   const handleLeavePress = useCallback(() => {
+    if (leaveBlockedByMinMembers) {
+      toast.warning(leaveMinMembersHint);
+      return;
+    }
     if (isOwner) {
       if (othersForOwnerHandoff.length === 0) {
-        toast.warning("Bạn là thành viên duy nhất. Hãy giải tán nhóm thay vì rời nhóm");
+        toast.warning("Không còn thành viên khác để chuyển quyền. Hãy giải tán nhóm.");
         return;
       }
       setPickOwnerForLeave(true);
@@ -888,7 +896,21 @@ export function GroupManageModal({
       { text: "Hủy", style: "cancel" },
       { text: "Rời nhóm", style: "destructive", onPress: () => void runLeave() },
     ]);
-  }, [isOwner, othersForOwnerHandoff.length, runLeave]);
+  }, [
+    leaveBlockedByMinMembers,
+    leaveMinMembersHint,
+    isOwner,
+    othersForOwnerHandoff.length,
+    runLeave,
+  ]);
+
+  const handleTransferPress = useCallback(() => {
+    if (othersForOwnerHandoff.length === 0) {
+      toast.warning("Không còn thành viên khác để chuyển quyền. Hãy giải tán nhóm.");
+      return;
+    }
+    setPanel("transferOwner");
+  }, [othersForOwnerHandoff.length]);
 
   const handleDeleteGroup = useCallback(() => {
     Alert.alert("Giải tán nhóm", "Mọi thành viên sẽ bị xóa khỏi nhóm.", [
@@ -1362,53 +1384,41 @@ export function GroupManageModal({
         />
       </View>
 
-      <View style={styles.homeActionsWrap}>
+      <View className="mt-2 gap-3 bg-white p-4">
         {isOwner ? (
           <Pressable
-            style={({ pressed }) => [
-              styles.homeBtnTransfer,
-              pressed ? { opacity: 0.9 } : null,
-              busy ? { opacity: 0.5 } : null,
-            ]}
-            onPress={() => setPanel("transferOwner")}
+            className={`flex-row items-center justify-center gap-2 rounded-xl border border-[#0068ff]/30 px-4 py-3 active:bg-[#0068ff]/10 ${busy ? "opacity-50" : ""}`}
+            onPress={handleTransferPress}
             disabled={busy}
           >
             {transferringOwner ? (
               <ActivityIndicator color={Z.primary} />
             ) : (
-              <Text style={styles.homeBtnTransferText}>Chuyển quyền trưởng nhóm</Text>
+              <Text className="text-sm font-bold text-[#0068ff]">Chuyển quyền trưởng nhóm</Text>
             )}
           </Pressable>
         ) : null}
         <Pressable
-          style={({ pressed }) => [
-            styles.homeBtnLeave,
-            pressed ? { opacity: 0.9 } : null,
-            busy ? { opacity: 0.5 } : null,
-          ]}
+          className={`flex-row items-center justify-center gap-2 rounded-xl border border-red-500/25 px-4 py-3 active:bg-red-500/10 ${busy ? "opacity-50" : ""} ${leaveBlockedByMinMembers ? "opacity-60" : ""}`}
           onPress={handleLeavePress}
           disabled={busy}
         >
           {leaving ? (
             <ActivityIndicator color={Z.red} />
           ) : (
-            <Text style={styles.homeBtnLeaveText}>Rời nhóm</Text>
+            <Text className="text-sm font-bold text-red-500">Rời nhóm</Text>
           )}
         </Pressable>
         {isOwner ? (
           <Pressable
-            style={({ pressed }) => [
-              styles.homeBtnDisband,
-              pressed ? { opacity: 0.92 } : null,
-              busy ? { opacity: 0.5 } : null,
-            ]}
+            className={`flex-row items-center justify-center gap-2 rounded-xl bg-[#EF4444] px-4 py-3 active:bg-red-600 ${busy ? "opacity-50" : ""}`}
             onPress={handleDeleteGroup}
             disabled={busy}
           >
             {deleting ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.homeBtnDisbandText}>Giải tán nhóm</Text>
+              <Text className="text-sm font-bold text-white">Giải tán nhóm</Text>
             )}
           </Pressable>
         ) : null}
@@ -3229,54 +3239,6 @@ const styles = StyleSheet.create({
   },
   homeNavRowLast: { borderBottomWidth: 0 },
   homeNavRowLabel: { fontSize: 14, fontWeight: "700", color: Z.text },
-  homeActionsWrap: {
-    marginTop: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    gap: 8,
-    backgroundColor: Z.bg,
-  },
-  homeBtnTransfer: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(0, 104, 255, 0.25)",
-  },
-  homeBtnTransferText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: Z.primary,
-  },
-  homeBtnLeave: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(239, 68, 68, 0.2)",
-  },
-  homeBtnLeaveText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: Z.red,
-  },
-  homeBtnDisband: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    backgroundColor: "#EF4444",
-  },
-  homeBtnDisbandText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#fff",
-  },
   bulletinRow: {
     flexDirection: "row",
     alignItems: "center",
