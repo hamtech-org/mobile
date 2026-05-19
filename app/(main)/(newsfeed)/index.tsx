@@ -4,7 +4,6 @@ import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SearchBar } from "@/components/common/SearchBar";
 import { ScreenHeader } from "@/components/layout/ScreenHeader";
-import { REELS_MOCK } from "@/features/newsfeed/constants/newsfeed.constants";
 import { useNewsfeedPagination } from "@/features/newsfeed/hooks/useNewsfeedPagination";
 import { useNewsfeedSearch } from "@/features/newsfeed/hooks/useNewsfeedSearch";
 import { useCreatePostHeader } from "@/features/newsfeed/hooks/useCreatePostHeader";
@@ -50,7 +49,7 @@ export default function NewsfeedScreen() {
               initial={createPostInitial}
               onPressCreate={() => router.push("/(main)/(newsfeed)/editor/new")}
             />
-            <ReelsStrip reels={REELS_MOCK} />
+            <ReelsStrip />
           </View>
         }
         onEndReached={loadMore}

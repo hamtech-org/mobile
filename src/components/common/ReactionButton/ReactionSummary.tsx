@@ -53,7 +53,7 @@ export const ReactionSummary: React.FC<ReactionSummaryProps> = ({ summary, size 
             ]}
           >
             <LottieView
-              source={lottie}
+              source={lottie as any}
               autoPlay={true}
               loop={false}
               style={{ width: lottieSize, height: lottieSize }}
