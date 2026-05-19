@@ -91,9 +91,15 @@ export function PinLimitModal({
                     <View style={styles.rowIcon}>
                       <MessageSquare size={18} color="#fff" strokeWidth={2} />
                     </View>
-                    <View style={styles.rowBody}>
+                    <View style={[styles.rowBody, { minWidth: 0, overflow: "hidden" }]}>
                       <Text style={styles.rowTitle}>Tin nhắn</Text>
-                      <PinnedRowPreview msg={msg} viewerUserId={currentUserId} mutedColor={Z.sub} />
+                      <View style={{ minWidth: 0, overflow: "hidden", marginTop: 2 }}>
+                        <PinnedRowPreview
+                          msg={msg}
+                          viewerUserId={currentUserId}
+                          mutedColor={Z.sub}
+                        />
+                      </View>
                     </View>
                     <View
                       style={[styles.radio, checked && styles.radioChecked]}
