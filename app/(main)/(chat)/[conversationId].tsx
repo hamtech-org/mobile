@@ -129,6 +129,7 @@ export default function ChatDetailScreen() {
 
   const currentUserId = useAppSelector((state) => state.auth.user?.userId);
   const currentUserName = useAppSelector((state) => state.auth.user?.displayName ?? null);
+  const currentUserAvatar = useAppSelector((state) => state.auth.user?.avatar ?? null);
   const frameBanner = useAppSelector((state) => state.chat.frameBanner);
   const activeGroupCall = useAppSelector((state) => state.call.activeGroupCall);
   const callStatus = useAppSelector((state) => state.call.status);
@@ -226,17 +227,29 @@ export default function ChatDetailScreen() {
       return groupMembersForPerm.map((m) => ({
         userId: m.userId,
         displayName: m.displayName,
+        avatar: m.avatar ?? null,
       }));
     }
     if (!conversation || conversation.type === "group") return [];
     const otherId = conversation.otherUserId?.trim();
     if (!otherId) return [];
-    const rows: { userId: string; displayName: string | null }[] = [];
+    const rows: {
+      userId: string;
+      displayName: string | null;
+      avatar?: string | null;
+    }[] = [];
     const selfId = currentUserId?.trim();
-    if (selfId) rows.push({ userId: selfId, displayName: "Bạn" });
-    rows.push({ userId: otherId, displayName: (conversation.name ?? "").trim() || null });
+    const selfAvatar = (typeof currentUserAvatar === "string" ? currentUserAvatar : "").trim();
+    if (selfId) {
+      rows.push({ userId: selfId, displayName: "Bạn", avatar: selfAvatar || null });
+    }
+    rows.push({
+      userId: otherId,
+      displayName: (conversation.name ?? "").trim() || null,
+      avatar: conversation.avatar ?? null,
+    });
     return rows;
-  }, [groupMembersForPerm, conversation, currentUserId]);
+  }, [groupMembersForPerm, conversation, currentUserId, currentUserAvatar]);
 
   const memberAvatarById = useMemo(() => {
     const map: Record<string, string> = {};
@@ -247,8 +260,17 @@ export default function ChatDetailScreen() {
     const otherId = conversation?.otherUserId?.trim();
     const avatar = conversation?.avatar?.trim();
     if (otherId && avatar) map[otherId] = avatar;
+    const selfId = currentUserId?.trim();
+    const selfAvatar = (typeof currentUserAvatar === "string" ? currentUserAvatar : "").trim();
+    if (selfId && selfAvatar) map[selfId] = selfAvatar;
     return map;
-  }, [groupMembersForPerm, conversation?.otherUserId, conversation?.avatar]);
+  }, [
+    groupMembersForPerm,
+    conversation?.otherUserId,
+    conversation?.avatar,
+    currentUserId,
+    currentUserAvatar,
+  ]);
 
   const resolvedGroupMemberCount = useMemo(() => {
     if (!isGroup) return undefined;
