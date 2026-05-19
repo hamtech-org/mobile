@@ -7,6 +7,7 @@ import {
   MessageCircle,
   MessageSquare,
   Pin,
+  QrCode,
   Search,
   UserPlus,
   Users,
@@ -22,6 +23,9 @@ import {
   MutedConversationsFooter,
   MuteNotificationsModal,
 } from "@/components/chat";
+import { GroupJoinQrScannerModal } from "@/components/chat/GroupJoinQrScannerModal";
+import { useGroupJoinLinkModal } from "@/contexts/GroupJoinLinkModalContext";
+import { getJoinGroupUrl } from "@/utils/joinGroupUrl";
 import {
   useGetConversationsQuery,
   usePatchConversationPreferencesMutation,
@@ -58,6 +62,8 @@ export default function ChatListScreen() {
   const [patchPrefs] = usePatchConversationPreferencesMutation();
   const [searchText, setSearchText] = useState("");
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
+  const [qrScannerOpen, setQrScannerOpen] = useState(false);
+  const { openGroupJoinLinkModal } = useGroupJoinLinkModal();
   const [muteTarget, setMuteTarget] = useState<IConversation | null>(null);
   const [muteSubmitting, setMuteSubmitting] = useState(false);
   const [mutedExpanded, setMutedExpanded] = useState(false);
@@ -114,6 +120,18 @@ export default function ChatListScreen() {
   const openConversationQuickMenu = useCallback((item: IConversation) => {
     setQuickMenuConversation(item);
   }, []);
+
+  const handleQrScannedSuffix = useCallback(
+    (suffix: string) => {
+      setQrScannerOpen(false);
+      openGroupJoinLinkModal({
+        suffix,
+        url: getJoinGroupUrl(suffix),
+        groupName: "Nhóm chat",
+      });
+    },
+    [openGroupJoinLinkModal],
+  );
 
   const {
     listRows,
@@ -242,6 +260,14 @@ export default function ChatListScreen() {
         <View className="min-w-0 flex-1">
           <SearchBar value={searchText} onChangeText={setSearchText} placeholder="Tìm kiếm" />
         </View>
+        <Pressable
+          className="size-10 shrink-0 items-center justify-center rounded-lg active:bg-muted/60"
+          hitSlop={6}
+          onPress={() => setQrScannerOpen(true)}
+          accessibilityLabel="Quét mã QR tham gia nhóm"
+        >
+          <QrCode size={20} color={primary} strokeWidth={1.75} />
+        </Pressable>
         <Pressable
           className="size-10 shrink-0 items-center justify-center rounded-lg active:bg-muted/60"
           hitSlop={6}
@@ -379,6 +405,12 @@ export default function ChatListScreen() {
       </View>
 
       <CreateGroupModal visible={createGroupOpen} onClose={() => setCreateGroupOpen(false)} />
+
+      <GroupJoinQrScannerModal
+        visible={qrScannerOpen}
+        onClose={() => setQrScannerOpen(false)}
+        onScannedSuffix={handleQrScannedSuffix}
+      />
 
       <ConversationListActionSheet
         conversation={quickMenuConversation}
