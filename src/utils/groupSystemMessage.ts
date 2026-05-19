@@ -146,19 +146,35 @@ export function formatLegacyGroupProfileSystemLine(
   ctx: {
     senderId?: string | null;
     currentUserId?: string | null;
+    currentUserDisplayName?: string | null;
     senderDisplayName?: string | null;
+    isOwn?: boolean;
   },
 ): string | null {
   const trimmed = (raw ?? "").trim();
   if (!trimmed || trimmed.startsWith("{")) return null;
 
-  const isSelf = Boolean(ctx.currentUserId && ctx.senderId && ctx.senderId === ctx.currentUserId);
-  const who = isSelf
-    ? "Bạn"
-    : String(ctx.senderDisplayName ?? "").trim() ||
-      trimmed.split(/\s+(?:đã\s+)?đổi tên nhóm/i)[0]?.trim() ||
-      trimmed.split(/\s+đã cập nhật ảnh đại diện nhóm/i)[0]?.trim() ||
-      "Ai đó";
+  const actorName =
+    trimmed.split(/\s+(?:đã\s+)?đổi tên nhóm/i)[0]?.trim() ||
+    trimmed.split(/\s+đã cập nhật ảnh đại diện nhóm/i)[0]?.trim() ||
+    "";
+  const normalizeName = (value?: string | null) =>
+    String(value ?? "")
+      .trim()
+      .replace(/\s+/g, " ")
+      .toLocaleLowerCase("vi-VN");
+  const viewerName = normalizeName(ctx.currentUserDisplayName);
+  const isSelfByName = Boolean(
+    viewerName &&
+    (normalizeName(actorName) === viewerName ||
+      normalizeName(ctx.senderDisplayName) === viewerName),
+  );
+  const isSelf = Boolean(
+    ctx.isOwn ||
+    (ctx.currentUserId && ctx.senderId && ctx.senderId === ctx.currentUserId) ||
+    isSelfByName,
+  );
+  const who = isSelf ? "Bạn" : String(ctx.senderDisplayName ?? "").trim() || actorName || "Ai đó";
 
   if (trimmed.includes("đã cập nhật ảnh đại diện nhóm")) {
     return `${who} đã cập nhật ảnh đại diện nhóm`;
