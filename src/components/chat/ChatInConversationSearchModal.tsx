@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Image,
   Modal,
   Platform,
   Pressable,
@@ -12,7 +11,10 @@ import {
   View,
 } from "react-native";
 import DateTimePicker, { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
-import { Calendar, ChevronLeft, File, Search, User, X } from "lucide-react-native";
+import { Calendar, ChevronLeft, Search, User, X } from "lucide-react-native";
+import { ChatSharedFileRow } from "@/components/chat/ChatSharedFileRow";
+import { ConversationSearchMessageRow } from "@/components/chat/ConversationSearchMessageRow";
+import { resolveChatFileBubbleMeta } from "@/utils/chatMediaDisplay";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useIconColors } from "@/hooks/useIconColors";
@@ -27,6 +29,7 @@ export type ConversationSearchMemberRow = {
   userId?: string;
   displayName?: string | null;
   name?: string | null;
+  avatar?: string | null;
 };
 
 type ChatInConversationSearchModalProps = {
@@ -61,10 +64,6 @@ function searchHaystack(m: IMessage): string {
     .filter((x) => x != null && String(x).length > 0)
     .join(" ")
     .toLowerCase();
-}
-
-function escapeRegExp(s: string) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function isSearchableMessage(m: IMessage): boolean {
@@ -107,39 +106,6 @@ function formatDateFilterLabel(dateStr: string): string {
   return `${String(d).padStart(2, "0")}/${String(mo).padStart(2, "0")}/${y}`;
 }
 
-function HighlightMatch({
-  text,
-  needle,
-  baseClassName,
-  highlightClassName,
-}: {
-  text: string;
-  needle: string;
-  baseClassName: string;
-  highlightClassName: string;
-}) {
-  const n = needle.trim();
-  if (!n) return <Text className={baseClassName}>{text}</Text>;
-  try {
-    const parts = text.split(new RegExp(`(${escapeRegExp(n)})`, "gi"));
-    return (
-      <Text className={baseClassName}>
-        {parts.map((part, i) =>
-          part.toLowerCase() === n.toLowerCase() ? (
-            <Text key={i} className={highlightClassName}>
-              {part}
-            </Text>
-          ) : (
-            <Text key={i}>{part}</Text>
-          ),
-        )}
-      </Text>
-    );
-  } catch {
-    return <Text className={baseClassName}>{text}</Text>;
-  }
-}
-
 /**
  * Tìm tin nhắn / file trong hội thoại — đồng bộ web ConversationSearchPanel.
  */
@@ -167,6 +133,28 @@ export function ChatInConversationSearchModal({
   const [senderPickerOpen, setSenderPickerOpen] = useState(false);
   const [iosDatePickerOpen, setIosDatePickerOpen] = useState(false);
   const lastEmptyToastKey = useRef<string | null>(null);
+
+  const avatarBySenderId = useMemo(() => {
+    const map: Record<string, string> = { ...memberAvatarById };
+    for (const row of conversationMembers) {
+      const id = row.userId?.trim();
+      const url = row.avatar?.trim();
+      if (id && url) map[id] = url;
+    }
+    return map;
+  }, [memberAvatarById, conversationMembers]);
+
+  const displayNameBySenderId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const row of conversationMembers) {
+      const id = row.userId?.trim();
+      if (!id) continue;
+      const raw = (row.displayName ?? row.name ?? "").trim();
+      const label = currentUserId && id === currentUserId ? "Bạn" : raw || "Thành viên";
+      map.set(id, label);
+    }
+    return map;
+  }, [conversationMembers, currentUserId]);
 
   const memberSelectOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -348,18 +336,13 @@ export function ChatInConversationSearchModal({
     });
   };
 
-  const renderAvatar = (senderId: string, label: string) => {
-    const url = memberAvatarById[senderId];
-    const initial = label.trim().charAt(0).toUpperCase() || "?";
-    if (url) {
-      return <Image source={{ uri: url }} className="h-10 w-10 rounded-full" />;
-    }
-    return (
-      <View className="h-10 w-10 items-center justify-center rounded-full bg-black/10 dark:bg-white/10">
-        <Text className="text-[14px] font-semibold text-foreground">{initial}</Text>
-      </View>
-    );
-  };
+  const senderLabelFor = useCallback(
+    (m: IMessage) => {
+      if (m.senderId === currentUserId) return "Bạn";
+      return displayNameBySenderId.get(m.senderId) ?? m.senderDisplayName?.trim() ?? "Thành viên";
+    },
+    [currentUserId, displayNameBySenderId],
+  );
 
   return (
     <Modal
@@ -521,40 +504,20 @@ export function ChatInConversationSearchModal({
                   </Text>
                 ) : (
                   <>
-                    {shownMessages.map((m) => {
-                      const isMe = m.senderId === currentUserId;
-                      const who = isMe
-                        ? "Bạn"
-                        : m.senderDisplayName?.trim() || m.senderId || "Thành viên";
-                      const preview = formatChatPreviewLine(m, currentUserId ?? "");
-                      const time = formatZaloConversationTime(m.createdAt);
-                      return (
-                        <Pressable
+                    <View style={styles.messageCardList}>
+                      {shownMessages.map((m) => (
+                        <ConversationSearchMessageRow
                           key={m.messageId}
+                          message={m}
+                          currentUserId={currentUserId ?? ""}
+                          senderLabel={senderLabelFor(m)}
+                          avatarUri={avatarBySenderId[m.senderId] ?? null}
+                          timeLabel={formatZaloConversationTime(m.createdAt)}
+                          needle={needleForUi}
                           onPress={() => jump(m.messageId)}
-                          className="flex-row gap-2.5 border-b border-border/30 py-3 active:bg-primary/5"
-                        >
-                          {renderAvatar(m.senderId, who)}
-                          <View className="min-w-0 flex-1">
-                            <View className="flex-row items-center justify-between gap-2">
-                              <Text
-                                className="flex-1 text-[14px] font-bold text-foreground"
-                                numberOfLines={1}
-                              >
-                                {who}
-                              </Text>
-                              <Text className="shrink-0 text-xs text-muted-foreground">{time}</Text>
-                            </View>
-                            <HighlightMatch
-                              text={preview}
-                              needle={needleForUi}
-                              baseClassName="mt-0.5 text-[13px] text-muted-foreground"
-                              highlightClassName="rounded-sm bg-blue-500/25 font-medium text-blue-700 dark:text-blue-200"
-                            />
-                          </View>
-                        </Pressable>
-                      );
-                    })}
+                        />
+                      ))}
+                    </View>
                     {hasMoreMsg ? (
                       <Pressable
                         onPress={() => setMsgLimit((n) => n + INITIAL_MSG_LIMIT)}
@@ -582,7 +545,7 @@ export function ChatInConversationSearchModal({
                       const who = isMe
                         ? "Bạn"
                         : m.senderDisplayName?.trim() || m.senderId || "Thành viên";
-                      const name = m.mediaOriginalName?.trim() || "Tập tin";
+                      const { fileName, mimeType } = resolveChatFileBubbleMeta(m);
                       const sizeStr = formatFileSize(m.mediaSize ?? null);
                       const dateStr = m.createdAt
                         ? new Date(m.createdAt).toLocaleDateString("vi-VN", {
@@ -591,26 +554,14 @@ export function ChatInConversationSearchModal({
                           })
                         : "";
                       return (
-                        <Pressable
-                          key={m.messageId}
-                          onPress={() => jump(m.messageId)}
-                          className="mb-2 flex-row gap-3 rounded-xl border border-border/60 bg-card p-3 active:border-[#0068ff]/30"
-                        >
-                          <View className="bg-red-500/12 h-11 w-11 items-center justify-center rounded-lg">
-                            <File size={24} color="#DC2626" strokeWidth={2} />
-                          </View>
-                          <View className="min-w-0 flex-1">
-                            <HighlightMatch
-                              text={name}
-                              needle={needleForUi}
-                              baseClassName="text-[13px] font-semibold text-foreground"
-                              highlightClassName="rounded-sm bg-blue-500/25 font-medium text-blue-700"
-                            />
-                            <Text className="mt-1 text-[11px] text-muted-foreground">
-                              {[sizeStr, who, dateStr].filter(Boolean).join(" · ")}
-                            </Text>
-                          </View>
-                        </Pressable>
+                        <View key={m.messageId} style={{ marginBottom: 8 }}>
+                          <ChatSharedFileRow
+                            fileName={fileName}
+                            mimeType={mimeType}
+                            metaLine={[sizeStr, who, dateStr].filter(Boolean).join(" · ")}
+                            onPress={() => jump(m.messageId)}
+                          />
+                        </View>
                       );
                     })}
                     {hasMoreFile ? (
@@ -866,6 +817,9 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: Z.text,
     textAlign: "center",
+  },
+  messageCardList: {
+    gap: 8,
   },
   sheetBackdrop: {
     flex: 1,
