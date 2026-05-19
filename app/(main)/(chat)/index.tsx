@@ -44,6 +44,8 @@ import { MAX_PINNED_CHATS_TO_TOP } from "@/constants/chatPin";
 import { formatConversationListLastPreview } from "@/utils/conversationListPreview";
 import { sortConversationsForSidebar } from "@/utils/conversationListSort";
 import { formatUnreadBadge } from "@/utils/chatBadge";
+import { NotificationBellButton } from "@/components/notifications/NotificationBellButton";
+import { useDueTaskNotifications } from "@/hooks/useDueTaskNotifications";
 
 type ChatListRow =
   | {
@@ -69,6 +71,11 @@ export default function ChatListScreen() {
   const [mutedExpanded, setMutedExpanded] = useState(false);
   const [quickMenuConversation, setQuickMenuConversation] = useState<IConversation | null>(null);
   const { primary, muted: iconMuted } = useIconColors();
+
+  useDueTaskNotifications({
+    conversations: data ?? [],
+    currentUserId,
+  });
 
   const handleRetryFetch = useCallback(() => {
     void refetch();
@@ -254,6 +261,7 @@ export default function ChatListScreen() {
             </View>
           ) : null}
         </View>
+        <NotificationBellButton />
       </View>
 
       <View className="flex-row items-center gap-2 px-4 pb-3">

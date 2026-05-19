@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Text, View, Modal, Pressable } from "react-native";
 import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SearchBar } from "@/components/common/SearchBar";
 import { ScreenHeader } from "@/components/layout/ScreenHeader";
@@ -10,6 +11,7 @@ import { useCreatePostHeader } from "@/features/newsfeed/hooks/useCreatePostHead
 import { CreatePostHeader } from "@/features/newsfeed/components/CreatePostHeader";
 import { ReelsStrip } from "@/features/newsfeed/components/ReelsStrip";
 import { PaginatedFeedList } from "@/features/newsfeed/components/PaginatedFeedList";
+import { NotificationBellButton } from "@/components/notifications/NotificationBellButton";
 
 export default function NewsfeedScreen() {
   const router = useRouter();
@@ -22,18 +24,25 @@ export default function NewsfeedScreen() {
     <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
       <ScreenHeader
         title="Bảng tin"
-        rightActions={[
-          {
-            icon: "search-outline",
-            accessibilityLabel: "Tìm kiếm",
-            onPress: () => setIsSearchOpen(true),
-          },
-          {
-            icon: "add-circle-outline",
-            accessibilityLabel: "Tạo bài viết",
-            onPress: () => router.push("/(main)/(newsfeed)/editor/new"),
-          },
-        ]}
+        rightSlot={
+          <View className="flex-row items-center">
+            <Pressable
+              onPress={() => setIsSearchOpen(true)}
+              className="p-2 active:opacity-70"
+              accessibilityLabel="Tìm kiếm"
+            >
+              <Ionicons name="search-outline" size={22} color="hsl(var(--foreground) / 1)" />
+            </Pressable>
+            <NotificationBellButton />
+            <Pressable
+              onPress={() => router.push("/(main)/(newsfeed)/editor/new")}
+              className="p-2 active:opacity-70"
+              accessibilityLabel="Tạo bài viết"
+            >
+              <Ionicons name="add-circle-outline" size={24} color="hsl(var(--foreground) / 1)" />
+            </Pressable>
+          </View>
+        }
       />
 
       <PaginatedFeedList

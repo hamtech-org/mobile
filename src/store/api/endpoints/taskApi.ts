@@ -105,6 +105,16 @@ export const taskApi = chatApi.injectEndpoints({
       }),
       invalidatesTags: (_result, _error, { groupId }) => [{ type: "Tasks", id: groupId }],
     }),
+
+    triggerTaskDueReminder: builder.mutation<
+      ApiEnvelope<{ sent: boolean }>,
+      { groupId: string; taskId: string }
+    >({
+      query: ({ groupId, taskId }) => ({
+        url: `/chat/groups/${groupId}/tasks/${taskId}/remind-due`,
+        method: "POST",
+      }),
+    }),
   }),
   overrideExisting: false,
 });
@@ -116,4 +126,5 @@ export const {
   useJoinTaskMutation,
   useUpdateTaskMutation,
   useDeleteTaskMutation,
+  useTriggerTaskDueReminderMutation,
 } = taskApi;

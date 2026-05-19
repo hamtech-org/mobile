@@ -1,5 +1,1 @@
-export const useNotification = () => {
-  return {
-    register: async () => {},
-  };
-};
+export { usePushNotifications as useNotification } from "@/hooks/usePushNotifications";

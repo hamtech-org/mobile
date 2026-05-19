@@ -1,9 +1,16 @@
 import { Tabs } from "expo-router";
+import { useEffect, useMemo } from "react";
 import { useColorScheme, View } from "react-native";
 import { MessageCircleMore, Newspaper, PlayCircle, User, Users, Radio } from "lucide-react-native";
 
 import { ChatSocketBootstrap } from "@/components/chat/ChatSocketBootstrap";
+import { SocialSocketBootstrap } from "@/components/notifications/SocialSocketBootstrap";
 import { ReelUploadBanner } from "@/features/reels/components/ReelUploadBanner";
+import { useGetConversationsQuery } from "@/store/api/chatApi";
+import { useGetNotificationsQuery } from "@/store/api/notificationApi";
+import { useAppDispatch } from "@/hooks/useAppStore";
+import { setInboxNotifications, setInboxUnreadCount } from "@/store/slices/inboxNotificationSlice";
+import { formatUnreadBadge } from "@/utils/chatBadge";
 
 interface TabConfig {
   name: string;
@@ -23,10 +30,26 @@ const TABS: TabConfig[] = [
 export default function MainLayout() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
+  const dispatch = useAppDispatch();
+  const { data: conversations } = useGetConversationsQuery();
+  const { data: notifData } = useGetNotificationsQuery({ limit: 50 });
+
+  const chatTabBadge = useMemo(() => {
+    const total = (conversations ?? []).reduce((sum, c) => sum + (c.unreadCount ?? 0), 0);
+    return formatUnreadBadge(total);
+  }, [conversations]);
+
+  useEffect(() => {
+    if (notifData?.items) {
+      dispatch(setInboxNotifications(notifData.items));
+      dispatch(setInboxUnreadCount(notifData.unreadCount));
+    }
+  }, [dispatch, notifData]);
 
   return (
     <View style={{ flex: 1 }}>
       <ChatSocketBootstrap />
+      <SocialSocketBootstrap />
       <Tabs
         screenOptions={{
           headerShown: false,
@@ -53,12 +76,14 @@ export default function MainLayout() {
             name={tab.name}
             options={{
               title: tab.title,
+              tabBarBadge: tab.name === "(chat)" && chatTabBadge ? chatTabBadge : undefined,
               tabBarIcon: ({ focused, color, size }) => (
                 <tab.Icon size={size - 2} color={color} strokeWidth={focused ? 2.2 : 1.5} />
               ),
             }}
           />
         ))}
+        <Tabs.Screen name="(notifications)" options={{ href: null }} />
       </Tabs>
       <ReelUploadBanner />
     </View>
