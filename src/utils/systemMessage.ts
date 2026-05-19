@@ -1,5 +1,8 @@
 import type { IMessage } from "@/types/chat.types";
-import { formatGroupSystemChatLine } from "@/utils/groupSystemMessage";
+import {
+  formatGroupSystemChatLine,
+  formatLegacyGroupProfileSystemLine,
+} from "@/utils/groupSystemMessage";
 
 /** Tin hệ thống căn giữa (từ socket/API legacy). */
 export function isCenterPositionMessage(message: IMessage): boolean {
@@ -80,23 +83,20 @@ function viewerIsSender(message: IMessage, ctx: SystemMessageFormatContext): boo
   return Boolean(ctx.isOwn);
 }
 
-/** Chuẩn bị nội dung system (không parse JSON): thay tên → "Bạn" khi chính người gửi (đồng bộ web). */
+/** Chuẩn bị nội dung system (không parse JSON): xưng «Bạn» theo actor.userId / senderId. */
 export function preprocessSystemPlainText(
   message: IMessage,
   ctx: SystemMessageFormatContext,
 ): string {
+  const legacyProfile = formatLegacyGroupProfileSystemLine(message.content ?? "", {
+    senderId: message.senderId,
+    currentUserId: ctx.currentUserId,
+    senderDisplayName: message.senderDisplayName,
+    isOwn: ctx.isOwn,
+  });
+  if (legacyProfile) return legacyProfile;
+
   let text = message.content ?? "";
-  const imSender = viewerIsSender(message, ctx);
-
-  if (imSender && text.includes("đã cập nhật ảnh đại diện nhóm")) {
-    text = "Bạn đã cập nhật ảnh đại diện nhóm";
-  }
-
-  if (imSender && message.senderDisplayName) {
-    const name = message.senderDisplayName.trim();
-    if (name) text = replaceFirst(text, name, "Bạn");
-  }
-
   const trimmed = text.trim();
   if (trimmed.startsWith("{")) return text;
   return text.replace(/\bundefined\b/g, "Thành viên").replace(/\bnull\b/g, "Thành viên");
@@ -128,7 +128,14 @@ export function buildSystemBubbleView(
   ctx: SystemMessageFormatContext,
 ): SystemBubbleView {
   const rawContent = (message.content ?? "").trim();
-  const groupLine = formatGroupSystemChatLine(rawContent, ctx.currentUserId);
+  const groupLine =
+    formatGroupSystemChatLine(rawContent, ctx.currentUserId) ??
+    formatLegacyGroupProfileSystemLine(rawContent, {
+      senderId: message.senderId,
+      currentUserId: ctx.currentUserId,
+      senderDisplayName: message.senderDisplayName,
+      isOwn: ctx.isOwn,
+    });
   if (groupLine) {
     return { variant: "text", text: groupLine, rowIcon: systemRowIconForPlainText(groupLine) };
   }

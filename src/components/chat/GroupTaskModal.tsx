@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -16,8 +16,10 @@ import DateTimePicker, { DateTimePickerAndroid } from "@react-native-community/d
 import { Calendar, Check, CheckSquare, Clock, Users, X } from "lucide-react-native";
 
 import { Avatar } from "@/components/common/Avatar";
+import { useAppDispatch } from "@/hooks/useAppStore";
 import { useCreateTaskMutation, useUpdateTaskMutation } from "@/store/api/chatApi";
 import { toast } from "@/utils/appToast";
+import { patchTaskAssignedSystemMessages } from "@/utils/patchTaskAssignedSystemMessages";
 import {
   deadlineLocalInputToJsonValue,
   isoUtcToVietnamLocalDatetimeValue,
@@ -79,6 +81,7 @@ export function GroupTaskModal({
   existingTask,
   onDelete,
 }: GroupTaskModalProps): ReactElement {
+  const dispatch = useAppDispatch();
   const [createTask, { isLoading: submittingCreate }] = useCreateTaskMutation();
   const [updateTask, { isLoading: submittingUpdate }] = useUpdateTaskMutation();
   const submitting = submittingCreate || submittingUpdate;
@@ -193,8 +196,11 @@ export function GroupTaskModal({
     setAssignees((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
+  const submitInFlightRef = useRef(false);
+
   const submit = async () => {
-    if (!canSubmit || submitting) return;
+    if (!canSubmit || submitting || submitInFlightRef.current) return;
+    submitInFlightRef.current = true;
     const cleanSubtasks = subtaskRows
       .map((r) => ({
         assigneeId: String(r.assigneeId ?? ""),
@@ -203,6 +209,24 @@ export function GroupTaskModal({
       .filter((r) => r.assigneeId && r.content);
     try {
       if (existingTask?.taskId) {
+        const dueDateIso = deadlineLocalInputToJsonValue(taskDeadline) ?? undefined;
+        const byId = new Map(
+          members.map((m) => [m.userId, m.displayName?.trim() || m.userId] as const),
+        );
+        const assigneeLabel =
+          cleanSubtasks.length > 0
+            ? cleanSubtasks.map((r) => String(byId.get(r.assigneeId) ?? r.assigneeId)).join(", ")
+            : assignToAll
+              ? "Cả nhóm"
+              : assignees.map((id) => String(byId.get(id) ?? id)).join(", ") || "cả nhóm";
+        const assigneeUserIds =
+          cleanSubtasks.length > 0
+            ? cleanSubtasks.map((r) => String(r.assigneeId))
+            : assignToAll
+              ? []
+              : assignees.map((id) => String(id));
+        const assigneesCount = assignToAll ? members.length : assigneeUserIds.length;
+
         await updateTask({
           groupId,
           taskId: existingTask.taskId,
@@ -210,9 +234,20 @@ export function GroupTaskModal({
           description: taskNote.trim() ? taskNote.trim() : undefined,
           assignees: assignToAll ? [] : assignees,
           assignToAll: assignToAll || undefined,
-          dueDate: deadlineLocalInputToJsonValue(taskDeadline) ?? undefined,
+          dueDate: dueDateIso,
           subtasks: cleanSubtasks.length > 0 ? cleanSubtasks : undefined,
         }).unwrap();
+
+        patchTaskAssignedSystemMessages(dispatch, groupId, String(existingTask.taskId), {
+          title: taskTitle.trim(),
+          dueDate: dueDateIso ?? null,
+          note: taskNote.trim() ? taskNote.trim() : null,
+          assigneeLabel,
+          assignToAll,
+          broadcast: assignToAll,
+          assigneeUserIds,
+          assigneesCount,
+        });
         toast.success("Đã cập nhật công việc");
       } else {
         await createTask({
@@ -229,6 +264,8 @@ export function GroupTaskModal({
       onClose();
     } catch {
       toast.error(existingTask ? "Không thể cập nhật công việc" : "Không thể tạo công việc");
+    } finally {
+      submitInFlightRef.current = false;
     }
   };
 

@@ -2,6 +2,8 @@ import type { IConversation, IMessage, IReplyToDetails, MessageType } from "@/ty
 import type { RootState } from "@/store/store";
 import { chatApi, type ApiEnvelope } from "../baseChatApi";
 import { conversationApi } from "./conversationApi";
+import { mergeChatFileMessageFields, normalizeChatMediaMime } from "@/utils/chatMediaDisplay";
+import { formatGroupJoinLinkListPreview } from "@/utils/groupJoinLinkMessage";
 
 /** Khớp cache key với useChatMessageData (limit: 50). */
 export const CHAT_MESSAGES_QUERY_LIMIT = 50;
@@ -70,7 +72,12 @@ function lastMessagePreviewFromArg(arg: SendMessageRequest): string {
   if (arg.type === "image") return "[Ảnh]";
   if (arg.type === "video") return "[Video]";
   if (arg.type === "file") return "[File]";
-  return (arg.content ?? "").trim() || "";
+  const raw = (arg.content ?? "").trim();
+  if (arg.type === "text") {
+    const joinPreview = formatGroupJoinLinkListPreview(raw);
+    if (joinPreview) return joinPreview;
+  }
+  return raw || "";
 }
 
 function buildOptimisticMessage(
@@ -96,7 +103,9 @@ function buildOptimisticMessage(
     mediaType: !isMedia
       ? null
       : arg.type === "file"
-        ? arg.optimisticMimeType?.trim() || arg.type
+        ? (normalizeChatMediaMime(arg.optimisticMimeType, arg.type) ??
+          arg.optimisticMimeType?.trim() ??
+          null)
         : arg.type,
     mediaSize:
       typeof arg.optimisticMediaSize === "number" &&
@@ -163,7 +172,14 @@ function updateGetMessagesCache(
 }
 
 function lastMessagePreviewFromMessage(m: IMessage): string {
-  if (m.content?.trim() !== "") return m.content;
+  const raw = (m.content ?? "").trim();
+  if (raw !== "") {
+    if (m.type === "text") {
+      const joinPreview = formatGroupJoinLinkListPreview(raw);
+      if (joinPreview) return joinPreview;
+    }
+    return m.content ?? "";
+  }
   if (m.type === "image") return "[Ảnh]";
   if (m.type === "video") return "[Video]";
   if (m.type === "file") return "[File]";
@@ -193,6 +209,8 @@ export const messageApi = chatApi.injectEndpoints({
           optimisticLocalUri: _u,
           clientReplyToDetails: _r,
           optimisticMediaName: _n,
+          optimisticMediaSize: _s,
+          optimisticMimeType: _m,
           ...body
         } = arg;
         return {
@@ -239,9 +257,14 @@ export const messageApi = chatApi.injectEndpoints({
             );
             if (dup !== -1) draft.splice(dup, 1);
             const optIdx = draft.findIndex((m: IMessage) => m.messageId === optimisticId);
-            if (optIdx !== -1) draft[optIdx] = serverMsg;
+            const optimisticMsg = optIdx !== -1 ? draft[optIdx] : undefined;
+            const merged =
+              optimisticMsg != null
+                ? mergeChatFileMessageFields(serverMsg, optimisticMsg)
+                : serverMsg;
+            if (optIdx !== -1) draft[optIdx] = merged;
             else if (!draft.some((m: IMessage) => m.messageId === serverMsg.messageId))
-              draft.unshift(serverMsg);
+              draft.unshift(merged);
           });
 
           const lastContent = lastMessagePreviewFromMessage(serverMsg);

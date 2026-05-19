@@ -1,5 +1,6 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import type { IMessage, MessageStatus, TypingUserEntry } from "@/types/chat.types";
+import { applyPinnedMruOrderUpdate } from "@/utils/pinnedMessageOrder";
 
 /** Giống web `ChatFrameNoticeVariant` — màu + icon banner nhóm. */
 export type ChatFrameBannerVariant = "poll" | "task_assigned" | "task_joined";
@@ -22,6 +23,12 @@ interface ChatState {
   replyingTo: IMessage | null;
   frameBanner: ChatFrameBanner | null;
   messageJoinCutoffMsByConversation: Record<string, number>;
+  /** Tăng khi socket báo thay đổi nhóm; refetch members/tasks/polls (đồng bộ web). */
+  groupBoardRefreshTickByConversationId: Record<string, number>;
+  /** Thành viên đã rời/bị kick (socket) — lọc khỏi danh sách UI realtime. */
+  removedGroupMemberIdsByConversationId: Record<string, string[]>;
+  /** Thứ tự ghim MRU theo hội thoại — tin ghim mới nhất ở đầu (đồng bộ web). */
+  pinnedMessageOrderByConv: Record<string, string[]>;
 }
 
 const initialState: ChatState = {
@@ -31,6 +38,9 @@ const initialState: ChatState = {
   replyingTo: null,
   frameBanner: null,
   messageJoinCutoffMsByConversation: {},
+  groupBoardRefreshTickByConversationId: {},
+  removedGroupMemberIdsByConversationId: {},
+  pinnedMessageOrderByConv: {},
 };
 
 const chatSlice = createSlice({
@@ -79,6 +89,8 @@ const chatSlice = createSlice({
           msg.isRecalled = true;
           msg.content = "Tin nhắn đã được thu hồi";
           msg.isPinned = false;
+          const cur = state.pinnedMessageOrderByConv[conversationId] ?? [];
+          state.pinnedMessageOrderByConv[conversationId] = cur.filter((id) => id !== messageId);
         }
       }
     },
@@ -141,6 +153,12 @@ const chatSlice = createSlice({
       }>,
     ) => {
       const { messageId, conversationId, isPinned } = action.payload;
+      const cur = state.pinnedMessageOrderByConv[conversationId] ?? [];
+      state.pinnedMessageOrderByConv[conversationId] = applyPinnedMruOrderUpdate(
+        cur,
+        messageId,
+        isPinned,
+      );
       const messages = state.messages[conversationId];
       if (!messages) return;
       const msg = messages.find((m) => m.messageId === messageId);
@@ -237,6 +255,32 @@ const chatSlice = createSlice({
       if (!id) return;
       delete state.messages[id];
     },
+
+    bumpGroupBoardRefresh: (state, action: PayloadAction<{ conversationId: string }>) => {
+      const id = String(action.payload.conversationId ?? "").trim();
+      if (!id) return;
+      const prev = state.groupBoardRefreshTickByConversationId[id] ?? 0;
+      state.groupBoardRefreshTickByConversationId[id] = prev + 1;
+    },
+
+    markGroupMemberRemovedRealtime: (
+      state,
+      action: PayloadAction<{ conversationId: string; userId: string }>,
+    ) => {
+      const cid = String(action.payload.conversationId ?? "").trim();
+      const uid = String(action.payload.userId ?? "").trim();
+      if (!cid || !uid) return;
+      const prev = state.removedGroupMemberIdsByConversationId[cid] ?? [];
+      if (!prev.includes(uid)) {
+        state.removedGroupMemberIdsByConversationId[cid] = [...prev, uid];
+      }
+    },
+
+    resetRemovedGroupMembersRealtime: (state, action: PayloadAction<string>) => {
+      const cid = String(action.payload ?? "").trim();
+      if (!cid) return;
+      delete state.removedGroupMemberIdsByConversationId[cid];
+    },
   },
 });
 
@@ -259,6 +303,9 @@ export const {
   clearChatFrameBanner,
   setMessageJoinCutoff,
   clearConversationMessages,
+  bumpGroupBoardRefresh,
+  markGroupMemberRemovedRealtime,
+  resetRemovedGroupMembersRealtime,
 } = chatSlice.actions;
 
 export const chatReducer = chatSlice.reducer;

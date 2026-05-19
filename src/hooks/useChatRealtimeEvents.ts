@@ -14,10 +14,18 @@ import {
   showChatFrameBanner,
   typingStarted,
   typingStopped,
+  bumpGroupBoardRefresh,
+  markGroupMemberRemovedRealtime,
 } from "@/store/slices/chatSlice";
+import {
+  groupProfilePatchFromPayload,
+  patchGroupProfileInConversationsCache,
+  patchGroupSettingsInCaches,
+} from "@/utils/groupRealtimeCache";
+import { normalizeGroupSettings } from "@/utils/normalizeGroupSettings";
 import { store, type AppDispatch } from "@/store/store";
 import type { ChatFrameBannerVariant } from "@/store/slices/chatSlice";
-import type { IConversation, IGroupSettings, IMessage } from "@/types/chat.types";
+import type { IConversation, IMessage } from "@/types/chat.types";
 import { toast } from "@/utils/appToast";
 import { formatChatPreviewLine, getMessageTypeLabel } from "@/utils/messageDisplay";
 import { sortConversationsForSidebar } from "@/utils/conversationListSort";
@@ -48,12 +56,64 @@ function groupIdFromPayload(p: Record<string, unknown>): string {
   return String(p.conversationId ?? p.groupId ?? "").trim();
 }
 
-/** Giống web `useChatGroupFrameNotices`: poll / task_assigned / task_joined (màu + icon). */
-function bannerVariantFromSystemKind(kind: string): ChatFrameBannerVariant | null {
-  if (kind.startsWith("poll")) return "poll";
-  if (kind === "task_joined") return "task_joined";
-  if (kind.startsWith("task")) return "task_assigned";
+function groupUpdateNoticeText(
+  payload: Record<string, unknown>,
+  currentUserId?: string,
+): string | null {
+  const name = typeof payload.name === "string" && payload.name.trim() ? payload.name.trim() : "";
+  const changed =
+    payload.changed && typeof payload.changed === "object"
+      ? (payload.changed as { name?: boolean; avatar?: boolean })
+      : null;
+  const nameChanged = changed ? changed.name === true : Boolean(name);
+  const avatarChanged = changed ? changed.avatar === true : Boolean(!name && payload.avatar);
+  if (!nameChanged && !avatarChanged) return null;
+
+  const actorId = String(payload.actorId ?? "").trim();
+  const actorName = String(payload.actorName ?? "").trim();
+  const who = currentUserId && actorId && actorId === currentUserId ? "Bạn" : actorName || "Ai đó";
+
+  if (nameChanged && avatarChanged && name) {
+    return `${who} đã đổi tên nhóm thành "${name}" và cập nhật ảnh đại diện nhóm`;
+  }
+  if (nameChanged && name) return `${who} đã đổi tên nhóm thành "${name}"`;
+  if (avatarChanged) return `${who} đã cập nhật ảnh đại diện nhóm`;
   return null;
+}
+
+/** Đã có pill system trong khung chat — không banner trùng (web `useChatGroupFrameNotices`). */
+function shouldSkipSystemFrameBanner(kind: string): boolean {
+  if (kind === "message_pinned" || kind === "message_unpinned") return true;
+  return (
+    kind === "group_admin_promoted" ||
+    kind === "group_admin_demoted" ||
+    kind === "group_owner_transferred" ||
+    kind === "group_owner_assigned" ||
+    kind === "group_member_invited" ||
+    kind === "group_member_joined" ||
+    kind === "group_member_left" ||
+    kind === "group_member_removed"
+  );
+}
+
+function systemFrameBannerDedupeKey(
+  msg: IMessage,
+  kind: string,
+  parsed: Record<string, unknown>,
+): string {
+  const poll = parsed.poll as { pollId?: string } | undefined;
+  const task = parsed.task as { taskId?: string } | undefined;
+  const pollId = String(poll?.pollId ?? "").trim();
+  const taskId = String(task?.taskId ?? "").trim();
+  if (kind.startsWith("poll_")) return `sys:${kind}:${pollId || msg.messageId}`;
+  if (kind.startsWith("task_")) {
+    if (kind === "task_reminder") {
+      const stage = String(parsed.stage ?? "x");
+      return `sys:${kind}:${taskId || msg.messageId}:${stage}`;
+    }
+    return `sys:${kind}:${taskId || msg.messageId}`;
+  }
+  return `sys:${kind}:${msg.messageId}`;
 }
 
 /** Tin system JSON — nội dung khớp sidebar/web `lastMessageLineFromSystemJson`. */
@@ -62,6 +122,7 @@ function bannerFromSystemMessage(msg: IMessage): {
   atIso: string;
   variant: ChatFrameBannerVariant;
   pollId?: string;
+  dedupeKey: string;
 } | null {
   if (msg.type !== "system") return null;
   const raw = String(msg.content ?? "").trim();
@@ -73,20 +134,42 @@ function bannerFromSystemMessage(msg: IMessage): {
     return null;
   }
   const kind = String(parsed.kind ?? "");
-  const variant = bannerVariantFromSystemKind(kind);
-  if (!variant) return null;
+  if (shouldSkipSystemFrameBanner(kind)) return null;
   const atIso = normalizeIso(String(parsed.createdAt ?? msg.createdAt ?? ""));
-  /** Giống web `useChatGroupFrameNotices`: `lastMessageLineFromSystemJson` với `currentUserId` không set. */
+  const currentUserId = store.getState().auth.user?.userId ?? "";
   const text =
-    formatSystemLastMessagePreview(raw, msg.senderId, "", msg.senderDisplayName) ??
+    formatSystemLastMessagePreview(raw, msg.senderId, currentUserId, msg.senderDisplayName) ??
     "Thông báo nhóm";
-  let pollId: string | undefined;
-  if (variant === "poll") {
-    const poll = parsed.poll as { pollId?: string } | undefined;
-    const id = String(poll?.pollId ?? "").trim();
-    if (id) pollId = id;
+  const dedupeKey = systemFrameBannerDedupeKey(msg, kind, parsed);
+
+  if (kind.startsWith("poll_")) {
+    let pollId: string | undefined;
+    if (kind === "poll_created") {
+      const poll = parsed.poll as { pollId?: string } | undefined;
+      const id = String(poll?.pollId ?? "").trim();
+      if (id) pollId = id;
+    }
+    return pollId
+      ? { text, atIso, variant: "poll", pollId, dedupeKey }
+      : { text, atIso, variant: "poll", dedupeKey };
   }
-  return pollId ? { text, atIso, variant, pollId } : { text, atIso, variant };
+
+  if (kind.startsWith("task_")) {
+    const actorId = String((parsed.actor as { userId?: string } | undefined)?.userId ?? "").trim();
+    if (
+      (kind === "task_assigned" || kind === "task_updated") &&
+      actorId &&
+      currentUserId &&
+      actorId === currentUserId
+    ) {
+      return null;
+    }
+    const variant: ChatFrameBannerVariant =
+      kind === "task_joined" ? "task_joined" : "task_assigned";
+    return { text, atIso, variant, dedupeKey };
+  }
+
+  return { text, atIso, variant: "task_assigned", dedupeKey };
 }
 
 /**
@@ -256,7 +339,12 @@ export function useChatRealtimeEvents({
           };
           conv.lastMessageAt = msg.createdAt;
           conv.updatedAt = msg.createdAt;
-          if (msg.conversationId !== activeConvRef.current && !alreadySamePreview) {
+          const isIncomingFromOther = Boolean(viewerId) && msg.senderId !== viewerId;
+          if (
+            isIncomingFromOther &&
+            msg.conversationId !== activeConvRef.current &&
+            !alreadySamePreview
+          ) {
             conv.unreadCount = (conv.unreadCount ?? 0) + 1;
           }
           const sorted = sortConversationsForSidebar([...(draft as IConversation[])]);
@@ -267,35 +355,17 @@ export function useChatRealtimeEvents({
       if (msg.type === "system") {
         const banner = bannerFromSystemMessage(msg);
         if (banner && msg.conversationId === activeConvRef.current) {
-          let bannerDedupeKey = `sys-banner:${msg.messageId}`;
-          try {
-            const rawSys = String(msg.content ?? "").trim();
-            const pSys = JSON.parse(rawSys) as {
-              kind?: string;
-              stage?: string;
-              task?: { taskId?: string };
-            };
-            const tid = String(pSys?.task?.taskId ?? "").trim();
-            const kSys = String(pSys?.kind ?? "");
-            if (tid && kSys === "task_reminder") {
-              const st = String(pSys?.stage ?? "x");
-              bannerDedupeKey = `frame-task:${msg.conversationId}:${tid}:task_reminder:${st}`;
-            } else if (
-              tid &&
-              (kSys === "task_updated" || kSys === "task_due" || kSys === "task_deleted")
-            ) {
-              bannerDedupeKey = `frame-task:${msg.conversationId}:${tid}:${kSys}`;
-            }
-          } catch {
-            /* keep default */
-          }
+          const bannerDedupeMs =
+            banner.dedupeKey.includes("task_reminder") || banner.dedupeKey.includes("task_due")
+              ? 60_000
+              : 8_000;
           emitFrameBanner(
-            bannerDedupeKey,
+            banner.dedupeKey,
             msg.conversationId,
             banner.text,
             banner.atIso,
             banner.variant,
-            2200,
+            bannerDedupeMs,
             banner.pollId,
           );
           try {
@@ -497,44 +567,48 @@ export function useChatRealtimeEvents({
     };
 
     const handleGroupUpdated = (payload: Record<string, unknown>) => {
-      const conversationId = String(payload.conversationId ?? "").trim();
+      const profileFromPayload = groupProfilePatchFromPayload(payload);
+      const conversationId =
+        profileFromPayload?.conversationId ??
+        String(payload.conversationId ?? payload.groupId ?? "").trim();
       if (!conversationId) return;
 
-      const name =
-        typeof payload.name === "string" && payload.name.trim() ? payload.name.trim() : undefined;
-      const avatar =
-        typeof payload.avatar === "string" && payload.avatar.trim()
-          ? payload.avatar.trim()
-          : undefined;
-      const memberCount = payload.memberCount;
-      const hasMemberCount = typeof memberCount === "number" && Number.isFinite(memberCount);
-
-      dispatch(
-        conversationApi.util.updateQueryData("getConversations", undefined, (draft) => {
-          const conv = draft?.find((item: IConversation) => item.conversationId === conversationId);
-          if (!conv) return;
-          if (name) conv.name = name;
-          if (avatar) conv.avatar = avatar;
-          if (hasMemberCount) conv.memberCount = memberCount as number;
-        }),
-      );
-
-      if (conversationId === activeConvRef.current) {
-        const updatedName =
-          typeof payload.name === "string" && payload.name.trim() ? payload.name.trim() : "";
-        const message = updatedName
-          ? `Nhóm đã cập nhật: ${updatedName}`
-          : "Nhóm đã cập nhật thông tin";
-        const atIso = typeof payload.updatedAt === "string" ? payload.updatedAt : undefined;
-        emitFrameBanner(
-          `group:updated:${conversationId}`,
-          conversationId,
-          message,
-          atIso,
-          "task_assigned",
+      dispatch(bumpGroupBoardRefresh({ conversationId }));
+      if (profileFromPayload) {
+        patchGroupProfileInConversationsCache(
+          dispatch,
+          profileFromPayload.conversationId,
+          profileFromPayload.patch,
         );
-      } else if (name) {
-        toast.info(`Nhóm '${name}' vừa cập nhật thông tin`);
+      }
+
+      const hasMemberCountPatch =
+        typeof profileFromPayload?.patch.memberCount === "number" &&
+        Number.isFinite(profileFromPayload.patch.memberCount);
+      if (!hasMemberCountPatch) {
+        dispatch(chatApi.util.invalidateTags(["Conversations"]));
+      }
+      if (conversationId === activeConvRef.current) {
+        dispatch(
+          chatApi.util.invalidateTags([{ type: "Conversations", id: `MEMBERS-${conversationId}` }]),
+        );
+      }
+
+      const currentUserId = store.getState().auth.user?.userId ?? "";
+      const noticeText = groupUpdateNoticeText(payload, currentUserId);
+      if (conversationId === activeConvRef.current) {
+        if (noticeText) {
+          const atIso = typeof payload.updatedAt === "string" ? payload.updatedAt : undefined;
+          emitFrameBanner(
+            `group:updated:${conversationId}`,
+            conversationId,
+            noticeText,
+            atIso,
+            "task_assigned",
+          );
+        }
+      } else if (noticeText) {
+        toast.info(noticeText);
       }
     };
 
@@ -543,18 +617,15 @@ export function useChatRealtimeEvents({
       if (!gid) return;
       const gs = payload.groupSettings;
       if (gs && typeof gs === "object") {
-        store.dispatch(
-          conversationApi.util.updateQueryData(
-            "getConversations",
-            undefined,
-            (draft: IConversation[]) => {
-              const conv = draft.find((x) => x.conversationId === gid);
-              if (conv) conv.groupSettings = gs as IGroupSettings;
-            },
-          ),
-        );
+        patchGroupSettingsInCaches(dispatch, gid, normalizeGroupSettings(gs));
       }
       invalidateGroupData(gid, ["settings"]);
+      dispatch(
+        chatApi.util.invalidateTags([
+          { type: "GroupSettings", id: gid },
+          { type: "Messages", id: gid },
+        ]),
+      );
       emitFrameBanner(
         `group:settings:${gid}`,
         gid,
@@ -569,7 +640,13 @@ export function useChatRealtimeEvents({
       if (!gid) return;
       invalidateGroupData(gid, ["polls", "members"]);
       dispatch(chatApi.util.invalidateTags([{ type: "Messages", id: gid }]));
-      /** Banner từ tin system `poll_created` (`message:new`); không emit thêm (tránh đúp). */
+      emitFrameBanner(
+        `group:poll_new:${gid}`,
+        gid,
+        "Có bình chọn mới trong nhóm",
+        undefined,
+        "poll",
+      );
     };
 
     const handleGroupPollUpdated = (payload: Record<string, unknown>) => {
@@ -600,19 +677,7 @@ export function useChatRealtimeEvents({
       const gid = groupIdFromPayload(payload);
       if (!gid) return;
       invalidateGroupData(gid, ["tasks"]);
-      const taskId = String((payload as { taskId?: string }).taskId ?? "").trim();
-      const title = String((payload as { title?: string }).title ?? "").trim();
-      const line = title
-        ? `Công việc «${title}» vừa được cập nhật`
-        : "Công việc trong nhóm vừa được cập nhật";
-      emitFrameBanner(
-        taskId ? `frame-task:${gid}:${taskId}:task_updated` : `group:task_upd:${gid}`,
-        gid,
-        line,
-        undefined,
-        "task_assigned",
-        2200,
-      );
+      /** Giống web: chỉ refetch; banner từ tin system JSON (`message:new`). */
     };
 
     const handleGroupTaskDeleted = (payload: Record<string, unknown>) => {
@@ -620,17 +685,6 @@ export function useChatRealtimeEvents({
       if (!gid) return;
       invalidateGroupData(gid, ["tasks"]);
       dispatch(chatApi.util.invalidateTags([{ type: "Messages", id: gid }]));
-      const taskId = String((payload as { taskId?: string }).taskId ?? "").trim();
-      const title = String((payload as { title?: string }).title ?? "").trim();
-      const line = title ? `Đã hủy công việc «${title}»` : "Một công việc trong nhóm đã bị hủy";
-      emitFrameBanner(
-        taskId ? `frame-task:${gid}:${taskId}:task_deleted` : `group:task_del:${gid}`,
-        gid,
-        line,
-        undefined,
-        "task_assigned",
-        2200,
-      );
     };
 
     const handleGroupMemberJoined = (payload: Record<string, unknown>) => {
@@ -643,11 +697,11 @@ export function useChatRealtimeEvents({
         applyRejoinedGroupMemberRealtime(dispatch, gid, joinedAt);
       }
       patchConversationMemberCount(gid, payload);
-      invalidateGroupData(gid, ["members", "requests"]);
+      invalidateGroupData(gid, ["members", "requests", "tasks"]);
       prefetchGroupMembers(gid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
       emitFrameBanner(
-        `member_joined:${gid}:${joinedUserId}`,
+        `group:member_joined:${joinedUserId}`,
         gid,
         "Có thành viên mới tham gia nhóm",
         undefined,
@@ -658,13 +712,17 @@ export function useChatRealtimeEvents({
     const handleGroupMemberLeft = (payload: Record<string, unknown>) => {
       const gid = groupIdFromPayload(payload);
       if (!gid) return;
+      const leftUserId = String((payload as { userId?: string }).userId ?? "").trim();
+      if (leftUserId) {
+        dispatch(markGroupMemberRemovedRealtime({ conversationId: gid, userId: leftUserId }));
+      }
       patchConversationMemberCount(gid, payload);
-      invalidateGroupData(gid, ["members"]);
+      invalidateGroupData(gid, ["members", "tasks"]);
       prefetchGroupMembers(gid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
       const leftAt = typeof payload.leftAt === "string" ? payload.leftAt : undefined;
       emitFrameBanner(
-        `member_left:${gid}:${String((payload as { userId?: string }).userId ?? "")}`,
+        `group:member_left:${leftUserId}`,
         gid,
         "Một thành viên vừa rời nhóm",
         leftAt,
@@ -677,15 +735,18 @@ export function useChatRealtimeEvents({
       if (!gid) return;
       const viewerId = store.getState().auth.user?.userId ?? "";
       const removedUserId = String((payload as { userId?: string }).userId ?? "").trim();
+      if (removedUserId) {
+        dispatch(markGroupMemberRemovedRealtime({ conversationId: gid, userId: removedUserId }));
+      }
       if (viewerId && removedUserId === viewerId) {
         applyKickedFromGroupRealtime(dispatch, gid);
       }
       patchConversationMemberCount(gid, payload);
-      invalidateGroupData(gid, ["members"]);
+      invalidateGroupData(gid, ["members", "tasks"]);
       prefetchGroupMembers(gid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
       emitFrameBanner(
-        `member_removed:${gid}:${removedUserId}`,
+        `group:member_removed:${removedUserId}`,
         gid,
         "Một thành viên đã bị xóa khỏi nhóm",
         undefined,
@@ -699,13 +760,7 @@ export function useChatRealtimeEvents({
       invalidateGroupData(gid, ["members"]);
       prefetchGroupMembers(gid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
-      emitFrameBanner(
-        `role:${gid}:${String((payload as { userId?: string }).userId ?? "")}`,
-        gid,
-        "Vai trò thành viên đã thay đổi",
-        undefined,
-        "task_assigned",
-      );
+      /** Giống web: chỉ refetch members; pill system đủ cho đổi vai trò. */
     };
 
     const handleGroupJoinRequestNew = (payload: Record<string, unknown>) => {
@@ -713,7 +768,7 @@ export function useChatRealtimeEvents({
       if (!gid) return;
       invalidateGroupData(gid, ["requests"]);
       emitFrameBanner(
-        `join_request:${gid}`,
+        `group:join_req_new:${gid}`,
         gid,
         "Có yêu cầu tham gia nhóm mới",
         undefined,
@@ -726,7 +781,7 @@ export function useChatRealtimeEvents({
       if (!gid) return;
       invalidateGroupData(gid, ["requests"]);
       emitFrameBanner(
-        `join_request_updated:${gid}`,
+        `group:join_req_upd:${gid}`,
         gid,
         "Danh sách yêu cầu tham gia đã cập nhật",
         undefined,
@@ -738,7 +793,7 @@ export function useChatRealtimeEvents({
       const gid = groupIdFromPayload(payload);
       if (!gid) return;
       emitFrameBanner(
-        `disband:${gid}`,
+        `group:disbanded:${gid}`,
         gid,
         "Nhóm đã bị giải tán",
         undefined,
@@ -752,7 +807,14 @@ export function useChatRealtimeEvents({
     const handleGroupDeleted = (payload: Record<string, unknown>) => {
       const gid = groupIdFromPayload(payload);
       if (!gid) return;
-      emitFrameBanner(`deleted:${gid}`, gid, "Nhóm đã bị xóa", undefined, "task_assigned", 10_000);
+      emitFrameBanner(
+        `group:deleted:${gid}`,
+        gid,
+        "Nhóm đã bị xóa",
+        undefined,
+        "task_assigned",
+        10_000,
+      );
       removeConversationFromListCache(gid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
     };

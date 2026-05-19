@@ -31,9 +31,15 @@ interface OtpVerificationFormProps {
   email?: string;
   mode?: string;
   notice?: string;
+  redirect?: string;
 }
 
-export const OtpVerificationForm = ({ email, mode, notice }: OtpVerificationFormProps) => {
+export const OtpVerificationForm = ({
+  email,
+  mode,
+  notice,
+  redirect,
+}: OtpVerificationFormProps) => {
   const { verifyLoginOtp, verifyRegisterOtp, resetPassword, isLoading, errorMessage } = useAuth();
   const [forgotPasswordMutation, forgotPasswordState] = useForgotPasswordMutation();
   const [otp, setOtp] = useState("");
@@ -72,7 +78,7 @@ export const OtpVerificationForm = ({ email, mode, notice }: OtpVerificationForm
     }
 
     if (mode === "login") {
-      await verifyLoginOtp(email, parsed.data.otp);
+      await verifyLoginOtp(email, parsed.data.otp, redirect);
       return;
     }
 

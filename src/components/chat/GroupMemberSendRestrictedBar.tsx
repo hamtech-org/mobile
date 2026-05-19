@@ -1,12 +1,8 @@
 import { Text, View } from "react-native";
 import { Info } from "lucide-react-native";
 
-type GroupMemberSendRestrictedBarProps = {
-  onLearnMore?: () => void;
-};
-
 /** Thanh thông báo thay ô nhập khi member không được gửi tin (chỉ trưởng/phó nhóm). */
-export function GroupMemberSendRestrictedBar({ onLearnMore }: GroupMemberSendRestrictedBarProps) {
+export function GroupMemberSendRestrictedBar() {
   return (
     <View
       style={{
@@ -20,14 +16,8 @@ export function GroupMemberSendRestrictedBar({ onLearnMore }: GroupMemberSendRes
       <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
         <Info size={18} color="#0068FF" strokeWidth={2.25} style={{ marginTop: 1 }} />
         <Text style={{ flex: 1, fontSize: 14, lineHeight: 20, color: "#65676b" }}>
-          Chỉ{" "}
-          <Text onPress={onLearnMore} style={{ color: "#0068FF", fontWeight: "600" }}>
-            trưởng nhóm và phó nhóm
-          </Text>{" "}
-          được gửi tin nhắn vào nhóm.{" "}
-          <Text onPress={onLearnMore} style={{ color: "#0068FF", fontWeight: "600" }}>
-            Tìm hiểu thêm
-          </Text>
+          Chỉ <Text style={{ color: "#0068FF", fontWeight: "700" }}>trưởng nhóm và phó nhóm</Text>{" "}
+          được gửi tin nhắn vào nhóm.
         </Text>
       </View>
     </View>

@@ -1,9 +1,9 @@
-import { Fragment } from "react";
 import { Tabs } from "expo-router";
-import { useColorScheme } from "react-native";
-import { MessageCircleMore, Newspaper, Radio, User, Users } from "lucide-react-native";
+import { useColorScheme, View } from "react-native";
+import { MessageCircleMore, Newspaper, PlayCircle, User, Users, Radio } from "lucide-react-native";
 
 import { ChatSocketBootstrap } from "@/components/chat/ChatSocketBootstrap";
+import { ReelUploadBanner } from "@/features/reels/components/ReelUploadBanner";
 
 interface TabConfig {
   name: string;
@@ -16,6 +16,7 @@ const TABS: TabConfig[] = [
   { name: "(contacts)", title: "Danh bạ", Icon: Users },
   { name: "(newsfeed)", title: "Bảng tin", Icon: Newspaper },
   { name: "(live)", title: "Live", Icon: Radio },
+  { name: "(reels)", title: "Reels", Icon: PlayCircle },
   { name: "(profile)", title: "Tôi", Icon: User },
 ];
 
@@ -24,7 +25,7 @@ export default function MainLayout() {
   const isDark = colorScheme === "dark";
 
   return (
-    <Fragment>
+    <View style={{ flex: 1 }}>
       <ChatSocketBootstrap />
       <Tabs
         screenOptions={{
@@ -59,6 +60,7 @@ export default function MainLayout() {
           />
         ))}
       </Tabs>
-    </Fragment>
+      <ReelUploadBanner />
+    </View>
   );
 }

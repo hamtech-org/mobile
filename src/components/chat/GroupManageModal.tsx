@@ -12,6 +12,7 @@ import {
   Dimensions,
   FlatList,
   Image,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -31,7 +32,6 @@ import {
   Pin,
   Pencil,
   LogOut,
-  Link2,
   ImageIcon,
   FileText,
   Clock,
@@ -42,28 +42,53 @@ import {
   Camera,
   BellOff,
   Bell,
-  Search,
   Settings,
   Sparkles,
   Trash2,
   UserCog,
   User,
   UserPlus,
+  UserMinus,
   Users,
   Plus,
-  MessageSquare,
   Lock,
   Copy,
+  MessageSquare,
   RefreshCw,
   Share2,
   Ban,
   KeyRound,
   HelpCircle,
   MoreHorizontal,
+  X,
 } from "lucide-react-native";
+import { GroupAddMembersModal } from "@/components/chat/GroupAddMembersModal";
+import { ConfirmModal } from "@/components/chat/ConfirmModal";
+import {
+  ChatMediaLightbox,
+  type ChatMediaLightboxState,
+} from "@/components/chat/ChatMediaLightbox";
+import {
+  chatImageDisplayUrl,
+  chatMediaDownloadFilename,
+  chatVideoPlayUrl,
+  resolveChatFileBubbleMeta,
+} from "@/utils/chatMediaDisplay";
+import { openOrShareChatFile } from "@/utils/chatMediaDownload";
 
+import { BulletinPinnedMessageCard } from "@/components/chat/BulletinPinnedMessageCard";
+import { ChatSharedFileRow } from "@/components/chat/ChatSharedFileRow";
+import {
+  ConversationGalleryLinkRow,
+  ConversationGalleryTabBar,
+  ConversationGalleryIcon,
+  CONVERSATION_GALLERY_THEME,
+  type ConversationGalleryKind,
+} from "@/components/chat/conversationGallery";
+import { BulletinTaskCard } from "@/components/chat/BulletinTaskCard";
 import { Avatar } from "@/components/common/Avatar";
 import { MAX_PINNED_PER_CONVERSATION } from "@/constants/chatPin";
+import { orderPinnedMessagesMRU } from "@/utils/pinnedMessageOrder";
 import { MIN_GROUP_MEMBERS } from "@/constants/group";
 import { env } from "@/config/env";
 import { useAppSelector } from "@/hooks/useAppStore";
@@ -85,18 +110,19 @@ import {
   useLeaveGroupMutation,
   useGetMessagesQuery,
   useGetGroupSettingsQuery,
+  useSendMessageMutation,
   useGetGroupRequestsQuery,
   useGetGroupMembersQuery,
   useDeleteGroupMutation,
   useChangeMemberRoleMutation,
-  useAddMembersMutation,
+  useTransferGroupOwnerMutation,
   useGetPollsQuery,
   useGetTasksQuery,
   useDeleteTaskMutation,
 } from "@/store/api/chatApi";
 import { CHAT_MESSAGES_QUERY_LIMIT } from "@/store/api/endpoints/messageApi";
 import { useUploadMediaMutation } from "@/store/api/mediaApi";
-import { useGetFriendsQuery, useSendFriendRequestMutation } from "@/store/api/userApi";
+import { useSendFriendRequestMutation } from "@/store/api/userApi";
 import { prepareLocalFileForUpload } from "@/utils/uploadAttachment";
 import { toast } from "@/utils/appToast";
 import { formatChatPreviewLine } from "@/utils/messageDisplay";
@@ -114,8 +140,109 @@ import {
   canUserChangeGroupProfileInGroup,
   canUserCreatePollInGroup,
   canUserCreateTaskInGroup,
+  isGroupAdminSlotsFull,
+  MAX_GROUP_ADMINS,
+  normalizeGroupMembersList,
   resolveGroupMemberRole,
 } from "@/utils/groupConversationPermissions";
+import { getJoinGroupUrl as joinUrlFromSuffix } from "@/utils/joinGroupUrl";
+import { filterGroupMembersExcludingRemoved } from "@/utils/groupMembersRealtime";
+import { useGroupJoinLinkModalOptional } from "@/contexts/GroupJoinLinkModalContext";
+import { normalizeMediaUrl } from "@/utils/url";
+
+/** Màu / kích thước khớp web MemberManagementModal (inline). */
+const MM = {
+  avatarBg: "#DBEAFE",
+  avatarText: "#1D4ED8",
+  tabActive: "#0068FF",
+  tabIdleBg: "rgba(0,0,0,0.05)",
+  rowHover: "rgba(0,0,0,0.05)",
+  pillOwnerBg: "rgba(245, 158, 11, 0.1)",
+  pillOwnerText: "#D97706",
+  pillAdminBg: "rgba(37, 99, 235, 0.1)",
+  pillAdminText: "#1D4ED8",
+  actionPromoteBg: "rgba(0, 104, 255, 0.1)",
+  actionKickBg: "rgba(239, 68, 68, 0.1)",
+  actionMoreBg: "rgba(0, 0, 0, 0.05)",
+  actionKickIcon: "#DC2626",
+  muted: "#6B7280",
+} as const;
+
+function memberAvatarInitials(name?: string | null): string {
+  const raw = (name ?? "").trim();
+  if (!raw) return "?";
+  const words = raw.split(/\s+/).filter(Boolean);
+  if (words.length === 1) return words[0].charAt(0).toUpperCase();
+  return (words[0].charAt(0) + words[words.length - 1].charAt(0)).toUpperCase();
+}
+
+function MemberListAvatar({
+  uri,
+  name,
+}: {
+  uri?: string | null;
+  name?: string | null;
+}): ReactElement {
+  const imageUri = uri?.trim() ? normalizeMediaUrl(uri.trim()) : undefined;
+  if (imageUri) {
+    return <Image source={{ uri: imageUri }} style={mmAvatarStyles.image} />;
+  }
+  return (
+    <View style={mmAvatarStyles.fallback}>
+      <Text style={mmAvatarStyles.fallbackText}>{memberAvatarInitials(name)}</Text>
+    </View>
+  );
+}
+
+const mmAvatarStyles = StyleSheet.create({
+  image: { width: 40, height: 40, borderRadius: 20, backgroundColor: MM.avatarBg },
+  fallback: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: MM.avatarBg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  fallbackText: { fontSize: 14, fontWeight: "700", color: MM.avatarText },
+});
+
+/** Avatar hero màn Thông tin nhóm — ảnh phủ kín khung tròn 80×80 (không thu nhỏ như size lg). */
+function GroupHeroAvatar({
+  uri,
+  name,
+}: {
+  uri?: string | null;
+  name?: string | null;
+}): ReactElement {
+  const imageUri = uri?.trim() ? normalizeMediaUrl(uri.trim()) : undefined;
+  if (imageUri) {
+    return (
+      <Image source={{ uri: imageUri }} style={groupHeroAvatarStyles.image} resizeMode="cover" />
+    );
+  }
+  return (
+    <View style={groupHeroAvatarStyles.fallback}>
+      <Text style={groupHeroAvatarStyles.fallbackText}>{memberAvatarInitials(name ?? "Nhóm")}</Text>
+    </View>
+  );
+}
+
+const groupHeroAvatarStyles = StyleSheet.create({
+  image: {
+    ...StyleSheet.absoluteFillObject,
+    width: undefined,
+    height: undefined,
+    backgroundColor: "#DBEAFE",
+  },
+  fallback: {
+    flex: 1,
+    alignSelf: "stretch",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  fallbackText: { fontSize: 28, fontWeight: "700", color: "#0068FF" },
+});
 
 export type GroupManagePanel =
   | "home"
@@ -157,6 +284,13 @@ interface GroupManageModalProps {
   onClosePoll?: (pollId: string) => void | Promise<void>;
   /** Giống web — thêm lựa chọn (prompt trên web → modal nhập trên mobile). */
   onAddPollOption?: (pollId: string, text: string) => void | Promise<void>;
+  /** Mở modal AI tóm tắt ngay khi modal hiển thị (từ shortcut composer). */
+  openAiSummaryWhenVisible?: boolean;
+  /** Giống web BulletinCardRow — tham gia task từ danh sách nhắc hẹn. */
+  onTaskJoined?: (taskId: string) => void | Promise<void>;
+  onEditTaskFromBulletin?: (task: Record<string, unknown>) => void;
+  onDeleteTaskFromBulletin?: (taskId: string) => void | Promise<void>;
+  taskActionBusy?: boolean;
 }
 
 const Z = {
@@ -166,18 +300,9 @@ const Z = {
   sub: "#6B7280",
   border: "#E5E7EB",
   primary: "#0068FF",
-  red: "#DC2626",
+  red: "#EF4444",
   line: "#E5E7EB",
 };
-
-function webOriginFromApi(): string {
-  return env.apiBaseUrl.replace(/\/api\/v1\/?$/i, "");
-}
-
-function joinUrlFromSuffix(suffix: string | undefined): string {
-  if (!suffix) return "";
-  return `${webOriginFromApi()}/join/${suffix}`;
-}
 
 function roleLabel(role: MemberRole): string {
   if (role === "owner") return "Trưởng nhóm";
@@ -193,6 +318,15 @@ function joinRequestSubtitle(status?: string): string {
 function memberRowDisplayName(m: IGroupMember, selfId?: string): string {
   if (selfId && m.userId === selfId) return "Bạn";
   return (m.displayName ?? "").trim() || m.userId;
+}
+
+function requestRowDisplayName(
+  userId: string,
+  rawName: string | undefined,
+  selfId?: string,
+): string {
+  if (selfId && userId === selfId) return "Bạn";
+  return (rawName ?? "").trim() || userId;
 }
 
 function pollSummary(raw: unknown): { id: string; title: string; closed: boolean } {
@@ -274,6 +408,11 @@ export function GroupManageModal({
   onOpenPollVote,
   onClosePoll,
   onAddPollOption,
+  openAiSummaryWhenVisible = false,
+  onTaskJoined,
+  onEditTaskFromBulletin,
+  onDeleteTaskFromBulletin,
+  taskActionBusy = false,
 }: GroupManageModalProps): ReactElement {
   const insets = useSafeAreaInsets();
   const groupId = conversation.conversationId;
@@ -286,10 +425,6 @@ export function GroupManageModal({
   const [membersLeadersOnly, setMembersLeadersOnly] = useState(false);
   const [pickOwnerForLeave, setPickOwnerForLeave] = useState(false);
   const [editName, setEditName] = useState(conversation.name ?? "");
-  const [selectedInviteFriendIds, setSelectedInviteFriendIds] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const [addFriendFilter, setAddFriendFilter] = useState("");
   const [pollModalOpen, setPollModalOpen] = useState(false);
   const [addPollOptionTargetId, setAddPollOptionTargetId] = useState<string | null>(null);
   const [addPollOptionDraft, setAddPollOptionDraft] = useState("");
@@ -300,11 +435,35 @@ export function GroupManageModal({
   const [muteNotifMode, setMuteNotifMode] = useState<"create" | "edit">("create");
   const [muteNotifSubmitting, setMuteNotifSubmitting] = useState(false);
   const [mediaTab, setMediaTab] = useState<"media" | "file" | "link">("media");
+  const [galleryLightbox, setGalleryLightbox] = useState<ChatMediaLightboxState>(null);
   const [bulletinExpanded, setBulletinExpanded] = useState(true);
   const [bulletinNotesTab, setBulletinNotesTab] = useState<BulletinNotesTab>("all");
   const [aiSummaryOpen, setAiSummaryOpen] = useState(false);
   const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
   const [aiSummaryResult, setAiSummaryResult] = useState("");
+  const [bulletinAddOpen, setBulletinAddOpen] = useState(false);
+  const [memberActionMenuUserId, setMemberActionMenuUserId] = useState<string | null>(null);
+
+  const [successorSearchQuery, setSuccessorSearchQuery] = useState("");
+  const [selectedSuccessorId, setSelectedSuccessorId] = useState<string | null>(null);
+  const [transferNewRole, setTransferNewRole] = useState<"admin" | "member">("admin");
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
+  const [disbandConfirmOpen, setDisbandConfirmOpen] = useState(false);
+
+  const [kickConfirmOpen, setKickConfirmOpen] = useState(false);
+  const [kickTargetMember, setKickTargetMember] = useState<IGroupMember | null>(null);
+  const [demoteConfirmOpen, setDemoteConfirmOpen] = useState(false);
+  const [demoteTargetMember, setDemoteTargetMember] = useState<IGroupMember | null>(null);
+  const [promoteConfirmOpen, setPromoteConfirmOpen] = useState(false);
+  const [promoteTargetMember, setPromoteTargetMember] = useState<IGroupMember | null>(null);
+  const [promotePickerOpen, setPromotePickerOpen] = useState(false);
+  const [friendActionUserIds, setFriendActionUserIds] = useState<Record<string, true>>({});
+
+  useEffect(() => {
+    if (demoteConfirmOpen || kickConfirmOpen || promoteConfirmOpen) {
+      setMemberActionMenuUserId(null);
+    }
+  }, [demoteConfirmOpen, kickConfirmOpen, promoteConfirmOpen]);
 
   useEffect(() => {
     if (visible) {
@@ -330,7 +489,6 @@ export function GroupManageModal({
         setMemberManageTab("list");
       }
       setEditName(conversation.name ?? "");
-      setAddFriendFilter("");
       setPickOwnerForLeave(false);
       setPollModalOpen(false);
       setTaskModalOpen(false);
@@ -339,20 +497,33 @@ export function GroupManageModal({
       setMuteNotifSubmitting(false);
       setMediaTab("media");
       setBulletinExpanded(true);
+      setBulletinAddOpen(false);
+      setMemberActionMenuUserId(null);
+      setPromotePickerOpen(false);
+      setFriendActionUserIds({});
       setAiSummaryOpen(false);
       setAiSummaryLoading(false);
       setAiSummaryResult("");
     }
   }, [visible, conversation.name, conversation.conversationId, initialPanel]);
 
+  const groupBoardTick = useAppSelector((s) =>
+    visible ? (s.chat.groupBoardRefreshTickByConversationId[groupId] ?? 0) : 0,
+  );
+
   const {
-    data: members = [],
+    data: membersRaw = [],
     isFetching,
     refetch,
   } = useGetGroupMembersQuery(groupId, {
     skip: !visible,
     refetchOnMountOrArgChange: true,
   });
+
+  const members = useMemo(
+    () => filterGroupMembersExcludingRemoved(groupId, membersRaw),
+    [groupId, membersRaw],
+  );
 
   const { data: messages = [] } = useGetMessagesQuery(
     { conversationId: groupId, limit: CHAT_MESSAGES_QUERY_LIMIT },
@@ -377,52 +548,45 @@ export function GroupManageModal({
     refetchOnMountOrArgChange: true,
   });
 
-  const { data: friends = [], isFetching: loadingFriendsForInvite } = useGetFriendsQuery(
-    undefined,
-    {
-      skip: !visible || panel !== "add",
-    },
-  );
+  const adminSlotsFull = useMemo(() => isGroupAdminSlotsFull(members), [members]);
 
-  const memberIdSet = useMemo(() => new Set(members.map((m) => m.userId)), [members]);
-
-  const friendsToInvite = useMemo(() => {
-    const q = addFriendFilter.trim().toLowerCase();
-    return friends.filter((f) => {
-      if (memberIdSet.has(f.userId)) return false;
-      if (!q) return true;
-      return f.displayName.toLowerCase().includes(q);
-    });
-  }, [friends, memberIdSet, addFriendFilter]);
-
-  const toggleInviteFriend = useCallback((userId: string) => {
-    setSelectedInviteFriendIds((prev) => {
-      const n = new Set(prev);
-      if (n.has(userId)) n.delete(userId);
-      else n.add(userId);
-      return n;
-    });
-  }, []);
+  useEffect(() => {
+    if (adminSlotsFull) {
+      setTransferNewRole("member");
+    } else {
+      setTransferNewRole("admin");
+    }
+  }, [adminSlotsFull]);
 
   const [updateGroup, { isLoading: savingName }] = useUpdateGroupMutation();
-  const [addMembers, { isLoading: adding }] = useAddMembersMutation();
   const [removeMember, { isLoading: removing }] = useRemoveMemberMutation();
   const [changeRole, { isLoading: changingRole }] = useChangeMemberRoleMutation();
+  const [transferOwner, { isLoading: transferringOwner }] = useTransferGroupOwnerMutation();
   const [deleteGroup, { isLoading: deleting }] = useDeleteGroupMutation();
   const [leaveGroup, { isLoading: leaving }] = useLeaveGroupMutation();
   const [patchPrefs, { isLoading: patchingPrefs }] = usePatchConversationPreferencesMutation();
   const [updateSettings, { isLoading: savingSettings }] = useUpdateGroupSettingsMutation();
+  const [sendMessage] = useSendMessageMutation();
+  const joinLinkModal = useGroupJoinLinkModalOptional();
   const [approveReq] = useApproveGroupRequestMutation();
   const [rejectReq] = useRejectGroupRequestMutation();
   const [sendFriendReq] = useSendFriendRequestMutation();
   const [uploadMedia, { isLoading: uploadingAvatar }] = useUploadMediaMutation();
   const [deleteTaskMut] = useDeleteTaskMutation();
 
-  const { data: pollsEnvelope, isFetching: pollsFetching } = useGetPollsQuery(groupId, {
+  const {
+    data: pollsEnvelope,
+    isFetching: pollsFetching,
+    refetch: refetchPolls,
+  } = useGetPollsQuery(groupId, {
     skip: !visible,
   });
 
-  const { data: tasksEnvelope, isFetching: tasksFetching } = useGetTasksQuery(groupId, {
+  const {
+    data: tasksEnvelope,
+    isFetching: tasksFetching,
+    refetch: refetchTasks,
+  } = useGetTasksQuery(groupId, {
     skip: !visible,
   });
 
@@ -478,8 +642,42 @@ export function GroupManageModal({
     [members, effectiveUserId],
   );
 
+  const filteredSuccessors = useMemo(() => {
+    const q = successorSearchQuery.trim().toLowerCase();
+    if (!q) return othersForOwnerHandoff;
+    return othersForOwnerHandoff.filter((m) => m.displayName.toLowerCase().includes(q));
+  }, [othersForOwnerHandoff, successorSearchQuery]);
+
+  const effectiveMemberCount = members.length;
+  const leaveBlockedByMinMembers = effectiveMemberCount <= MIN_GROUP_MEMBERS;
+  const leaveMinMembersHint = `Nhóm cần còn tối thiểu ${MIN_GROUP_MEMBERS} thành viên sau khi có người rời (hiện ${effectiveMemberCount} người). Hãy mời thêm thành viên hoặc giải tán nhóm.`;
+
   const joinSuffix = settings?.joinLinkSuffix;
   const joinUrl = joinUrlFromSuffix(joinSuffix);
+  const allowJoinLink = settings?.adminSettings?.allowJoinLink;
+
+  const openJoinLinkScreen = useCallback(() => {
+    if (!joinSuffix || !joinUrl) return;
+    joinLinkModal?.openGroupJoinLinkModal({
+      suffix: joinSuffix,
+      url: joinUrl,
+      groupName: conversation.name ?? "Nhóm chat",
+      groupAvatar: conversation.avatar,
+      conversationId: groupId,
+    });
+  }, [conversation.avatar, conversation.name, groupId, joinLinkModal, joinSuffix, joinUrl]);
+
+  const openShareJoinLinkPicker = useCallback(() => {
+    if (!joinSuffix || !joinUrl) return;
+    joinLinkModal?.openShareGroupJoinLinkPicker({
+      suffix: joinSuffix,
+      url: joinUrl,
+      groupName: conversation.name ?? "Nhóm chat",
+      groupAvatar: conversation.avatar,
+      conversationId: groupId,
+    });
+  }, [conversation.avatar, conversation.name, groupId, joinLinkModal, joinSuffix, joinUrl]);
+
   const isMuted = conversation.isMuted ?? false;
   const isPinnedToTop = conversation.isPinnedToTop ?? false;
 
@@ -506,18 +704,12 @@ export function GroupManageModal({
     return out;
   }, [messages]);
 
-  const pinnedList = useMemo(
-    () =>
-      messages
-        .filter((m) => m.isPinned && !m.isRecalled && !m.isDeleted)
-        .slice()
-        .sort((a, b) => {
-          const am = new Date(a.createdAt).getTime();
-          const bm = new Date(b.createdAt).getTime();
-          return (Number.isFinite(bm) ? bm : 0) - (Number.isFinite(am) ? am : 0);
-        }),
-    [messages],
-  );
+  const pinnedMessageOrder = useAppSelector((s) => s.chat.pinnedMessageOrderByConv[groupId] ?? []);
+
+  const pinnedList = useMemo(() => {
+    const pinned = messages.filter((m) => m.isPinned && !m.isRecalled && !m.isDeleted);
+    return orderPinnedMessagesMRU(pinned, pinnedMessageOrder);
+  }, [messages, pinnedMessageOrder]);
 
   const memberNameById = useMemo(() => {
     const m = new Map<string, string>();
@@ -553,6 +745,28 @@ export function GroupManageModal({
     const raw = tasksEnvelope?.data;
     return Array.isArray(raw) ? raw : [];
   }, [tasksEnvelope]);
+
+  const tasksSorted = useMemo(() => {
+    const list = tasksList.slice();
+    list.sort((a, b) => {
+      const ax = a as Record<string, unknown>;
+      const bx = b as Record<string, unknown>;
+      const at = Date.parse(String(ax.createdAt ?? "")) || 0;
+      const bt = Date.parse(String(bx.createdAt ?? "")) || 0;
+      if (bt !== at) return bt - at;
+      return String(ax.taskId ?? "").localeCompare(String(bx.taskId ?? ""));
+    });
+    return list;
+  }, [tasksList]);
+
+  const memberAvatarById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const row of members) {
+      if (!row.userId || !row.avatar?.trim()) continue;
+      m.set(row.userId, row.avatar.trim());
+    }
+    return m;
+  }, [members]);
 
   useEffect(() => {
     if (!visible || !initialTaskIdForEditor?.trim()) return;
@@ -622,6 +836,8 @@ export function GroupManageModal({
     }
     if (panel !== "home") {
       if (panel === "members") setMembersLeadersOnly(false);
+      setBulletinAddOpen(false);
+      setMemberActionMenuUserId(null);
       setPanel("home");
       return;
     }
@@ -682,24 +898,6 @@ export function GroupManageModal({
     }
   }, [canEditGroupProfile, groupId, updateGroup, uploadMedia]);
 
-  const handleAddMembers = useCallback(async () => {
-    const ids = [...selectedInviteFriendIds];
-    if (ids.length === 0) {
-      toast.error("Chọn ít nhất một bạn bè");
-      return;
-    }
-    try {
-      await addMembers({ groupId, memberIds: ids }).unwrap();
-      setSelectedInviteFriendIds(new Set());
-      void refetch();
-      setPanel("members");
-      setMemberManageTab("list");
-      toast.success("Đã gửi lời mời vào nhóm");
-    } catch {
-      toast.error("Không thể mời thành viên");
-    }
-  }, [addMembers, groupId, refetch, selectedInviteFriendIds]);
-
   const confirmRemove = useCallback(
     (m: IGroupMember) => {
       if (members.length <= MIN_GROUP_MEMBERS) {
@@ -708,98 +906,92 @@ export function GroupManageModal({
         );
         return;
       }
-      Alert.alert("Mời khỏi nhóm", `Mời "${m.displayName}" ra khỏi nhóm?`, [
-        { text: "Hủy", style: "cancel" },
-        {
-          text: "Mời ra khỏi nhóm",
-          style: "destructive",
-          onPress: () => {
-            void (async () => {
-              try {
-                await removeMember({ groupId, userId: m.userId }).unwrap();
-                void refetch();
-                toast.success("Đã mời thành viên ra khỏi nhóm");
-              } catch (e: unknown) {
-                const msg =
-                  e && typeof e === "object" && "data" in e
-                    ? String((e as { data?: { message?: string } }).data?.message ?? "")
-                    : "";
-                toast.error(msg || "Không thể mời thành viên ra khỏi nhóm");
-              }
-            })();
-          },
-        },
-      ]);
+      setKickTargetMember(m);
+      setKickConfirmOpen(true);
     },
-    [groupId, members.length, removeMember, refetch],
+    [members.length],
   );
 
-  const confirmDemote = useCallback(
+  const confirmDemote = useCallback((m: IGroupMember) => {
+    setDemoteTargetMember(m);
+    setDemoteConfirmOpen(true);
+  }, []);
+
+  const confirmPromote = useCallback(
     (m: IGroupMember) => {
-      Alert.alert("Hạ phó nhóm", `Hạ "${m.displayName}" xuống thành viên?`, [
-        { text: "Hủy", style: "cancel" },
-        {
-          text: "Hạ xuống thành viên",
-          style: "destructive",
-          onPress: () => {
-            void (async () => {
-              try {
-                await changeRole({ groupId, userId: m.userId, role: "member" }).unwrap();
-                void refetch();
-                toast.success("Đã hạ phó nhóm xuống thành viên");
-              } catch {
-                toast.error("Không thể đổi vai trò");
-              }
-            })();
-          },
-        },
-      ]);
+      if (adminSlotsFull) {
+        toast.error(
+          `Nhóm chỉ có tối đa ${MAX_GROUP_ADMINS} phó nhóm. Hãy hạ một phó nhóm trước khi bổ nhiệm thêm.`,
+        );
+        return;
+      }
+      setPromoteTargetMember(m);
+      setPromoteConfirmOpen(true);
     },
-    [changeRole, groupId, refetch],
+    [adminSlotsFull],
   );
 
-  const openMemberRowMenu = useCallback(
-    (m: IGroupMember) => {
-      if (!canKickMembers) return;
-      if (m.role === "owner" || m.userId === effectiveUserId) return;
-      const canDemote = m.role === "admin";
-      const name = memberRowDisplayName(m, effectiveUserId);
-      const kick = () => {
-        if (kickGloballyDisabled) {
-          toast.warning(
-            `Nhóm phải còn tối thiểu ${MIN_GROUP_MEMBERS} người — không thể mời thêm ai ra (hiện ${members.length} người).`,
-          );
-          return;
-        }
-        confirmRemove(m);
-      };
-      const buttons: {
-        text: string;
-        style?: "destructive" | "cancel";
-        onPress?: () => void;
-      }[] = [];
-      if (canDemote) {
-        buttons.push({
-          text: "Hạ phó nhóm xuống thành viên",
-          onPress: () => confirmDemote(m),
-        });
-      }
-      if (!membersLeadersOnly) {
-        buttons.push({ text: "Kick", style: "destructive", onPress: kick });
-      }
-      buttons.push({ text: "Hủy", style: "cancel" });
-      Alert.alert(name, undefined, buttons);
-    },
-    [
-      canKickMembers,
-      confirmDemote,
-      confirmRemove,
-      effectiveUserId,
-      kickGloballyDisabled,
-      members.length,
-      membersLeadersOnly,
-    ],
+  const normalizedMembers = useMemo(
+    () =>
+      normalizeGroupMembersList(members, {
+        leaderId: conversation.leaderId,
+        creatorId: conversation.creatorId,
+      }),
+    [members, conversation.leaderId, conversation.creatorId],
   );
+
+  const promotableMembers = useMemo(
+    () => normalizedMembers.filter((m) => m.role === "member"),
+    [normalizedMembers],
+  );
+
+  const activeMemberIds = useMemo(
+    () => new Set(normalizedMembers.map((m) => m.userId)),
+    [normalizedMembers],
+  );
+
+  const membersForList = useMemo(() => {
+    if (!membersLeadersOnly) return normalizedMembers;
+    return normalizedMembers.filter((m) => m.role === "owner" || m.role === "admin");
+  }, [normalizedMembers, membersLeadersOnly]);
+
+  useEffect(() => {
+    if (membersLeadersOnly && memberManageTab !== "list") {
+      setMemberManageTab("list");
+    }
+  }, [membersLeadersOnly, memberManageTab]);
+
+  useEffect(() => {
+    if (canModerateMembers && !membersLeadersOnly) return;
+    if (memberManageTab === "pending") {
+      setMemberManageTab("list");
+    }
+  }, [canModerateMembers, membersLeadersOnly, memberManageTab]);
+
+  useEffect(() => {
+    if (kickTargetMember && !activeMemberIds.has(kickTargetMember.userId)) {
+      setKickConfirmOpen(false);
+      setKickTargetMember(null);
+    }
+    if (demoteTargetMember && !activeMemberIds.has(demoteTargetMember.userId)) {
+      setDemoteConfirmOpen(false);
+      setDemoteTargetMember(null);
+    }
+    if (promoteTargetMember && !activeMemberIds.has(promoteTargetMember.userId)) {
+      setPromoteConfirmOpen(false);
+      setPromoteTargetMember(null);
+    }
+    if (promotePickerOpen && promotableMembers.length === 0) {
+      setPromotePickerOpen(false);
+    }
+  }, [
+    activeMemberIds,
+    demoteTargetMember,
+    kickTargetMember,
+    promotePickerOpen,
+    promoteTargetMember,
+    promotableMembers.length,
+  ]);
 
   const runLeave = useCallback(
     async (newOwnerUserId?: string) => {
@@ -819,49 +1011,41 @@ export function GroupManageModal({
   );
 
   const handleLeavePress = useCallback(() => {
+    if (leaveBlockedByMinMembers) {
+      toast.warning(leaveMinMembersHint);
+      return;
+    }
     if (isOwner) {
       if (othersForOwnerHandoff.length === 0) {
-        toast.warning("Bạn là thành viên duy nhất. Hãy giải tán nhóm thay vì rời nhóm");
+        toast.warning("Không còn thành viên khác để chuyển quyền. Hãy giải tán nhóm.");
         return;
       }
+      setSuccessorSearchQuery("");
+      setSelectedSuccessorId(null);
       setPickOwnerForLeave(true);
       return;
     }
-    Alert.alert("Rời nhóm", "Bạn sẽ không còn nhận tin nhắn từ nhóm này.", [
-      { text: "Hủy", style: "cancel" },
-      { text: "Rời nhóm", style: "destructive", onPress: () => void runLeave() },
-    ]);
-  }, [isOwner, othersForOwnerHandoff.length, runLeave]);
+    setLeaveConfirmOpen(true);
+  }, [leaveBlockedByMinMembers, leaveMinMembersHint, isOwner, othersForOwnerHandoff.length]);
+
+  const handleTransferPress = useCallback(() => {
+    if (othersForOwnerHandoff.length === 0) {
+      toast.warning("Không còn thành viên khác để chuyển quyền. Hãy giải tán nhóm.");
+      return;
+    }
+    setSuccessorSearchQuery("");
+    setSelectedSuccessorId(null);
+    if (adminSlotsFull) {
+      setTransferNewRole("member");
+    } else {
+      setTransferNewRole("admin");
+    }
+    setPanel("transferOwner");
+  }, [othersForOwnerHandoff.length, adminSlotsFull]);
 
   const handleDeleteGroup = useCallback(() => {
-    Alert.alert("Giải tán nhóm", "Mọi thành viên sẽ bị xóa khỏi nhóm.", [
-      { text: "Hủy", style: "cancel" },
-      {
-        text: "Giải tán",
-        style: "destructive",
-        onPress: () => {
-          Alert.alert("Xác nhận lần nữa", "Hành động này không thể hoàn tác.", [
-            { text: "Hủy", style: "cancel" },
-            {
-              text: "Giải tán nhóm",
-              style: "destructive",
-              onPress: () => {
-                void (async () => {
-                  try {
-                    await deleteGroup(groupId).unwrap();
-                    toast.success("Đã giải tán nhóm");
-                    navigateOut();
-                  } catch {
-                    toast.error("Không thể giải tán nhóm");
-                  }
-                })();
-              },
-            },
-          ]);
-        },
-      },
-    ]);
-  }, [deleteGroup, groupId, navigateOut]);
+    setDisbandConfirmOpen(true);
+  }, []);
 
   const toggleMuted = useCallback(
     async (next: boolean) => {
@@ -965,6 +1149,21 @@ export function GroupManageModal({
     await runAiSummary(false);
   }, [runAiSummary]);
 
+  useEffect(() => {
+    if (!visible || !openAiSummaryWhenVisible) return;
+    setAiSummaryOpen(true);
+    void runAiSummary(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ khi mở modal với cờ từ composer
+  }, [visible, openAiSummaryWhenVisible]);
+
+  useEffect(() => {
+    if (!visible || groupBoardTick === 0) return;
+    void refetch();
+    void refetchSettings();
+    void refetchPolls();
+    void refetchTasks();
+  }, [groupBoardTick, visible, refetch, refetchSettings, refetchPolls, refetchTasks]);
+
   const handleRerunAiSummary = useCallback(async () => {
     await runAiSummary(true);
   }, [runAiSummary]);
@@ -1012,34 +1211,45 @@ export function GroupManageModal({
   const transferOwnerTo = useCallback(
     async (userId: string) => {
       if (!effectiveUserId) return;
-      Alert.alert("Chuyển quyền trưởng nhóm", "Bạn sẽ trở thành phó nhóm sau khi chuyển.", [
+      const submit = (currentOwnerNewRole: Extract<MemberRole, "admin" | "member">) => {
+        void (async () => {
+          try {
+            await transferOwner({ groupId, newOwnerUserId: userId, currentOwnerNewRole }).unwrap();
+            setPanel("home");
+            void refetch();
+            toast.success("Trưởng nhóm mới đã được cập nhật");
+          } catch {
+            toast.error("Không thể chuyển quyền. Thử lại hoặc kiểm tra quyền trên máy chủ");
+          }
+        })();
+      };
+      const buttons: {
+        text: string;
+        style?: "cancel" | "destructive" | "default";
+        onPress?: () => void;
+      }[] = [
         { text: "Hủy", style: "cancel" },
-        {
-          text: "Xác nhận",
-          onPress: () => {
-            void (async () => {
-              try {
-                await changeRole({ groupId, userId, role: "owner" }).unwrap();
-                await changeRole({ groupId, userId: effectiveUserId, role: "admin" }).unwrap();
-                setPanel("home");
-                void refetch();
-                toast.success("Trưởng nhóm mới đã được cập nhật");
-              } catch {
-                toast.error("Không thể chuyển quyền. Thử lại hoặc kiểm tra quyền trên máy chủ");
-              }
-            })();
-          },
-        },
-      ]);
+        { text: "Thành viên", style: "destructive", onPress: () => submit("member") },
+      ];
+      if (!adminSlotsFull) {
+        buttons.push({ text: "Phó nhóm", onPress: () => submit("admin") });
+      }
+      Alert.alert(
+        "Chuyển quyền trưởng nhóm",
+        adminSlotsFull
+          ? `Bạn sẽ mất quyền trưởng nhóm. Nhóm đã đủ ${MAX_GROUP_ADMINS} phó nhóm — bạn chỉ có thể trở thành thành viên.`
+          : "Bạn sẽ mất quyền trưởng nhóm. Chọn vai trò của bạn sau khi chuyển.",
+        buttons,
+      );
     },
-    [changeRole, effectiveUserId, groupId, refetch],
+    [adminSlotsFull, effectiveUserId, groupId, refetch, transferOwner],
   );
 
   const busy =
     savingName ||
-    adding ||
     removing ||
     changingRole ||
+    transferringOwner ||
     leaving ||
     deleting ||
     patchingPrefs ||
@@ -1048,7 +1258,7 @@ export function GroupManageModal({
 
   const headerTitle =
     panel === "home"
-      ? "Tùy chọn"
+      ? "Thông tin nhóm"
       : panel === "rename"
         ? "Thông tin nhóm"
         : panel === "add"
@@ -1060,15 +1270,11 @@ export function GroupManageModal({
             : panel === "settings"
               ? "Quản lý nhóm"
               : panel === "media"
-                ? mediaTab === "media"
-                  ? "Ảnh / Video"
-                  : mediaTab === "file"
-                    ? "File"
-                    : "Link"
+                ? CONVERSATION_GALLERY_THEME[mediaTab].label
                 : panel === "bulletinFeed"
                   ? "Tin ghim & Bình chọn"
                   : panel === "tasks"
-                    ? "Danh sách giao việc & nhắc hẹn"
+                    ? "Danh sách nhắc hẹn"
                     : panel === "personal"
                       ? "Cài đặt cá nhân"
                       : "Chuyển quyền";
@@ -1076,6 +1282,7 @@ export function GroupManageModal({
   const renderHome = () => (
     <ScrollView
       style={styles.scroll}
+      contentContainerStyle={styles.homeScrollContent}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
     >
@@ -1085,12 +1292,9 @@ export function GroupManageModal({
           disabled={busy || !canEditGroupProfile}
           style={[styles.avatarWrap, !canEditGroupProfile && { opacity: 0.85 }]}
         >
-          <Avatar
-            uri={conversation.avatar || undefined}
-            name={conversation.name || undefined}
-            size="xl"
-            isGroup
-          />
+          <View style={styles.heroAvatarFrame}>
+            <GroupHeroAvatar uri={conversation.avatar} name={conversation.name} />
+          </View>
           {canEditGroupProfile ? (
             <View style={styles.camBadge}>
               <Camera size={16} color="#fff" strokeWidth={2} />
@@ -1112,64 +1316,66 @@ export function GroupManageModal({
             hitSlop={10}
             style={styles.iconBtn}
           >
-            <Pencil size={20} color={Z.primary} strokeWidth={2} />
+            <Pencil size={14} color={Z.sub} strokeWidth={2} />
           </Pressable>
         </View>
-        <Text style={styles.memberCountText}>{conversation.memberCount} thành viên</Text>
-      </View>
+        <Text style={styles.memberCountText}>
+          {members.length > 0 ? members.length : (conversation.memberCount ?? 0)} thành viên
+        </Text>
 
-      <View style={styles.quickRow}>
-        <Pressable
-          style={styles.quickCell}
-          onPress={() => {
-            if (isMuted) {
-              void toggleMuted(false);
-            } else {
-              setMuteNotifMode("create");
-              setMuteNotifOpen(true);
-            }
-          }}
-          disabled={busy}
-        >
-          <View style={styles.quickIcon}>
-            {isMuted ? (
-              <BellOff size={20} color={Z.sub} strokeWidth={1.75} />
-            ) : (
-              <Bell size={20} color={Z.sub} strokeWidth={1.75} />
-            )}
-          </View>
-          <Text style={styles.quickLabel}>
-            {isMuted ? <>Bật thông{"\n"}báo</> : <>Tắt thông{"\n"}báo</>}
-          </Text>
-        </Pressable>
-        <Pressable
-          style={styles.quickCell}
-          onPress={() => void togglePinnedConv(!isPinnedToTop)}
-          disabled={busy}
-        >
-          <View style={styles.quickIcon}>
-            <Pin
-              size={20}
-              color={isPinnedToTop ? Z.primary : Z.sub}
-              strokeWidth={isPinnedToTop ? 2.2 : 1.75}
-            />
-          </View>
-          <Text style={styles.quickLabel}>
-            {isPinnedToTop ? <>Bỏ ghim{"\n"}hội thoại</> : <>Ghim hội{"\n"}thoại</>}
-          </Text>
-        </Pressable>
-        <Pressable style={styles.quickCell} onPress={() => setPanel("add")} disabled={busy}>
-          <View style={styles.quickIcon}>
-            <UserPlus size={20} color={Z.sub} strokeWidth={1.75} />
-          </View>
-          <Text style={styles.quickLabel}>Thêm thành{"\n"}viên</Text>
-        </Pressable>
-        <Pressable style={styles.quickCell} onPress={() => setPanel("settings")} disabled={busy}>
-          <View style={styles.quickIcon}>
-            <Settings size={20} color={Z.sub} strokeWidth={1.75} />
-          </View>
-          <Text style={styles.quickLabel}>Quản lý{"\n"}nhóm</Text>
-        </Pressable>
+        <View style={styles.quickRow}>
+          <Pressable
+            style={styles.quickCell}
+            onPress={() => {
+              if (isMuted) {
+                void toggleMuted(false);
+              } else {
+                setMuteNotifMode("create");
+                setMuteNotifOpen(true);
+              }
+            }}
+            disabled={busy}
+          >
+            <View style={styles.quickIcon}>
+              {isMuted ? (
+                <BellOff size={16} color={Z.sub} strokeWidth={1.75} />
+              ) : (
+                <Bell size={16} color={Z.sub} strokeWidth={1.75} />
+              )}
+            </View>
+            <Text style={styles.quickLabel}>
+              {isMuted ? <>Bật thông{"\n"}báo</> : <>Tắt thông{"\n"}báo</>}
+            </Text>
+          </Pressable>
+          <Pressable
+            style={styles.quickCell}
+            onPress={() => void togglePinnedConv(!isPinnedToTop)}
+            disabled={busy}
+          >
+            <View style={styles.quickIcon}>
+              <Pin
+                size={16}
+                color={isPinnedToTop ? Z.primary : Z.sub}
+                strokeWidth={isPinnedToTop ? 2.2 : 1.75}
+              />
+            </View>
+            <Text style={styles.quickLabel}>
+              {isPinnedToTop ? <>Bỏ ghim{"\n"}hội thoại</> : <>Ghim hội{"\n"}thoại</>}
+            </Text>
+          </Pressable>
+          <Pressable style={styles.quickCell} onPress={() => setPanel("add")} disabled={busy}>
+            <View style={styles.quickIcon}>
+              <UserPlus size={16} color={Z.sub} strokeWidth={1.75} />
+            </View>
+            <Text style={styles.quickLabel}>Thêm thành{"\n"}viên</Text>
+          </Pressable>
+          <Pressable style={styles.quickCell} onPress={() => setPanel("settings")} disabled={busy}>
+            <View style={styles.quickIcon}>
+              <Settings size={16} color={Z.sub} strokeWidth={1.75} />
+            </View>
+            <Text style={styles.quickLabel}>Quản lý{"\n"}nhóm</Text>
+          </Pressable>
+        </View>
       </View>
 
       <View style={styles.aiBlock}>
@@ -1195,7 +1401,10 @@ export function GroupManageModal({
           }}
           android_ripple={{ color: "rgba(0,0,0,0.04)" }}
         >
-          <Text style={styles.memberMgmtTitle}>Quản lý thành viên</Text>
+          <View style={styles.memberMgmtHeaderLeft}>
+            <Users size={16} color={Z.sub} strokeWidth={2} />
+            <Text style={styles.memberMgmtTitle}>Quản lý thành viên</Text>
+          </View>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             {canModerateMembers && joinRequests.length > 0 ? (
               <View style={styles.requestBadge}>
@@ -1204,12 +1413,12 @@ export function GroupManageModal({
                 </Text>
               </View>
             ) : null}
-            <ChevronRight size={18} color={Z.sub} />
+            <ChevronRight size={16} color={Z.sub} />
           </View>
         </Pressable>
       </View>
 
-      <View style={styles.bulletinOuter}>
+      <View style={[styles.bulletinOuter, styles.homeSectionSpaced]}>
         <Pressable
           style={styles.bulletinHeader}
           onPress={() => setBulletinExpanded((v) => !v)}
@@ -1221,125 +1430,101 @@ export function GroupManageModal({
               transform: [{ rotate: bulletinExpanded ? "0deg" : "-90deg" }],
             }}
           >
-            <ChevronDown size={18} color={Z.sub} strokeWidth={2} />
+            <ChevronDown size={16} color={Z.sub} strokeWidth={2} />
           </View>
         </Pressable>
         {bulletinExpanded ? (
           <View style={styles.bulletinBody}>
             <Pressable
-              style={styles.bulletinRow}
+              style={styles.bulletinSubRow}
               onPress={() => setPanel("tasks")}
               android_ripple={{ color: "rgba(0,0,0,0.04)" }}
             >
-              <Clock size={18} color={Z.sub} strokeWidth={1.75} />
-              <Text style={[styles.bulletinRowLabel, { flex: 1, marginLeft: 12 }]}>
-                Danh sách giao việc & nhắc hẹn
-              </Text>
-              <ChevronRight size={16} color={Z.sub} />
+              <Clock size={16} color={Z.sub} strokeWidth={1.75} style={{ opacity: 0.7 }} />
+              <Text style={styles.bulletinSubLabel}>Danh sách nhắc hẹn</Text>
             </Pressable>
             <Pressable
-              style={styles.bulletinRow}
+              style={styles.bulletinSubRow}
               onPress={() => {
                 setBulletinNotesTab("all");
                 setPanel("bulletinFeed");
               }}
               android_ripple={{ color: "rgba(0,0,0,0.04)" }}
             >
-              <FileText size={18} color={Z.sub} strokeWidth={1.75} />
-              <Text style={[styles.bulletinRowLabel, { flex: 1, marginLeft: 12 }]}>
-                Tin ghim & Bình chọn
-              </Text>
-              <ChevronRight size={16} color={Z.sub} />
+              <FileText size={16} color={Z.sub} strokeWidth={1.75} style={{ opacity: 0.7 }} />
+              <Text style={styles.bulletinSubLabel}>Tin ghim & Bình chọn</Text>
             </Pressable>
           </View>
         ) : null}
       </View>
 
-      <MenuBlock
-        onPress={() => {
-          setMediaTab("media");
-          setPanel("media");
-        }}
-        icon={<ImageIcon size={22} color={Z.text} strokeWidth={1.75} />}
-        label="Ảnh / Video"
-      />
-      <MenuBlock
-        onPress={() => {
-          setMediaTab("file");
-          setPanel("media");
-        }}
-        icon={<FileText size={22} color={Z.text} strokeWidth={1.75} />}
-        label="File"
-      />
-      <MenuBlock
-        onPress={() => {
-          setMediaTab("link");
-          setPanel("media");
-        }}
-        icon={<Link2 size={22} color={Z.text} strokeWidth={1.75} />}
-        label="Link"
-      />
-
-      <Pressable
-        style={styles.linkBlock}
-        onPress={async () => {
-          if (!joinUrl) {
-            toast.warning("Chưa có link nhóm. Quản trị có thể bật trong Cài đặt nhóm");
-            return;
-          }
-          await Clipboard.setStringAsync(joinUrl);
-          toast.success("Đã sao chép link nhóm");
-        }}
-      >
-        <Link2 size={22} color={Z.text} strokeWidth={1.75} />
-        <View style={{ flex: 1, marginLeft: 12 }}>
-          <Text style={styles.menuLabel}>Link nhóm</Text>
-          <Text style={styles.linkSub} numberOfLines={2}>
-            {joinUrl || "—"}
-          </Text>
-        </View>
-        <ChevronRight size={18} color={Z.sub} />
-      </Pressable>
-
-      <MenuBlock
-        onPress={() => setPanel("personal")}
-        icon={<User size={22} color={Z.text} strokeWidth={1.75} />}
-        label="Cài đặt cá nhân"
-      />
-
-      <View style={styles.divider} />
-
-      {isOwner ? (
-        <MenuBlock
-          onPress={() => setPanel("transferOwner")}
-          icon={<UserCog size={22} color={Z.text} strokeWidth={1.75} />}
-          label="Chuyển quyền trưởng nhóm"
+      <View style={styles.homeNavGroup}>
+        <HomeNavRow
+          kind="media"
+          onPress={() => {
+            setMediaTab("media");
+            setPanel("media");
+          }}
         />
-      ) : null}
+        <HomeNavRow
+          kind="file"
+          onPress={() => {
+            setMediaTab("file");
+            setPanel("media");
+          }}
+        />
+        <HomeNavRow
+          kind="link"
+          isLast
+          onPress={() => {
+            setMediaTab("link");
+            setPanel("media");
+          }}
+        />
+      </View>
 
-      <Pressable style={styles.destructRow} onPress={handleLeavePress} disabled={busy}>
-        {leaving ? (
-          <ActivityIndicator color={Z.red} />
-        ) : (
-          <>
-            <LogOut size={22} color={Z.red} strokeWidth={1.75} />
-            <Text style={styles.destructText}>Rời nhóm</Text>
-          </>
-        )}
-      </Pressable>
-
-      {isOwner ? (
-        <Pressable style={styles.destructRow} onPress={handleDeleteGroup} disabled={busy}>
-          {deleting ? (
+      <View style={styles.homeActionsWrap}>
+        {isOwner ? (
+          <Pressable
+            style={[styles.homeBtnTransfer, busy ? { opacity: 0.5 } : null]}
+            android_ripple={{ color: "rgba(0, 104, 255, 0.15)" }}
+            onPress={handleTransferPress}
+            disabled={busy}
+          >
+            {transferringOwner ? (
+              <ActivityIndicator color={Z.primary} />
+            ) : (
+              <Text style={styles.homeBtnTransferText}>Chuyển quyền trưởng nhóm</Text>
+            )}
+          </Pressable>
+        ) : null}
+        <Pressable
+          style={[styles.homeBtnLeave, busy ? { opacity: 0.5 } : null]}
+          android_ripple={{ color: "rgba(239, 68, 68, 0.15)" }}
+          onPress={handleLeavePress}
+          disabled={busy}
+        >
+          {leaving ? (
             <ActivityIndicator color={Z.red} />
           ) : (
-            <>
-              <Trash2 size={22} color={Z.red} strokeWidth={1.75} />
-              <Text style={styles.destructText}>Giải tán nhóm</Text>
-            </>
+            <Text style={styles.homeBtnLeaveText}>Rời nhóm</Text>
           )}
         </Pressable>
-      ) : null}
+        {isOwner ? (
+          <Pressable
+            style={[styles.homeBtnDisband, busy ? { opacity: 0.5 } : null]}
+            android_ripple={{ color: "rgba(255, 255, 255, 0.2)" }}
+            onPress={handleDeleteGroup}
+            disabled={busy}
+          >
+            {deleting ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.homeBtnDisbandText}>Giải tán nhóm</Text>
+            )}
+          </Pressable>
+        ) : null}
+      </View>
 
       <View style={{ height: 28 }} />
     </ScrollView>
@@ -1357,12 +1542,9 @@ export function GroupManageModal({
           disabled={busy || !canEditGroupProfile}
           style={[styles.avatarWrap, (!canEditGroupProfile || busy) && { opacity: 0.75 }]}
         >
-          <Avatar
-            uri={conversation.avatar || undefined}
-            name={conversation.name || undefined}
-            size="xl"
-            isGroup
-          />
+          <View style={styles.heroAvatarFrame}>
+            <GroupHeroAvatar uri={conversation.avatar} name={conversation.name} />
+          </View>
           {canEditGroupProfile ? (
             <View style={styles.camBadge}>
               <Camera size={16} color="#fff" strokeWidth={2} />
@@ -1394,121 +1576,9 @@ export function GroupManageModal({
     </ScrollView>
   );
 
-  const renderAdd = () => (
-    <View style={{ flex: 1 }}>
-      <View style={[styles.panelPad, { paddingBottom: 8 }]}>
-        <View style={styles.addMemberNotice}>
-          <Text style={styles.addMemberNoticeText}>
-            Chọn từ bạn bè đã kết bạn — không nhập mã ID. Chỉ hiện người chưa có trong nhóm.
-          </Text>
-        </View>
-        <Text style={styles.help}>Chọn từ danh sách bạn bè (chưa có trong nhóm).</Text>
-        <View style={styles.addFriendSearchWrap}>
-          <Search size={18} color={Z.sub} strokeWidth={2} />
-          <TextInput
-            value={addFriendFilter}
-            onChangeText={setAddFriendFilter}
-            placeholder="Tìm theo tên..."
-            placeholderTextColor={Z.sub}
-            style={styles.addFriendSearchInput}
-            editable={!busy}
-          />
-        </View>
-      </View>
-      {loadingFriendsForInvite ? (
-        <ActivityIndicator style={{ marginTop: 24 }} color={Z.primary} />
-      ) : (
-        <FlatList
-          data={friendsToInvite}
-          keyExtractor={(f) => f.userId}
-          style={{ flex: 1 }}
-          extraData={selectedInviteFriendIds.size}
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ flexGrow: 1, paddingBottom: 8 }}
-          ListEmptyComponent={
-            <Text
-              style={[styles.help, { textAlign: "center", marginTop: 24, paddingHorizontal: 16 }]}
-            >
-              {friends.length === 0
-                ? "Chưa có bạn bè trong danh sách."
-                : "Không còn bạn nào để mời hoặc không khớp tìm kiếm."}
-            </Text>
-          }
-          renderItem={({ item: f }) => {
-            const on = selectedInviteFriendIds.has(f.userId);
-            return (
-              <Pressable
-                style={[styles.memberRow, on ? { backgroundColor: "#EFF6FF" } : null]}
-                onPress={() => toggleInviteFriend(f.userId)}
-                disabled={busy}
-              >
-                <Avatar uri={f.avatar || undefined} name={f.displayName} size="sm" />
-                <Text style={[styles.menuLabel, { flex: 1, marginLeft: 12 }]} numberOfLines={1}>
-                  {f.displayName}
-                </Text>
-                <View style={[styles.inviteCheckBox, on ? styles.inviteCheckBoxOn : null]}>
-                  {on ? <Check size={16} color="#fff" strokeWidth={3} /> : null}
-                </View>
-              </Pressable>
-            );
-          }}
-        />
-      )}
-      <View
-        style={[
-          styles.panelPad,
-          {
-            paddingTop: 12,
-            borderTopWidth: StyleSheet.hairlineWidth,
-            borderTopColor: Z.line,
-          },
-        ]}
-      >
-        <Pressable
-          style={styles.primaryBtn}
-          onPress={() => void handleAddMembers()}
-          disabled={busy}
-        >
-          {adding ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.primaryBtnText}>Gửi lời mời</Text>
-          )}
-        </Pressable>
-      </View>
-    </View>
-  );
-
-  const membersForList = useMemo(() => {
-    if (!membersLeadersOnly) return members;
-    return members.filter((m) => m.role === "owner" || m.role === "admin");
-  }, [members, membersLeadersOnly]);
-
   const renderMembers = () => (
-    <View style={{ flex: 1 }}>
-      <View
-        style={{
-          paddingHorizontal: 20,
-          paddingTop: 16,
-          paddingBottom: 12,
-          borderBottomWidth: StyleSheet.hairlineWidth,
-          borderBottomColor: Z.line,
-        }}
-      >
-        {canModerateMembers && !membersLeadersOnly ? (
-          <Pressable
-            style={styles.mmAddBtn}
-            onPress={() => setPanel("add")}
-            disabled={busy}
-            android_ripple={{ color: "rgba(0,104,255,0.12)" }}
-          >
-            <Plus size={17} color={Z.primary} strokeWidth={2.5} />
-            <Text style={styles.mmAddBtnText}>Thêm thành viên</Text>
-          </Pressable>
-        ) : null}
-      </View>
-
-      {!membersLeadersOnly ? (
+    <View style={styles.mmRoot}>
+      {canModerateMembers && !membersLeadersOnly ? (
         <View style={styles.mmTabsRow}>
           <Pressable
             onPress={() => setMemberManageTab("list")}
@@ -1516,95 +1586,170 @@ export function GroupManageModal({
               styles.mmTab,
               memberManageTab === "list" ? styles.mmTabActive : styles.mmTabIdle,
             ]}
+            accessibilityRole="button"
+            accessibilityState={{ selected: memberManageTab === "list" }}
           >
-            <Users size={14} color={memberManageTab === "list" ? "#fff" : Z.sub} strokeWidth={2} />
+            <Users
+              size={14}
+              color={memberManageTab === "list" ? "#fff" : Z.sub}
+              strokeWidth={2.25}
+            />
             <Text
               style={[
                 styles.mmTabText,
                 memberManageTab === "list" ? styles.mmTabTextActive : styles.mmTabTextIdle,
               ]}
             >
-              Thành viên ({members.length})
+              Thành viên ({normalizedMembers.length})
             </Text>
           </Pressable>
-          {canModerateMembers ? (
-            <Pressable
-              onPress={() => setMemberManageTab("pending")}
+          <Pressable
+            onPress={() => setMemberManageTab("pending")}
+            style={[
+              styles.mmTab,
+              memberManageTab === "pending" ? styles.mmTabActive : styles.mmTabIdle,
+            ]}
+            accessibilityRole="button"
+            accessibilityState={{ selected: memberManageTab === "pending" }}
+          >
+            <UserPlus
+              size={14}
+              color={memberManageTab === "pending" ? "#fff" : Z.sub}
+              strokeWidth={2.25}
+            />
+            <Text
               style={[
-                styles.mmTab,
-                memberManageTab === "pending" ? styles.mmTabActive : styles.mmTabIdle,
+                styles.mmTabText,
+                memberManageTab === "pending" ? styles.mmTabTextActive : styles.mmTabTextIdle,
               ]}
             >
-              <UserPlus
-                size={14}
-                color={memberManageTab === "pending" ? "#fff" : Z.sub}
-                strokeWidth={2}
-              />
-              <Text
-                style={[
-                  styles.mmTabText,
-                  memberManageTab === "pending" ? styles.mmTabTextActive : styles.mmTabTextIdle,
-                ]}
-              >
-                Chờ duyệt
-              </Text>
-              {joinRequests.length > 0 ? (
-                <View style={styles.mmPendingCountBadge}>
-                  <Text style={styles.mmPendingCountBadgeText}>
-                    {joinRequests.length > 99 ? "99+" : joinRequests.length}
-                  </Text>
-                </View>
-              ) : null}
-            </Pressable>
-          ) : null}
+              Chờ duyệt
+            </Text>
+            {joinRequests.length > 0 && memberManageTab !== "pending" ? (
+              <View style={styles.mmPendingCountBadge}>
+                <Text style={styles.mmPendingCountBadgeText}>
+                  {joinRequests.length > 99 ? "99+" : joinRequests.length}
+                </Text>
+              </View>
+            ) : null}
+          </Pressable>
         </View>
       ) : null}
-
       {isFetching ? (
         <ActivityIndicator style={{ marginTop: 24 }} color={Z.primary} />
       ) : memberManageTab === "list" || !canModerateMembers || membersLeadersOnly ? (
         <FlatList
           data={membersForList}
           keyExtractor={(m) => m.userId}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 24 }}
+          removeClippedSubviews={false}
+          onScrollBeginDrag={() => setMemberActionMenuUserId(null)}
+          contentContainerStyle={styles.mmListContent}
           ListEmptyComponent={
-            <Text style={[styles.help, { textAlign: "center", marginTop: 24 }]}>
+            <Text style={styles.mmListEmpty}>
               {membersLeadersOnly ? "Chưa có phó nhóm." : "Chưa có thành viên."}
             </Text>
           }
           renderItem={({ item: m }) => {
-            const canAct = membersLeadersOnly
-              ? canKickMembers && m.role === "admin"
-              : canKickMembers &&
-                Boolean(effectiveUserId) &&
-                m.userId !== effectiveUserId &&
-                m.role !== "owner";
+            const isSelfAdmin = m.role === "admin" && m.userId === effectiveUserId;
+            const canKickThis =
+              !membersLeadersOnly &&
+              canKickMembers &&
+              Boolean(effectiveUserId) &&
+              m.userId !== effectiveUserId &&
+              m.role !== "owner";
+            const canDemote = (canKickMembers || isSelfAdmin) && m.role === "admin";
+            const canPromote =
+              !membersLeadersOnly && canKickMembers && m.role === "member" && !adminSlotsFull;
+            const menuOpen = memberActionMenuUserId === m.userId;
+            const displayName = memberRowDisplayName(m, effectiveUserId);
             return (
-              <View style={styles.mmMemberRow}>
-                <Avatar uri={m.avatar || undefined} name={m.displayName} size="sm" />
-                <View style={{ flex: 1, marginLeft: 12, minWidth: 0 }}>
-                  <Text style={styles.mmMemberName} numberOfLines={1}>
-                    {memberRowDisplayName(m, effectiveUserId)}
-                  </Text>
+              <View style={[styles.mmMemberCard, menuOpen ? styles.mmMemberCardActive : null]}>
+                <View style={styles.mmMemberRow}>
+                  <MemberListAvatar uri={m.avatar} name={displayName} />
+                  <View style={styles.mmMemberInfo}>
+                    <Text style={styles.mmMemberName} numberOfLines={1}>
+                      {displayName}
+                    </Text>
+                    {m.role === "owner" ? (
+                      <View style={styles.mmRolePillOwner}>
+                        <Text style={styles.mmRolePillOwnerText}>Trưởng nhóm</Text>
+                      </View>
+                    ) : m.role === "admin" ? (
+                      <View style={styles.mmRolePillAdmin}>
+                        <Text style={styles.mmRolePillAdminText}>Phó nhóm</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <View style={styles.mmMemberActions}>
+                    {canPromote ? (
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.mmIconActionPromote,
+                          pressed ? styles.mmIconActionPressed : null,
+                        ]}
+                        disabled={changingRole}
+                        onPress={() => confirmPromote(m)}
+                        accessibilityLabel="Bổ nhiệm phó nhóm"
+                      >
+                        <UserPlus size={16} color={Z.primary} strokeWidth={2} />
+                      </Pressable>
+                    ) : null}
+                    {canKickThis ? (
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.mmIconActionKick,
+                          pressed ? styles.mmIconActionPressed : null,
+                        ]}
+                        disabled={removing}
+                        onPress={() => {
+                          if (kickGloballyDisabled) {
+                            toast.warning(
+                              `Nhóm phải còn tối thiểu ${MIN_GROUP_MEMBERS} người — không thể mời thêm ai ra (hiện ${members.length} người).`,
+                            );
+                            return;
+                          }
+                          confirmRemove(m);
+                        }}
+                        accessibilityLabel="Mời khỏi nhóm"
+                      >
+                        <UserMinus size={16} color={MM.actionKickIcon} strokeWidth={2} />
+                      </Pressable>
+                    ) : null}
+                    {canDemote ? (
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.mmMoreBtn,
+                          menuOpen ? styles.mmMoreBtnActive : null,
+                          pressed ? styles.mmMoreBtnPressed : null,
+                        ]}
+                        onPress={() =>
+                          setMemberActionMenuUserId((prev) => (prev === m.userId ? null : m.userId))
+                        }
+                        accessibilityLabel="Tùy chọn vai trò"
+                        accessibilityState={{ expanded: menuOpen }}
+                      >
+                        <MoreHorizontal size={16} color={MM.muted} strokeWidth={2} />
+                      </Pressable>
+                    ) : null}
+                  </View>
                 </View>
-                {m.role === "owner" ? (
-                  <View style={styles.mmRolePillOwner}>
-                    <Text style={styles.mmRolePillOwnerText}>Trưởng nhóm</Text>
+                {menuOpen && canDemote ? (
+                  <View style={styles.mmActionMenuDrop}>
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.mmActionMenuItem,
+                        pressed ? styles.mmActionMenuItemPressed : null,
+                      ]}
+                      disabled={changingRole}
+                      onPress={() => {
+                        setMemberActionMenuUserId(null);
+                        confirmDemote(m);
+                      }}
+                      accessibilityRole="menuitem"
+                    >
+                      <Text style={styles.mmActionMenuItemText}>Hạ phó nhóm xuống thành viên</Text>
+                    </Pressable>
                   </View>
-                ) : m.role === "admin" ? (
-                  <View style={styles.mmRolePillAdmin}>
-                    <Text style={styles.mmRolePillAdminText}>Phó nhóm</Text>
-                  </View>
-                ) : null}
-                {canAct ? (
-                  <Pressable
-                    style={styles.mmMoreBtn}
-                    onPress={() => openMemberRowMenu(m)}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    accessibilityLabel="Tùy chọn"
-                  >
-                    <MoreHorizontal size={20} color={Z.sub} strokeWidth={2} />
-                  </Pressable>
                 ) : null}
               </View>
             );
@@ -1614,43 +1759,63 @@ export function GroupManageModal({
         <FlatList
           data={joinRequests}
           keyExtractor={(r) => r.userId}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 24 }}
-          ListEmptyComponent={
-            <Text style={[styles.help, { textAlign: "center", marginTop: 24 }]}>
-              Không có yêu cầu chờ.
-            </Text>
-          }
-          renderItem={({ item: r }) => (
-            <View style={styles.mmPendingCard}>
-              <Avatar uri={r.avatar || undefined} name={r.name} size="sm" />
-              <View style={{ flex: 1, marginLeft: 12, minWidth: 0 }}>
-                <Text style={styles.mmMemberName} numberOfLines={1}>
-                  {r.name}
-                </Text>
-                <Text style={styles.subSmall}>{joinRequestSubtitle(r.status)}</Text>
-              </View>
-              <View style={{ alignItems: "flex-end", gap: 8, flexShrink: 0 }}>
-                {r.isFriend !== true ? (
+          contentContainerStyle={styles.mmListContent}
+          ListEmptyComponent={<Text style={styles.mmListEmpty}>Không có yêu cầu chờ.</Text>}
+          renderItem={({ item: r }) => {
+            const displayName = requestRowDisplayName(r.userId, r.name, effectiveUserId);
+            const showAddFriend = r.isFriend !== true && !friendActionUserIds[r.userId];
+            return (
+              <View style={styles.mmPendingCard}>
+                <MemberListAvatar uri={r.avatar} name={displayName} />
+                <View style={styles.mmPendingInfo}>
+                  <Text style={styles.mmMemberName} numberOfLines={1}>
+                    {displayName}
+                  </Text>
+                  <Text style={styles.mmPendingSubtitle}>{joinRequestSubtitle(r.status)}</Text>
+                </View>
+                <View style={styles.mmPendingActions}>
+                  {showAddFriend ? (
+                    <Pressable
+                      onPress={() => {
+                        void (async () => {
+                          try {
+                            await sendFriendReq({ userId: r.userId }).unwrap();
+                            setFriendActionUserIds((p) => ({ ...p, [r.userId]: true }));
+                            void refetchRequests();
+                            toast.success("Đã kết bạn");
+                          } catch (e: unknown) {
+                            const st =
+                              e && typeof e === "object" && "status" in e
+                                ? (e as { status?: number }).status
+                                : undefined;
+                            if (st === 409) {
+                              setFriendActionUserIds((p) => ({ ...p, [r.userId]: true }));
+                            }
+                            toast.error(st === 409 ? "Đã kết bạn" : "Không thể kết bạn");
+                          }
+                        })();
+                      }}
+                      style={styles.mmPendingBtnFriend}
+                    >
+                      <Text style={styles.mmPendingBtnFriendText}>Kết bạn</Text>
+                    </Pressable>
+                  ) : null}
                   <Pressable
                     onPress={() => {
                       void (async () => {
                         try {
-                          await sendFriendReq({ userId: r.userId }).unwrap();
-                          toast.success("Đã kết bạn");
-                        } catch (e: unknown) {
-                          const st =
-                            e && typeof e === "object" && "status" in e
-                              ? (e as { status?: number }).status
-                              : undefined;
-                          toast.error(st === 409 ? "Đã kết bạn" : "Không thể kết bạn");
+                          await rejectReq({ groupId, userId: r.userId }).unwrap();
+                          void refetchRequests();
+                          toast.success("Đã từ chối yêu cầu");
+                        } catch {
+                          toast.error("Không từ chối được");
                         }
                       })();
                     }}
+                    style={styles.mmPendingBtnReject}
                   >
-                    <Text style={styles.requestFriendLink}>Kết bạn</Text>
+                    <Text style={styles.mmPendingBtnRejectText}>Từ chối</Text>
                   </Pressable>
-                ) : null}
-                <View style={{ flexDirection: "row", gap: 8 }}>
                   <Pressable
                     onPress={() => {
                       void (async () => {
@@ -1664,30 +1829,14 @@ export function GroupManageModal({
                         }
                       })();
                     }}
-                    style={styles.miniBtn}
+                    style={styles.mmPendingBtnApprove}
                   >
-                    <Text style={styles.miniBtnTextOk}>Duyệt</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => {
-                      void (async () => {
-                        try {
-                          await rejectReq({ groupId, userId: r.userId }).unwrap();
-                          void refetchRequests();
-                          toast.success("Đã từ chối yêu cầu");
-                        } catch {
-                          toast.error("Không từ chối được");
-                        }
-                      })();
-                    }}
-                    style={styles.miniBtn}
-                  >
-                    <Text style={styles.miniBtnTextNo}>Từ chối</Text>
+                    <Text style={styles.mmPendingBtnApproveText}>Duyệt</Text>
                   </Pressable>
                 </View>
               </View>
-            </View>
-          )}
+            );
+          }}
         />
       )}
     </View>
@@ -1794,21 +1943,24 @@ export function GroupManageModal({
             onValueChange={(v) => void patchSettingAdmin("allowJoinLink", v)}
             disabled={settingsLocked}
           />
-          <GroupAdminToggleRow
-            label="Phê duyệt thành viên mới vào nhóm"
-            value={ad.approvalRequired}
-            onValueChange={(v) => void patchSettingAdmin("approvalRequired", v)}
-            disabled={settingsLocked}
-          />
         </View>
 
         {ad.allowJoinLink ? (
           <View style={styles.gmJoinLinkWrap}>
-            <View style={styles.gmJoinUrlCol}>
-              <Text style={styles.gmJoinUrlText} numberOfLines={1} ellipsizeMode="tail" selectable>
+            <Pressable
+              style={styles.gmJoinUrlCol}
+              onPress={openJoinLinkScreen}
+              disabled={!joinSuffix}
+            >
+              <Text
+                style={styles.gmJoinUrlText}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+                accessibilityLabel={joinUrl ? `Link tham gia: ${joinUrl}` : undefined}
+              >
                 {joinUrl || "—"}
               </Text>
-            </View>
+            </Pressable>
             <View style={styles.gmJoinActionsRow}>
               <Pressable
                 accessibilityLabel="Sao chép"
@@ -1827,7 +1979,7 @@ export function GroupManageModal({
               <Pressable
                 accessibilityLabel="Chia sẻ"
                 disabled={!joinSuffix}
-                onPress={() => void shareJoinLink()}
+                onPress={openShareJoinLinkPicker}
                 style={({ pressed }) => [styles.gmJoinIconBtn, pressed ? { opacity: 0.75 } : null]}
               >
                 <Share2 size={18} color={Z.primary} strokeWidth={2} />
@@ -1849,10 +2001,10 @@ export function GroupManageModal({
             onPress={() => {
               setMembersLeadersOnly(true);
               setMemberManageTab("list");
+              setMemberActionMenuUserId(null);
               setPanel("members");
             }}
             style={({ pressed }) => [
-              { width: "100%" },
               styles.gmPlaceholderHit,
               pressed ? styles.gmPlaceholderPressed : null,
             ]}
@@ -1861,6 +2013,7 @@ export function GroupManageModal({
             <View style={styles.gmPlaceholderRowInner}>
               <KeyRound size={20} color="#64748B" strokeWidth={2} />
               <Text style={styles.gmPlaceholderLabel}>Trưởng & phó nhóm</Text>
+              <ChevronRight size={16} color={Z.sub} />
             </View>
           </Pressable>
         </View>
@@ -1884,37 +2037,20 @@ export function GroupManageModal({
         </Text>
       );
     }
-    return pinnedList.map((m) => {
-      const who = String(m.senderDisplayName ?? "").trim() || "Thành viên";
-      const when = formatBulletinFooterTime(m.createdAt);
-      const rawContent = String(m.content ?? "").trim();
-      const preview = rawContent.length > 180 ? `${rawContent.slice(0, 180)}…` : rawContent || "…";
-      return (
-        <Pressable
-          key={m.messageId}
-          onPress={() => jumpToPinnedMessage(m.messageId)}
-          disabled={!onJumpToMessage}
-          style={({ pressed }) => [
-            styles.bulletinPinCard,
-            pressed && onJumpToMessage ? { opacity: 0.92 } : null,
-            !onJumpToMessage ? { opacity: 0.85 } : null,
-          ]}
-        >
-          <View style={styles.bulletinPinCardTop}>
-            <Pin size={18} color={Z.primary} strokeWidth={2} />
-            <Text style={styles.bulletinPinWho} numberOfLines={1}>
-              {who}
-            </Text>
-            <Text style={styles.bulletinPinWhen} numberOfLines={1}>
-              {when || "—"}
-            </Text>
-          </View>
-          <Text style={styles.bulletinPinPreview} numberOfLines={8}>
-            {preview}
-          </Text>
-        </Pressable>
-      );
-    });
+    return (
+      <View style={styles.bulletinPinnedList}>
+        {pinnedList.map((m) => (
+          <BulletinPinnedMessageCard
+            key={m.messageId}
+            msg={m}
+            when={formatBulletinFooterTime(m.createdAt)}
+            viewerUserId={effectiveUserId ?? ""}
+            onPress={() => jumpToPinnedMessage(m.messageId)}
+            disabled={!onJumpToMessage}
+          />
+        ))}
+      </View>
+    );
   };
 
   const renderPollCards = (emptyHint: string) => {
@@ -2019,9 +2155,9 @@ export function GroupManageModal({
     });
   };
 
-  /** Thẻ nhắc hẹn — cùng layout với thẻ bình chọn / tin ghim trong modal. */
+  /** Thẻ nhắc hẹn — đồng bộ web `BulletinTaskCard`. */
   const renderTaskCards = (emptyHint: string) => {
-    if (tasksList.length === 0) {
+    if (tasksSorted.length === 0) {
       return (
         <Text
           style={[styles.help, { textAlign: "center", paddingVertical: 28, paddingHorizontal: 16 }]}
@@ -2030,52 +2166,34 @@ export function GroupManageModal({
         </Text>
       );
     }
-    return tasksList.map((raw, idx) => {
+    return tasksSorted.map((raw, idx) => {
+      const o = raw as Record<string, unknown>;
       const t = taskSummary(raw);
       const key = t.id || `task-${idx}`;
-      const dueObj = t.due ? new Date(t.due) : null;
-      let dueLine = "";
-      if (dueObj) {
-        dueLine = dueObj.toLocaleString("vi-VN", {
-          day: "2-digit",
-          month: "2-digit",
-          hour: "2-digit",
-          minute: "2-digit",
-        });
-        if (dueObj.getTime() < Date.now()) {
-          dueLine = `Hết hạn: ${dueLine}`;
-        } else {
-          dueLine = `Hạn: ${dueLine}`;
-        }
-      }
-      const overdue = dueLine.startsWith("Hết hạn");
-      const statusTrim = t.status.trim();
+      const creatorId = typeof o.creatorId === "string" ? o.creatorId : "";
+      const creator = resolveCreatorLabel(
+        creatorId || null,
+        o.creatorDisplayName != null ? String(o.creatorDisplayName) : null,
+        effectiveUserId,
+        memberNameById,
+      );
+      const avatarUrl = creatorId ? memberAvatarById.get(creatorId) : undefined;
+      const when = formatBulletinFooterTime(
+        typeof o.createdAt === "string" ? o.createdAt : undefined,
+      );
       return (
-        <Pressable
+        <BulletinTaskCard
           key={key}
-          style={({ pressed }) => [styles.bulletinPollCard, pressed ? { opacity: 0.92 } : null]}
-          onPress={() => {
-            setEditingTaskData(raw);
-            setTaskModalOpen(true);
-          }}
-        >
-          <View style={styles.bulletinPollCardTop}>
-            <Clock size={18} color="#059669" strokeWidth={2} />
-            <Text style={styles.bulletinPollTitle} numberOfLines={3}>
-              {t.title}
-            </Text>
-          </View>
-          {statusTrim ? (
-            <Text style={styles.bulletinPollPreview} numberOfLines={2}>
-              {statusTrim}
-            </Text>
-          ) : null}
-          {dueLine ? (
-            <Text style={[styles.bulletinPollMeta, overdue ? { color: Z.red } : null]}>
-              {dueLine}
-            </Text>
-          ) : null}
-        </Pressable>
+          raw={raw}
+          creator={creator}
+          avatarUrl={avatarUrl}
+          when={when}
+          effectiveUserId={effectiveUserId}
+          onTaskJoined={onTaskJoined}
+          onEditTaskFromBulletin={onEditTaskFromBulletin}
+          onDeleteTaskFromBulletin={onDeleteTaskFromBulletin}
+          taskActionBusy={taskActionBusy}
+        />
       );
     });
   };
@@ -2091,7 +2209,7 @@ export function GroupManageModal({
       bulletinNotesTab !== "pinned" && pollsFetching && pollsSorted.length === 0;
     const showAllLoading =
       bulletinNotesTab === "all" &&
-      (pollsFetching || tasksFetching) &&
+      pollsFetching &&
       pinnedList.length === 0 &&
       pollsSorted.length === 0;
 
@@ -2174,48 +2292,13 @@ export function GroupManageModal({
           contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 24 }}
         >
           {body}
-          {canCreatePollUi || canCreateTaskUi ? (
-            <View style={{ marginTop: 16, gap: 10 }}>
-              {canCreatePollUi ? (
-                <Pressable
-                  style={[styles.secondaryBtn, (!canCreatePollUi || busy) && { opacity: 0.45 }]}
-                  onPress={() => setPollModalOpen(true)}
-                  disabled={busy || !canCreatePollUi}
-                >
-                  <Text style={styles.secondaryBtnText}>Tạo bình chọn mới</Text>
-                </Pressable>
-              ) : null}
-              {canCreateTaskUi ? (
-                <Pressable
-                  style={[styles.secondaryBtn, (!canCreateTaskUi || busy) && { opacity: 0.45 }]}
-                  onPress={() => {
-                    setEditingTaskData(null);
-                    setTaskModalOpen(true);
-                  }}
-                  disabled={busy || !canCreateTaskUi}
-                >
-                  <Text style={styles.secondaryBtnText}>Tạo công việc / nhắc hẹn</Text>
-                </Pressable>
-              ) : null}
-            </View>
-          ) : null}
-          {!canCreatePollUi ? (
-            <Text style={[styles.help, { marginTop: 14 }]}>
-              Nhóm không cho phép thành viên tạo bình chọn.
-            </Text>
-          ) : null}
-          {!canCreateTaskUi ? (
-            <Text style={[styles.help, { marginTop: 8 }]}>
-              Nhóm không cho phép thành viên tạo công việc / nhắc hẹn.
-            </Text>
-          ) : null}
         </ScrollView>
       </View>
     );
   };
 
   const renderTasks = () => {
-    const showLoading = tasksFetching && tasksList.length === 0;
+    const showLoading = tasksFetching && tasksSorted.length === 0;
     return (
       <ScrollView
         style={styles.scroll}
@@ -2226,40 +2309,9 @@ export function GroupManageModal({
           <Text style={[styles.help, { textAlign: "center", paddingVertical: 20 }]}>
             Đang tải...
           </Text>
-        ) : tasksList.length > 0 ? (
-          <View style={{ paddingBottom: 8 }}>
-            <Text style={styles.bulletinSectionCap}>NHẮC HẸN</Text>
-            {renderTaskCards("")}
-          </View>
         ) : (
-          <>
-            {renderTaskCards("Chưa có nhắc hẹn hay công việc.")}
-            {canCreateTaskUi ? (
-              <Pressable
-                style={[styles.primaryBtn, { marginTop: 16 }, busy && { opacity: 0.6 }]}
-                onPress={() => {
-                  setEditingTaskData(null);
-                  setTaskModalOpen(true);
-                }}
-                disabled={busy}
-              >
-                <Text style={styles.primaryBtnText}>Tạo công việc / nhắc hẹn</Text>
-              </Pressable>
-            ) : null}
-          </>
+          renderTaskCards("Chưa có nhắc hẹn hay công việc.")
         )}
-
-        {tasksList.length > 0 ? (
-          <Text style={[styles.help, { marginTop: 14 }]}>
-            Có thể chạm vào công việc để xem chi tiết hoặc chỉnh sửa.
-          </Text>
-        ) : null}
-
-        {!canCreateTaskUi ? (
-          <Text style={[styles.help, { marginTop: 14 }]}>
-            Nhóm không cho phép thành viên tạo công việc / nhắc hẹn.
-          </Text>
-        ) : null}
       </ScrollView>
     );
   };
@@ -2270,111 +2322,306 @@ export function GroupManageModal({
     const pad = 12;
     const cell = (w - pad * 2 - gap * 2) / 3;
 
-    const gridMessages = mediaMessages.filter((m) => {
-      if (mediaTab === "media") return m.type === "image" || m.type === "video";
-      return m.type === "file";
-    });
+    const gridMessages = mediaMessages.filter((m) => m.type === "image" || m.type === "video");
+
+    const tabBar = <ConversationGalleryTabBar active={mediaTab} onChange={setMediaTab} />;
+
+    if (mediaTab === "file") {
+      const fileMessages = mediaMessages.filter((m) => m.type === "file");
+      return (
+        <View style={{ flex: 1 }}>
+          {tabBar}
+          <FlatList
+            style={styles.mediaFileList}
+            data={fileMessages}
+            keyExtractor={(m) => m.messageId}
+            contentContainerStyle={styles.mediaFileListContent}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              <Text
+                style={[styles.help, { textAlign: "center", marginTop: 24, paddingHorizontal: 16 }]}
+              >
+                Chưa có file được chia sẻ.
+              </Text>
+            }
+            ItemSeparatorComponent={() => <View style={styles.mediaFileListSeparator} />}
+            renderItem={({ item: m }) => {
+              const { fileName, mimeType } = resolveChatFileBubbleMeta(m);
+              const who =
+                memberNameById.get(m.senderId) ?? m.senderDisplayName?.trim() ?? "Thành viên";
+              const when = formatBulletinFooterTime(m.createdAt);
+              return (
+                <ChatSharedFileRow
+                  fileName={fileName}
+                  mimeType={mimeType}
+                  metaLine={`${who} · ${when || "—"}`}
+                  onPress={() => {
+                    if (!m.mediaUrl) return;
+                    void openOrShareChatFile(
+                      m.mediaUrl,
+                      chatMediaDownloadFilename(m, "file"),
+                      m.mediaType,
+                    );
+                  }}
+                />
+              );
+            }}
+          />
+        </View>
+      );
+    }
 
     if (mediaTab === "link") {
       return (
+        <View style={{ flex: 1 }}>
+          {tabBar}
+          <FlatList
+            data={linkGalleryRows}
+            keyExtractor={(item) => item.key}
+            contentContainerStyle={styles.mediaFileListContent}
+            ItemSeparatorComponent={() => <View style={styles.mediaFileListSeparator} />}
+            ListEmptyComponent={
+              <Text
+                style={[styles.help, { textAlign: "center", marginTop: 24, paddingHorizontal: 16 }]}
+              >
+                Chưa có link trong tin nhắn gần đây.
+              </Text>
+            }
+            renderItem={({ item }) => {
+              const who =
+                memberNameById.get(item.message.senderId) ??
+                item.message.senderDisplayName?.trim() ??
+                "Thành viên";
+              const when = formatBulletinFooterTime(item.message.createdAt);
+              return (
+                <ConversationGalleryLinkRow
+                  url={item.url}
+                  previewLine={`${who} · ${when || "—"}`}
+                  onPress={() => {
+                    const href = /^https?:\/\//i.test(item.url) ? item.url : `https://${item.url}`;
+                    void Linking.openURL(href);
+                  }}
+                  onLongPress={async () => {
+                    await Clipboard.setStringAsync(item.url);
+                    toast.success("Đã sao chép link");
+                  }}
+                />
+              );
+            }}
+          />
+        </View>
+      );
+    }
+
+    return (
+      <View style={{ flex: 1 }}>
+        {tabBar}
         <FlatList
-          data={linkGalleryRows}
-          keyExtractor={(item) => item.key}
+          data={gridMessages}
+          keyExtractor={(m) => m.messageId}
+          numColumns={3}
+          columnWrapperStyle={{ gap, paddingHorizontal: pad, marginBottom: gap }}
           contentContainerStyle={{ paddingTop: 8, paddingBottom: 24 }}
           ListEmptyComponent={
             <Text
               style={[styles.help, { textAlign: "center", marginTop: 24, paddingHorizontal: 16 }]}
             >
-              Chưa có link trong tin nhắn gần đây.
+              Chưa có ảnh hoặc video.
             </Text>
           }
-          renderItem={({ item }) => (
-            <Pressable
-              style={styles.searchRow}
-              onPress={async () => {
-                await Clipboard.setStringAsync(item.url);
-                toast.success("Đã sao chép link");
-              }}
-            >
-              <Text style={styles.menuLabel} numberOfLines={2}>
-                {item.url}
-              </Text>
-              <Text style={styles.subSmall} numberOfLines={2}>
-                {formatChatPreviewLine(item.message, effectiveUserId ?? "")}
-              </Text>
-            </Pressable>
-          )}
-        />
-      );
-    }
-
-    return (
-      <FlatList
-        data={gridMessages}
-        keyExtractor={(m) => m.messageId}
-        numColumns={3}
-        columnWrapperStyle={{ gap, paddingHorizontal: pad, marginBottom: gap }}
-        contentContainerStyle={{ paddingTop: 8, paddingBottom: 24 }}
-        ListEmptyComponent={
-          <Text
-            style={[styles.help, { textAlign: "center", marginTop: 24, paddingHorizontal: 16 }]}
-          >
-            {mediaTab === "file" ? "Chưa có file được chia sẻ." : "Chưa có ảnh hoặc video."}
-          </Text>
-        }
-        renderItem={({ item: m }) => {
-          const uri = m.thumbnailUrl || m.mediaUrl;
-          return (
-            <View style={{ width: cell }}>
-              {uri && (m.type === "image" || m.type === "video") ? (
-                <Image source={{ uri }} style={{ width: cell, height: cell, borderRadius: 8 }} />
-              ) : (
-                <View
-                  style={[
-                    styles.thumbPlaceholder,
-                    {
-                      width: cell,
-                      height: cell,
-                      borderRadius: 8,
-                      alignItems: "center",
-                      justifyContent: "center",
-                    },
-                  ]}
-                >
-                  <Text
-                    style={{
-                      color: Z.sub,
-                      fontSize: 11,
-                      textAlign: "center",
-                      paddingHorizontal: 4,
-                    }}
-                    numberOfLines={2}
+          renderItem={({ item: m }) => {
+            const imageUri = m.type === "image" ? chatImageDisplayUrl(m) : null;
+            const videoUri = m.type === "video" ? chatVideoPlayUrl(m) : null;
+            const thumbUri = imageUri || videoUri;
+            return (
+              <Pressable
+                style={{ width: cell }}
+                onPress={() => {
+                  if (m.type === "image" && imageUri) {
+                    setGalleryLightbox({
+                      kind: "image",
+                      uri: imageUri,
+                      filename: chatMediaDownloadFilename(m, "image"),
+                    });
+                    return;
+                  }
+                  if (m.type === "video" && videoUri) {
+                    setGalleryLightbox({
+                      kind: "video",
+                      uri: videoUri,
+                      filename: chatMediaDownloadFilename(m, "video"),
+                    });
+                  }
+                }}
+              >
+                {thumbUri && (m.type === "image" || m.type === "video") ? (
+                  <Image
+                    source={{ uri: thumbUri }}
+                    style={{ width: cell, height: cell, borderRadius: 8 }}
+                  />
+                ) : (
+                  <View
+                    style={[
+                      styles.thumbPlaceholder,
+                      {
+                        width: cell,
+                        height: cell,
+                        borderRadius: 8,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        backgroundColor: CONVERSATION_GALLERY_THEME.media.softBg,
+                      },
+                    ]}
                   >
-                    {m.type === "file" ? m.mediaOriginalName?.slice(0, 24) || "FILE" : "•"}
-                  </Text>
-                </View>
-              )}
-            </View>
-          );
-        }}
-      />
+                    <ImageIcon
+                      size={22}
+                      color={CONVERSATION_GALLERY_THEME.media.tint}
+                      strokeWidth={1.75}
+                    />
+                  </View>
+                )}
+              </Pressable>
+            );
+          }}
+        />
+      </View>
     );
   };
 
-  const renderTransfer = () => (
-    <FlatList
-      data={othersForOwnerHandoff}
-      keyExtractor={(m) => m.userId}
-      ListEmptyComponent={<Text style={styles.help}>Không có thành viên khác.</Text>}
-      renderItem={({ item: m }) => (
-        <Pressable style={styles.memberRow} onPress={() => void transferOwnerTo(m.userId)}>
-          <Avatar uri={m.avatar || undefined} name={m.displayName} size="sm" />
-          <Text style={[styles.menuLabel, { flex: 1, marginLeft: 12 }]}>{m.displayName}</Text>
-          <Text style={{ color: Z.primary, fontWeight: "600" }}>Chọn</Text>
-        </Pressable>
-      )}
-    />
-  );
+  const renderTransfer = () => {
+    const handleConfirmTransfer = async () => {
+      if (!selectedSuccessorId) return;
+      try {
+        await transferOwner({
+          groupId,
+          newOwnerUserId: selectedSuccessorId,
+          currentOwnerNewRole: transferNewRole,
+        }).unwrap();
+        setPanel("home");
+        void refetch();
+        toast.success("Trưởng nhóm mới đã được cập nhật");
+      } catch {
+        toast.error("Không thể chuyển quyền. Thử lại hoặc kiểm tra quyền trên máy chủ");
+      }
+    };
+
+    return (
+      <View style={{ flex: 1, backgroundColor: "#fff" }}>
+        {/* Role selection block */}
+        <View className="border-b border-gray-100 bg-gray-50/50 px-4 py-3">
+          <Text className="mb-2 text-xs font-medium leading-relaxed text-gray-500">
+            Bạn sẽ mất quyền trưởng nhóm sau khi xác nhận. Chọn vai trò mới của bạn:
+          </Text>
+          <View className="flex-row gap-3">
+            <Pressable
+              disabled={adminSlotsFull}
+              onPress={() => setTransferNewRole("admin")}
+              className={`flex-1 flex-row items-center justify-between rounded-xl border px-3 py-2.5 ${transferNewRole === "admin" ? "border-[#0068ff] bg-blue-500/5" : "border-gray-200 bg-white"} ${adminSlotsFull ? "opacity-40" : ""}`}
+            >
+              <Text
+                className={`text-[13px] font-bold ${transferNewRole === "admin" ? "text-[#0068ff]" : "text-gray-700"}`}
+              >
+                Phó nhóm
+              </Text>
+              <View
+                className={`h-4 w-4 items-center justify-center rounded-full border ${transferNewRole === "admin" ? "border-[#0068ff]" : "border-gray-300"}`}
+              >
+                {transferNewRole === "admin" && (
+                  <View className="h-2 w-2 rounded-full bg-[#0068ff]" />
+                )}
+              </View>
+            </Pressable>
+            <Pressable
+              onPress={() => setTransferNewRole("member")}
+              className={`flex-1 flex-row items-center justify-between rounded-xl border px-3 py-2.5 ${transferNewRole === "member" ? "border-[#0068ff] bg-blue-500/5" : "border-gray-200 bg-white"}`}
+            >
+              <Text
+                className={`text-[13px] font-bold ${transferNewRole === "member" ? "text-[#0068ff]" : "text-gray-700"}`}
+              >
+                Thành viên
+              </Text>
+              <View
+                className={`h-4 w-4 items-center justify-center rounded-full border ${transferNewRole === "member" ? "border-[#0068ff]" : "border-gray-300"}`}
+              >
+                {transferNewRole === "member" && (
+                  <View className="h-2 w-2 rounded-full bg-[#0068ff]" />
+                )}
+              </View>
+            </Pressable>
+          </View>
+          {adminSlotsFull ? (
+            <Text className="mt-2 text-[11px] font-semibold text-amber-600">
+              Nhóm đã đủ {MAX_GROUP_ADMINS} phó nhóm — bạn chỉ có thể trở thành thành viên.
+            </Text>
+          ) : null}
+        </View>
+
+        {/* Search bar block */}
+        <View className="border-b border-gray-100 bg-white px-4 py-2">
+          <View className="flex-row items-center rounded-xl border border-gray-200 bg-gray-100 px-3 py-1.5">
+            <TextInput
+              value={successorSearchQuery}
+              onChangeText={setSuccessorSearchQuery}
+              placeholder="Tìm kiếm thành viên nhận quyền..."
+              placeholderTextColor="#9CA3AF"
+              className="flex-grow p-0 text-[14px]"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </View>
+        </View>
+
+        {/* Candidates list */}
+        <FlatList
+          data={filteredSuccessors}
+          keyExtractor={(m) => m.userId}
+          ListEmptyComponent={
+            <Text style={[styles.help, { textAlign: "center", marginTop: 24 }]}>
+              Không tìm thấy thành viên phù hợp.
+            </Text>
+          }
+          renderItem={({ item: m }) => {
+            const isSelected = selectedSuccessorId === m.userId;
+            return (
+              <Pressable
+                className={`flex-row items-center border-b border-gray-50 px-4 py-3 active:bg-gray-50 ${isSelected ? "bg-blue-500/5" : ""}`}
+                onPress={() => setSelectedSuccessorId(m.userId)}
+              >
+                <Avatar uri={m.avatar || undefined} name={m.displayName} size="sm" />
+                <View className="ml-3 flex-1">
+                  <Text className="text-[14px] font-bold text-gray-800">{m.displayName}</Text>
+                  {m.role === "admin" ? (
+                    <Text className="mt-0.5 text-[11px] font-medium text-gray-400">Phó nhóm</Text>
+                  ) : null}
+                </View>
+                {/* Radio button */}
+                <View
+                  className={`h-5 w-5 items-center justify-center rounded-full border ${isSelected ? "border-[#0068ff]" : "border-gray-300"}`}
+                >
+                  {isSelected && <View className="h-2.5 w-2.5 rounded-full bg-[#0068ff]" />}
+                </View>
+              </Pressable>
+            );
+          }}
+        />
+
+        {/* Action Button at the bottom */}
+        <View className="border-t border-gray-100 bg-white p-4">
+          <Pressable
+            disabled={!selectedSuccessorId || busy}
+            onPress={() => void handleConfirmTransfer()}
+            className={`w-full items-center justify-center rounded-xl bg-[#0068ff] py-3.5 active:bg-blue-700 ${!selectedSuccessorId || busy ? "opacity-50" : ""}`}
+          >
+            {transferringOwner ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text className="text-[15px] font-bold text-white">Xác nhận chuyển quyền</Text>
+            )}
+          </Pressable>
+        </View>
+      </View>
+    );
+  };
 
   const muteUntilLabel = (() => {
     const u = conversation.notificationsMutedUntil;
@@ -2457,74 +2704,393 @@ export function GroupManageModal({
         onRequestClose={handleBack}
       >
         <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
-          <View style={styles.topBar}>
-            <View style={styles.topBarSide}>
-              <Pressable onPress={handleBack} style={styles.backBtn} hitSlop={12}>
-                <ChevronLeft size={28} color={Z.text} strokeWidth={1.75} />
-              </Pressable>
-            </View>
-            <Text style={styles.topTitleCenter} numberOfLines={1}>
-              {headerTitle}
-            </Text>
-            <View style={[styles.topBarSide, { alignItems: "flex-end" }]}>
-              {panel === "tasks" && canCreateTaskUi ? (
+          {panel !== "add" ? (
+            <View style={[styles.topBar, panel === "members" ? styles.mmTopBar : null]}>
+              <View style={[styles.topBarSide, panel === "members" ? styles.mmTopBarSide : null]}>
                 <Pressable
-                  onPress={() => {
-                    setEditingTaskData(null);
-                    setTaskModalOpen(true);
-                  }}
-                  disabled={busy}
-                  style={styles.backBtn}
+                  onPress={handleBack}
+                  style={panel === "members" ? styles.mmBackBtn : styles.backBtn}
                   hitSlop={12}
-                  accessibilityLabel="Tạo công việc hoặc nhắc hẹn"
                 >
-                  <Plus size={26} color={Z.primary} strokeWidth={2.25} />
+                  <ChevronLeft
+                    size={panel === "members" ? 20 : 28}
+                    color={Z.text}
+                    strokeWidth={panel === "members" ? 2 : 1.75}
+                  />
                 </Pressable>
-              ) : null}
+              </View>
+              <Text
+                style={[
+                  styles.topTitleCenter,
+                  panel === "members" ? styles.mmTopTitle : null,
+                  panel === "media" ? styles.mediaTopTitle : null,
+                ]}
+                numberOfLines={1}
+              >
+                {headerTitle}
+              </Text>
+              <View
+                style={[
+                  styles.topBarSide,
+                  panel === "members" ? styles.mmTopBarSide : null,
+                  panel !== "members"
+                    ? { alignItems: "flex-end", minWidth: undefined, paddingRight: 16 }
+                    : null,
+                ]}
+              >
+                {panel === "tasks" && canCreateTaskUi ? (
+                  <Pressable
+                    onPress={() => {
+                      setEditingTaskData(null);
+                      setTaskModalOpen(true);
+                    }}
+                    disabled={busy}
+                    style={styles.backBtn}
+                    hitSlop={12}
+                    accessibilityLabel="Tạo công việc hoặc nhắc hẹn"
+                  >
+                    <Plus size={26} color={Z.primary} strokeWidth={2.25} />
+                  </Pressable>
+                ) : panel === "bulletinFeed" && canCreatePollUi ? (
+                  <View>
+                    <Pressable
+                      onPress={() => setBulletinAddOpen((v) => !v)}
+                      disabled={busy}
+                      style={styles.backBtn}
+                      hitSlop={12}
+                      accessibilityLabel="Thêm bình chọn"
+                    >
+                      <Plus size={26} color={Z.primary} strokeWidth={2.25} />
+                    </Pressable>
+                    {bulletinAddOpen ? (
+                      <View
+                        style={{
+                          position: "absolute",
+                          right: 0,
+                          top: 40,
+                          minWidth: 168,
+                          backgroundColor: Z.bg,
+                          borderRadius: 12,
+                          borderWidth: 1,
+                          borderColor: Z.border,
+                          paddingVertical: 4,
+                          zIndex: 20,
+                          elevation: 8,
+                          shadowColor: "#000",
+                          shadowOpacity: 0.12,
+                          shadowRadius: 8,
+                          shadowOffset: { width: 0, height: 4 },
+                        }}
+                      >
+                        <Pressable
+                          onPress={() => {
+                            setBulletinAddOpen(false);
+                            setPollModalOpen(true);
+                          }}
+                          style={{ paddingHorizontal: 14, paddingVertical: 10 }}
+                        >
+                          <Text style={styles.menuLabel}>Tạo bình chọn</Text>
+                        </Pressable>
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null}
+              </View>
             </View>
-          </View>
+          ) : null}
 
-          <View style={styles.body}>
-            {panel === "home" && renderHome()}
-            {panel === "rename" && renderRename()}
-            {panel === "add" && renderAdd()}
-            {panel === "members" && renderMembers()}
-            {panel === "settings" && renderSettings()}
-            {panel === "bulletinFeed" && renderBulletinFeed()}
-            {panel === "media" && renderMedia()}
-            {panel === "transferOwner" && renderTransfer()}
-            {panel === "tasks" && renderTasks()}
-            {panel === "personal" && renderPersonal()}
-          </View>
+          {panel !== "add" ? (
+            <View style={styles.body}>
+              {panel === "home" && renderHome()}
+              {panel === "rename" && renderRename()}
+              {panel === "members" && renderMembers()}
+              {panel === "settings" && renderSettings()}
+              {panel === "bulletinFeed" && renderBulletinFeed()}
+              {panel === "media" && renderMedia()}
+              {panel === "transferOwner" && renderTransfer()}
+              {panel === "tasks" && renderTasks()}
+              {panel === "personal" && renderPersonal()}
+            </View>
+          ) : (
+            <View style={[styles.body, { backgroundColor: "rgba(0,0,0,0.04)" }]} />
+          )}
         </SafeAreaView>
+
+        <GroupAddMembersModal
+          visible={visible && panel === "add"}
+          onClose={() => setPanel("home")}
+          groupId={groupId}
+          conversation={conversation}
+          onAdded={() => void refetch()}
+        />
 
         <Modal visible={pickOwnerForLeave} transparent animationType="fade">
           <Pressable style={styles.overlay} onPress={() => setPickOwnerForLeave(false)}>
-            <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
-              <Text style={styles.sheetTitle}>Chọn trưởng nhóm mới</Text>
+            <Pressable style={styles.sheet} className="p-4" onPress={(e) => e.stopPropagation()}>
+              <Text className="mb-2 px-1 text-[17px] font-bold text-gray-800">
+                Chọn trưởng nhóm mới trước khi rời
+              </Text>
+
+              {/* Search bar block */}
+              <View className="mb-3 px-1">
+                <View className="flex-row items-center rounded-xl border border-gray-200 bg-gray-100 px-3 py-1.5">
+                  <TextInput
+                    value={successorSearchQuery}
+                    onChangeText={setSuccessorSearchQuery}
+                    placeholder="Tìm kiếm..."
+                    placeholderTextColor="#9CA3AF"
+                    className="flex-grow p-0 text-[14px]"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
+              </View>
+
+              {/* Successor selection list */}
               <FlatList
-                data={othersForOwnerHandoff}
+                data={filteredSuccessors}
                 keyExtractor={(m) => m.userId}
-                style={{ maxHeight: 360 }}
-                renderItem={({ item }) => (
+                style={{ maxHeight: 260 }}
+                ListEmptyComponent={
+                  <Text style={[styles.help, { textAlign: "center", paddingVertical: 16 }]}>
+                    Không tìm thấy thành viên
+                  </Text>
+                }
+                renderItem={({ item: m }) => {
+                  const isSelected = selectedSuccessorId === m.userId;
+                  return (
+                    <Pressable
+                      className={`flex-row items-center rounded-xl px-2 py-2.5 active:bg-gray-50 ${isSelected ? "bg-blue-500/5" : ""}`}
+                      onPress={() => setSelectedSuccessorId(m.userId)}
+                    >
+                      <Avatar uri={m.avatar || undefined} name={m.displayName} size="sm" />
+                      <View className="ml-3 flex-1">
+                        <Text className="text-[14px] font-bold text-gray-800">{m.displayName}</Text>
+                        {m.role === "admin" ? (
+                          <Text className="text-[11px] font-medium text-gray-400">Phó nhóm</Text>
+                        ) : null}
+                      </View>
+                      {/* Radio button */}
+                      <View
+                        className={`h-5 w-5 items-center justify-center rounded-full border ${isSelected ? "border-[#0068ff]" : "border-gray-300"}`}
+                      >
+                        {isSelected && <View className="h-2.5 w-2.5 rounded-full bg-[#0068ff]" />}
+                      </View>
+                    </Pressable>
+                  );
+                }}
+              />
+
+              {/* Bottom buttons */}
+              <View className="mt-4 flex-row gap-3 px-1">
+                <Pressable
+                  onPress={() => setPickOwnerForLeave(false)}
+                  className="flex-1 items-center justify-center rounded-xl bg-gray-100 py-3 active:bg-gray-200"
+                >
+                  <Text className="text-[14px] font-bold text-gray-700">Hủy</Text>
+                </Pressable>
+                <Pressable
+                  disabled={!selectedSuccessorId || leaving}
+                  onPress={() => {
+                    if (!selectedSuccessorId) return;
+                    setPickOwnerForLeave(false);
+                    void runLeave(selectedSuccessorId);
+                  }}
+                  className={`flex-1 items-center justify-center rounded-xl bg-[#0068ff] py-3 active:bg-blue-700 ${!selectedSuccessorId || leaving ? "opacity-50" : ""}`}
+                >
+                  {leaving ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text className="text-[14px] font-bold text-white">Chọn & tiếp tục</Text>
+                  )}
+                </Pressable>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
+        <ConfirmModal
+          visible={leaveConfirmOpen}
+          title="Rời nhóm?"
+          description="Bạn sẽ rời khỏi nhóm và không còn nhận tin nhắn từ nhóm này."
+          confirmLabel="Rời nhóm"
+          variant="danger"
+          isConfirming={leaving}
+          onClose={() => setLeaveConfirmOpen(false)}
+          onConfirm={() => {
+            setLeaveConfirmOpen(false);
+            void runLeave();
+          }}
+        />
+
+        <ConfirmModal
+          visible={disbandConfirmOpen}
+          title="Giải tán nhóm?"
+          description="Tất cả thành viên sẽ bị xóa khỏi nhóm và cuộc trò chuyện này sẽ bị giải tán vĩnh viễn."
+          confirmLabel="Giải tán nhóm"
+          variant="dangerSoft"
+          isConfirming={deleting}
+          onClose={() => setDisbandConfirmOpen(false)}
+          onConfirm={() => {
+            setDisbandConfirmOpen(false);
+            void (async () => {
+              try {
+                await deleteGroup(groupId).unwrap();
+                toast.success("Đã giải tán nhóm");
+                navigateOut();
+              } catch {
+                toast.error("Không thể giải tán nhóm");
+              }
+            })();
+          }}
+        />
+
+        <ConfirmModal
+          visible={kickConfirmOpen && !!kickTargetMember}
+          title="Mời khỏi nhóm"
+          description={
+            kickTargetMember
+              ? `Mời "${memberRowDisplayName(kickTargetMember, effectiveUserId)}" ra khỏi nhóm?`
+              : "Mời người này ra khỏi nhóm?"
+          }
+          confirmLabel="Mời ra khỏi nhóm"
+          variant="danger"
+          isConfirming={removing}
+          onClose={() => setKickConfirmOpen(false)}
+          onConfirm={() => {
+            if (!kickTargetMember) return;
+            setKickConfirmOpen(false);
+            void (async () => {
+              try {
+                await removeMember({ groupId, userId: kickTargetMember.userId }).unwrap();
+                void refetch();
+                toast.success("Đã mời thành viên ra khỏi nhóm");
+              } catch (e: unknown) {
+                const msg =
+                  e && typeof e === "object" && "data" in e
+                    ? String((e as { data?: { message?: string } }).data?.message ?? "")
+                    : "";
+                toast.error(msg || "Không thể mời thành viên ra khỏi nhóm");
+              }
+            })();
+          }}
+        />
+
+        <ConfirmModal
+          visible={demoteConfirmOpen && !!demoteTargetMember}
+          title="Hạ phó nhóm"
+          description={
+            demoteTargetMember
+              ? `Hạ "${memberRowDisplayName(demoteTargetMember, effectiveUserId)}" xuống thành viên?`
+              : "Hạ người này xuống thành viên?"
+          }
+          confirmLabel="Hạ xuống thành viên"
+          isConfirming={changingRole}
+          onClose={() => setDemoteConfirmOpen(false)}
+          onConfirm={() => {
+            if (!demoteTargetMember) return;
+            setDemoteConfirmOpen(false);
+            void (async () => {
+              try {
+                await changeRole({
+                  groupId,
+                  userId: demoteTargetMember.userId,
+                  role: "member",
+                }).unwrap();
+                void refetch();
+                toast.success("Đã hạ phó nhóm xuống thành viên");
+              } catch {
+                toast.error("Không thể đổi vai trò");
+              }
+            })();
+          }}
+        />
+
+        <ConfirmModal
+          visible={promoteConfirmOpen && !!promoteTargetMember}
+          title="Bổ nhiệm phó nhóm"
+          description={
+            promoteTargetMember
+              ? `Bổ nhiệm "${memberRowDisplayName(promoteTargetMember, effectiveUserId)}" làm phó nhóm?`
+              : "Bổ nhiệm người này làm phó nhóm?"
+          }
+          confirmLabel="Bổ nhiệm"
+          isConfirming={changingRole}
+          onClose={() => setPromoteConfirmOpen(false)}
+          onConfirm={() => {
+            if (!promoteTargetMember) return;
+            setPromoteConfirmOpen(false);
+            void (async () => {
+              try {
+                await changeRole({
+                  groupId,
+                  userId: promoteTargetMember.userId,
+                  role: "admin",
+                }).unwrap();
+                void refetch();
+                toast.success("Đã bổ nhiệm phó nhóm");
+                setPromotePickerOpen(false);
+              } catch {
+                toast.error("Không thể đổi vai trò");
+              }
+            })();
+          }}
+        />
+
+        <Modal
+          visible={promotePickerOpen}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setPromotePickerOpen(false)}
+        >
+          <Pressable style={styles.overlay} onPress={() => setPromotePickerOpen(false)}>
+            <Pressable style={styles.mmPromotePickerSheet} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.mmPromotePickerHeader}>
+                <Text style={styles.mmPromotePickerTitle}>Chọn thành viên</Text>
+                <Pressable
+                  hitSlop={12}
+                  onPress={() => setPromotePickerOpen(false)}
+                  accessibilityLabel="Đóng"
+                  style={({ pressed }) => [
+                    styles.mmPromotePickerClose,
+                    pressed && { opacity: 0.7 },
+                  ]}
+                >
+                  <X size={22} color={Z.sub} strokeWidth={2} />
+                </Pressable>
+              </View>
+              <FlatList
+                data={promotableMembers}
+                keyExtractor={(m) => m.userId}
+                style={{ maxHeight: Math.min(Dimensions.get("window").height * 0.55, 420) }}
+                contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 16 }}
+                ListEmptyComponent={
+                  <Text style={[styles.help, { textAlign: "center", paddingVertical: 28 }]}>
+                    Không còn thành viên thường để bổ nhiệm
+                  </Text>
+                }
+                renderItem={({ item: m }) => (
                   <Pressable
-                    style={styles.memberRow}
+                    style={({ pressed }) => [
+                      styles.mmPromotePickerRow,
+                      pressed ? styles.mmPromotePickerRowPressed : null,
+                    ]}
                     onPress={() => {
-                      setPickOwnerForLeave(false);
-                      void runLeave(item.userId);
+                      setPromotePickerOpen(false);
+                      confirmPromote(m);
                     }}
                   >
-                    <Avatar uri={item.avatar || undefined} name={item.displayName} size="sm" />
-                    <Text style={[styles.menuLabel, { flex: 1, marginLeft: 12 }]}>
-                      {item.displayName}
+                    <MemberListAvatar
+                      uri={m.avatar}
+                      name={memberRowDisplayName(m, effectiveUserId)}
+                    />
+                    <Text style={styles.mmPromotePickerName} numberOfLines={1}>
+                      {memberRowDisplayName(m, effectiveUserId)}
                     </Text>
-                    <Text style={{ color: Z.primary, fontWeight: "600" }}>Chọn</Text>
+                    <Text style={styles.mmPromotePickerAction}>Bổ nhiệm</Text>
                   </Pressable>
                 )}
               />
-              <Pressable style={styles.sheetCancel} onPress={() => setPickOwnerForLeave(false)}>
-                <Text style={{ color: Z.sub, fontWeight: "600" }}>Hủy</Text>
-              </Pressable>
             </Pressable>
           </Pressable>
         </Modal>
@@ -2723,7 +3289,35 @@ export function GroupManageModal({
           </Pressable>
         </Pressable>
       </Modal>
+
+      <ChatMediaLightbox state={galleryLightbox} onClose={() => setGalleryLightbox(null)} />
     </>
+  );
+}
+
+/** Hàng điều hướng màn Thông tin nhóm — icon + label đồng bộ web. */
+function HomeNavRow({
+  kind,
+  onPress,
+  isLast,
+}: {
+  kind: ConversationGalleryKind;
+  onPress: () => void;
+  isLast?: boolean;
+}) {
+  const theme = CONVERSATION_GALLERY_THEME[kind];
+  return (
+    <Pressable
+      style={[styles.homeNavRow, isLast ? styles.homeNavRowLast : null]}
+      onPress={onPress}
+      android_ripple={{ color: "rgba(0,0,0,0.04)" }}
+    >
+      <View style={[styles.homeNavIconWrap, { backgroundColor: theme.softBg }]}>
+        <ConversationGalleryIcon kind={kind} color={theme.tint} size={18} />
+      </View>
+      <Text style={styles.homeNavRowLabel}>{theme.navLabel}</Text>
+      <ChevronRight size={16} color={Z.sub} />
+    </Pressable>
   );
 }
 
@@ -2878,24 +3472,54 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 4,
-    paddingVertical: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Z.line,
     backgroundColor: Z.bg,
   },
-  backBtn: { padding: 8 },
-  topBarSide: { width: 44, justifyContent: "center" },
+  backBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F3F4F6",
+  },
+  topBarSide: { width: 48, justifyContent: "center" },
   topTitleCenter: {
     flex: 1,
-    fontSize: 17,
-    fontWeight: "700",
+    fontSize: 21,
+    fontWeight: "800",
     color: Z.text,
     textAlign: "center",
+    letterSpacing: -0.2,
+  },
+  mediaTopTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    letterSpacing: 0,
   },
   body: { flex: 1, backgroundColor: Z.bg },
-  scroll: { flex: 1 },
-  hero: { alignItems: "center", paddingTop: 12, paddingBottom: 8 },
+  scroll: { flex: 1, backgroundColor: Z.subBg },
+  homeScrollContent: { paddingBottom: 48 },
+  hero: {
+    alignItems: "center",
+    paddingTop: 24,
+    paddingBottom: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Z.line,
+    backgroundColor: Z.bg,
+  },
+  heroAvatarFrame: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#DBEAFE",
+  },
   avatarWrap: { position: "relative" },
   camBadge: {
     position: "absolute",
@@ -2917,39 +3541,46 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     gap: 8,
   },
-  groupTitle: { fontSize: 20, fontWeight: "700", color: Z.text, flexShrink: 1 },
+  groupTitle: { fontSize: 18, fontWeight: "700", color: Z.text, flexShrink: 1 },
   memberCountText: {
     fontSize: 14,
     color: Z.sub,
-    fontWeight: "600",
-    marginTop: 6,
+    fontWeight: "500",
+    marginTop: 4,
     textAlign: "center",
+    opacity: 0.8,
   },
   quickRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingHorizontal: 4,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Z.line,
+    paddingHorizontal: 2,
+    paddingTop: 16,
+    paddingBottom: 4,
+    width: "100%",
   },
   quickCell: { flex: 1, alignItems: "center", paddingVertical: 2, minWidth: 0 },
   quickIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: Z.subBg,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 4,
+    marginBottom: 6,
   },
-  quickLabel: { fontSize: 10, color: Z.text, textAlign: "center", lineHeight: 13 },
+  quickLabel: {
+    fontSize: 10,
+    color: Z.sub,
+    textAlign: "center",
+    lineHeight: 13,
+    fontWeight: "500",
+  },
   aiBlock: {
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Z.line,
-    backgroundColor: "#F5F3FF",
+    backgroundColor: "rgba(37, 99, 235, 0.05)",
   },
   aiButton: {
     flexDirection: "row",
@@ -2959,7 +3590,16 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 14,
     borderRadius: 12,
-    backgroundColor: Z.primary,
+    backgroundColor: "#0068ff",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#8c52ff",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.25,
+        shadowRadius: 8,
+      },
+      android: { elevation: 4 },
+    }),
   },
   aiButtonText: { color: "#fff", fontWeight: "700", fontSize: 14 },
   aiHint: {
@@ -2978,20 +3618,30 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    gap: 10,
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 16,
   },
-  memberMgmtTitle: { fontSize: 15, fontWeight: "700", color: Z.text, flex: 1, marginRight: 8 },
+  memberMgmtHeaderLeft: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    minWidth: 0,
+    marginRight: 8,
+  },
+  memberMgmtTitle: { fontSize: 14, fontWeight: "700", color: Z.text, flexShrink: 1 },
   requestBadge: {
-    minWidth: 22,
-    height: 22,
-    paddingHorizontal: 6,
-    borderRadius: 11,
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 5,
+    borderRadius: 10,
     backgroundColor: "#EF4444",
     alignItems: "center",
     justifyContent: "center",
   },
-  requestBadgeText: { color: "#fff", fontSize: 11, fontWeight: "800" },
+  requestBadgeText: { color: "#fff", fontSize: 10, fontWeight: "700" },
+  homeSectionSpaced: { marginTop: 8 },
   bulletinOuter: {
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Z.line,
@@ -3003,10 +3653,97 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 10,
     paddingHorizontal: 16,
-    paddingVertical: 13,
+    paddingVertical: 16,
   },
-  bulletinHeaderTitle: { flex: 1, fontSize: 15, fontWeight: "700", color: Z.text },
-  bulletinBody: { paddingBottom: 4 },
+  bulletinHeaderTitle: { flex: 1, fontSize: 14, fontWeight: "700", color: Z.text },
+  bulletinBody: { paddingBottom: 8 },
+  bulletinSubRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  bulletinSubLabel: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "500",
+    color: Z.sub,
+  },
+  homeNavGroup: {
+    marginTop: 8,
+    backgroundColor: Z.bg,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Z.line,
+  },
+  homeNavRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Z.line,
+  },
+  homeNavRowLast: { borderBottomWidth: 0 },
+  homeNavIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  homeNavRowLabel: { flex: 1, fontSize: 14, fontWeight: "700", color: Z.text },
+  homeActionsWrap: {
+    marginTop: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    gap: 12,
+    backgroundColor: Z.bg,
+  },
+  homeBtnTransfer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "rgba(0, 104, 255, 0.4)",
+    backgroundColor: "transparent",
+  },
+  homeBtnTransferText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: Z.primary,
+  },
+  homeBtnLeave: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "rgba(239, 68, 68, 0.35)",
+    backgroundColor: "transparent",
+  },
+  homeBtnLeaveText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: Z.red,
+  },
+  homeBtnDisband: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: "#EF4444",
+  },
+  homeBtnDisbandText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#fff",
+  },
   bulletinRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -3072,6 +3809,18 @@ const styles = StyleSheet.create({
   aiSheetTitle: { fontSize: 16, fontWeight: "700", color: Z.text },
   aiSheetSub: { fontSize: 11, color: Z.sub, marginTop: 2, fontWeight: "600" },
   thumbPlaceholder: { backgroundColor: Z.subBg, alignItems: "center", justifyContent: "center" },
+  mediaFileList: {
+    flex: 1,
+    backgroundColor: Z.bg,
+  },
+  mediaFileListContent: {
+    paddingTop: 14,
+    paddingBottom: 28,
+    paddingHorizontal: 16,
+  },
+  mediaFileListSeparator: {
+    height: 12,
+  },
   menuRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -3289,42 +4038,39 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginTop: 4,
     marginBottom: 8,
-    paddingVertical: 10,
+    paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 12,
     backgroundColor: "#F0F9FF",
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "#BFDBFE",
     flexDirection: "row",
-    flexWrap: "nowrap",
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
+    gap: 8,
   },
   gmJoinUrlCol: {
     flex: 1,
+    flexShrink: 1,
     minWidth: 0,
-    paddingRight: 8,
   },
   gmJoinUrlText: {
     fontSize: 12,
     fontFamily: Platform.select({ ios: "Menlo", default: "monospace" }),
-    color: "#1E293B",
+    color: "#0068FF",
     lineHeight: 18,
   },
   gmJoinActionsRow: {
     flexDirection: "row",
-    flexWrap: "nowrap",
     alignItems: "center",
     justifyContent: "flex-end",
-    gap: 8,
+    gap: 10,
     flexShrink: 0,
   },
   gmJoinIconBtn: {
     padding: 0,
     borderRadius: 10,
-    width: 44,
-    height: 44,
+    width: 36,
+    height: 36,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -3340,10 +4086,8 @@ const styles = StyleSheet.create({
   gmPlaceholderHit: {
     width: "100%",
     borderRadius: 10,
-    opacity: 0.65,
   },
   gmPlaceholderPressed: {
-    opacity: 0.85,
     backgroundColor: "rgba(248,250,252,0.95)",
   },
   gmPlaceholderRowInner: {
@@ -3412,43 +4156,164 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Z.line,
   },
-  miniBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: Z.subBg },
-  miniBtnTextOk: { color: Z.primary, fontWeight: "700", fontSize: 13 },
-  miniBtnTextNo: { color: Z.red, fontWeight: "700", fontSize: 13 },
+  miniBtnOk: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(0, 104, 255, 0.28)",
+    backgroundColor: "#DBEAFE",
+  },
+  miniBtnNo: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(220, 38, 38, 0.28)",
+    backgroundColor: "#FEE2E2",
+  },
+  miniBtnTextOk: { color: "#0068FF", fontWeight: "700", fontSize: 13 },
+  miniBtnTextNo: { color: "#DC2626", fontWeight: "700", fontSize: 13 },
   requestFriendLink: { color: Z.primary, fontWeight: "700", fontSize: 13 },
-  mmAddBtn: {
+  mmRoot: { flex: 1, backgroundColor: Z.bg },
+  mmTopBar: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  mmTopBarSide: { width: 36 },
+  mmBackBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(0,0,0,0.05)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mmTopTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    letterSpacing: 0,
+  },
+  mmPromotePickerSheet: {
+    marginTop: "auto",
+    maxHeight: "88%",
+    backgroundColor: Z.bg,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    overflow: "hidden",
+  },
+  mmPromotePickerHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    alignSelf: "flex-start",
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 12,
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Z.line,
+  },
+  mmPromotePickerTitle: { fontSize: 16, fontWeight: "800", color: Z.text },
+  mmPromotePickerClose: {
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 16,
     backgroundColor: Z.subBg,
   },
-  mmAddBtnText: { fontSize: 13, fontWeight: "700", color: Z.primary },
-  mmTabsRow: {
+  mmPromotePickerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  mmPromotePickerRowPressed: { backgroundColor: Z.subBg },
+  mmPromotePickerName: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "700",
+    color: Z.text,
+  },
+  mmPromotePickerAction: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: Z.primary,
+  },
+  mmPendingActions: {
     flexDirection: "row",
     flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "flex-end",
     gap: 8,
+    flexShrink: 0,
+    maxWidth: "46%",
+  },
+  mmPendingBtnFriend: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: "rgba(37, 99, 235, 0.1)",
+  },
+  mmPendingBtnFriendText: { fontSize: 12, fontWeight: "800", color: "#1D4ED8" },
+  mmPendingBtnReject: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
+  },
+  mmPendingBtnRejectText: { fontSize: 12, fontWeight: "800", color: "#DC2626" },
+  mmPendingBtnApprove: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: "rgba(0, 104, 255, 0.1)",
+  },
+  mmPendingBtnApproveText: { fontSize: 12, fontWeight: "800", color: Z.primary },
+  mmTabsRow: {
+    flexDirection: "row",
+    flexWrap: "nowrap",
+    alignItems: "center",
+    gap: 4,
     paddingHorizontal: 20,
-    paddingTop: 14,
-    paddingBottom: 4,
+    paddingTop: 12,
+    paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(0,0,0,0.05)",
+    backgroundColor: Z.bg,
   },
   mmTab: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingVertical: 10,
+    justifyContent: "center",
+    gap: 8,
+    height: 40,
     paddingHorizontal: 12,
     borderRadius: 16,
-    minHeight: 40,
   },
-  mmTabActive: { backgroundColor: Z.primary },
-  mmTabIdle: { backgroundColor: Z.subBg },
+  mmTabActive: {
+    backgroundColor: MM.tabActive,
+    shadowColor: MM.tabActive,
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  mmTabIdle: { backgroundColor: MM.tabIdleBg },
   mmTabText: { fontSize: 12, fontWeight: "700" },
   mmTabTextActive: { color: "#fff" },
-  mmTabTextIdle: { color: Z.sub },
+  mmTabTextIdle: { color: MM.muted },
+  mmListContent: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 24,
+  },
+  mmListEmpty: {
+    textAlign: "center",
+    marginTop: 32,
+    fontSize: 14,
+    color: MM.muted,
+  },
   mmPendingCountBadge: {
     marginLeft: 2,
     minWidth: 18,
@@ -3460,47 +4325,138 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   mmPendingCountBadgeText: { color: "#fff", fontSize: 10, fontWeight: "800" },
+  mmMemberCard: {
+    marginBottom: 8,
+    borderRadius: 12,
+    padding: 10,
+  },
+  mmMemberCardActive: {
+    backgroundColor: MM.rowHover,
+  },
   mmMemberRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 4,
-    borderRadius: 14,
-    marginBottom: 4,
+    gap: 12,
   },
+  mmMemberInfo: { flex: 1, minWidth: 0, justifyContent: "center" },
   mmMemberName: { fontSize: 14, fontWeight: "700", color: Z.text },
-  mmRolePillOwner: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    backgroundColor: "rgba(245, 158, 11, 0.12)",
-    marginRight: 4,
+  mmMemberActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 4,
+    flexShrink: 0,
   },
-  mmRolePillOwnerText: { fontSize: 11, fontWeight: "700", color: "#D97706" },
-  mmRolePillAdmin: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+  mmIconActionPromote: {
+    width: 32,
+    height: 32,
     borderRadius: 8,
-    backgroundColor: "rgba(0, 104, 255, 0.1)",
-    marginRight: 4,
-  },
-  mmRolePillAdminText: { fontSize: 11, fontWeight: "700", color: "#1D4ED8" },
-  mmMoreBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: Z.subBg,
+    backgroundColor: MM.actionPromoteBg,
     alignItems: "center",
     justifyContent: "center",
   },
+  mmIconActionKick: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: MM.actionKickBg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mmIconActionPressed: {
+    opacity: 0.85,
+  },
+  mmRolePillOwner: {
+    alignSelf: "flex-start",
+    marginTop: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: MM.pillOwnerBg,
+  },
+  mmRolePillOwnerText: {
+    fontSize: 10,
+    fontWeight: "700",
+    lineHeight: 12,
+    color: MM.pillOwnerText,
+  },
+  mmRolePillAdmin: {
+    alignSelf: "flex-start",
+    marginTop: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: MM.pillAdminBg,
+  },
+  mmRolePillAdminText: {
+    fontSize: 10,
+    fontWeight: "700",
+    lineHeight: 12,
+    color: MM.pillAdminText,
+  },
+  mmMoreBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: MM.actionMoreBg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mmMoreBtnActive: {
+    backgroundColor: "rgba(0,0,0,0.1)",
+  },
+  mmMoreBtnPressed: {
+    backgroundColor: "rgba(0,0,0,0.1)",
+  },
+  mmActionMenuDrop: {
+    alignSelf: "flex-end",
+    marginTop: 6,
+    width: 176,
+    borderRadius: 12,
+    backgroundColor: Z.bg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(0,0,0,0.1)",
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  mmActionMenuItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    justifyContent: "center",
+  },
+  mmActionMenuItemPressed: {
+    backgroundColor: MM.rowHover,
+  },
+  mmActionMenuItemText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: Z.text,
+    lineHeight: 18,
+  },
+  mmPendingInfo: {
+    flex: 1,
+    marginLeft: 12,
+    minWidth: 0,
+    justifyContent: "center",
+  },
+  mmPendingSubtitle: {
+    marginTop: 2,
+    fontSize: 12,
+    fontWeight: "500",
+    color: MM.muted,
+  },
   mmPendingCard: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    padding: 14,
-    marginBottom: 10,
+    alignItems: "center",
+    padding: 12,
+    marginBottom: 8,
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Z.line,
+    borderColor: "rgba(0,0,0,0.05)",
     backgroundColor: Z.bg,
   },
   sectionCap: {
@@ -3561,6 +4517,9 @@ const styles = StyleSheet.create({
     color: Z.sub,
     marginBottom: 8,
     marginTop: 4,
+  },
+  bulletinPinnedList: {
+    gap: 12,
   },
   bulletinPinCard: {
     borderWidth: 1,

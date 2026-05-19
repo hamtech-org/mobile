@@ -6,6 +6,16 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "hamtech",
+    "linking": {
+      "prefixes": ["hamtech://", "https://hamtech.app"],
+      "config": {
+        "screens": {
+          "join": {
+            "path": "join/:suffix"
+          }
+        }
+      }
+    },
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
@@ -17,7 +27,9 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Ứng dụng cần micro để tham gia cuộc gọi thoại và video.",
-        "NSCameraUsageDescription": "Ứng dụng cần camera cho cuộc gọi video.",
+        "NSCameraUsageDescription": "Ứng dụng cần camera cho cuộc gọi video và quét mã QR tham gia nhóm.",
+        "NSPhotoLibraryUsageDescription": "Ứng dụng cần quyền lưu ảnh và video từ tin nhắn vào thư viện.",
+        "NSPhotoLibraryAddUsageDescription": "Ứng dụng cần quyền lưu ảnh và video từ tin nhắn vào thư viện.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true,
           "NSExceptionDomains": {
@@ -36,7 +48,11 @@
         "android.permission.CAMERA",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO"
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -50,6 +66,7 @@
     },
     "plugins": [
       "expo-router",
+      "expo-audio",
       "expo-video",
       [
         "expo-build-properties",
@@ -59,7 +76,22 @@
           }
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Cho phép truy cập camera để quét mã QR tham gia nhóm và gọi video.",
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Cho phép lưu ảnh từ tin nhắn vào thư viện.",
+          "savePhotosPermission": "Cho phép lưu ảnh từ tin nhắn vào thư viện.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ]
     ],
     "extra": {
       "router": {},
