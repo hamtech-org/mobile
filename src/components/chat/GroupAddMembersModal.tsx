@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useState, type ReactElement } from "react";
 
 import { AddMembersModal } from "@/components/chat/AddMembersModal";
-import { useGroupJoinLinkModalOptional } from "@/contexts/GroupJoinLinkModalContext";
 import type { IConversation } from "@/types/chat.types";
 import {
   useAddMembersMutation,
@@ -10,7 +9,6 @@ import {
 } from "@/store/api/chatApi";
 import { useGetFriendsQuery } from "@/store/api/userApi";
 import { filterGroupMembersExcludingRemoved } from "@/utils/groupMembersRealtime";
-import { getJoinGroupUrl } from "@/utils/joinGroupUrl";
 import { toast } from "@/utils/appToast";
 
 type GroupAddMembersModalProps = {
@@ -51,34 +49,8 @@ export function GroupAddMembersModal({
   });
 
   const [addMembers, { isLoading: adding }] = useAddMembersMutation();
-  const joinLinkModal = useGroupJoinLinkModalOptional();
 
   const existingMemberIds = useMemo(() => members.map((m) => m.userId), [members]);
-  const joinSuffix = settings?.joinLinkSuffix;
-  const joinUrl = getJoinGroupUrl(joinSuffix);
-  const allowJoinLink = settings?.adminSettings?.allowJoinLink;
-
-  const openJoinLinkScreen = useCallback(() => {
-    if (!joinSuffix || !joinUrl) return;
-    joinLinkModal?.openGroupJoinLinkModal({
-      suffix: joinSuffix,
-      url: joinUrl,
-      groupName: conversation.name ?? "Nhóm",
-      groupAvatar: conversation.avatar,
-      conversationId: groupId,
-    });
-  }, [conversation.avatar, conversation.name, groupId, joinLinkModal, joinSuffix, joinUrl]);
-
-  const openShareJoinLinkPicker = useCallback(() => {
-    if (!joinSuffix || !joinUrl) return;
-    joinLinkModal?.openShareGroupJoinLinkPicker({
-      suffix: joinSuffix,
-      url: joinUrl,
-      groupName: conversation.name ?? "Nhóm",
-      groupAvatar: conversation.avatar,
-      conversationId: groupId,
-    });
-  }, [conversation.avatar, conversation.name, groupId, joinLinkModal, joinSuffix, joinUrl]);
 
   const toggleSelect = useCallback((userId: string) => {
     setSelectedIds((prev) => {
@@ -132,9 +104,6 @@ export function GroupAddMembersModal({
       onToggleSelect={toggleSelect}
       onConfirm={() => void handleConfirm()}
       isSubmitting={adding}
-      showJoinLinkActions={Boolean(allowJoinLink && joinSuffix)}
-      onOpenJoinLink={joinSuffix ? openJoinLinkScreen : undefined}
-      onShareJoinLink={joinSuffix ? openShareJoinLinkPicker : undefined}
     />
   );
 }

@@ -11,6 +11,7 @@ import {
 import {
   BarChart2,
   CheckSquare,
+  ClipboardPaste,
   Image as ImageIcon,
   Mic,
   Paperclip,
@@ -20,6 +21,7 @@ import {
   ThumbsUp,
   X,
 } from "lucide-react-native";
+import * as Clipboard from "expo-clipboard";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import EmojiPicker, { EmojiType } from "rn-emoji-keyboard";
@@ -37,6 +39,11 @@ import {
 import { useIconColors } from "@/hooks/useIconColors";
 import { apiClient } from "@/services/api";
 import { pendingAttachmentFromImagePickerAsset } from "@/utils/chatMediaMime";
+import {
+  isClipboardPasteButtonAvailable,
+  pendingAttachmentFromClipboardImageData,
+  readPastedImageFromClipboard,
+} from "@/utils/chatMediaDownload";
 import { toast } from "@/utils/appToast";
 import type { IMessage } from "@/types/chat.types";
 import { formatChatPreviewLine } from "@/utils/messageDisplay";
@@ -221,6 +228,53 @@ export const ChatInput = ({
     }
   }, [pendingAttachments.length, addPendingAttachments]);
 
+  const applyPastedAttachment = useCallback(
+    (pasted: Omit<PendingAttachment, "localId">) => {
+      addPendingAttachments([
+        {
+          localId: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+          uri: pasted.uri,
+          name: pasted.name,
+          mimeType: pasted.mimeType,
+          size: pasted.size,
+        },
+      ]);
+      toast.success("Đã dán ảnh");
+    },
+    [addPendingAttachments],
+  );
+
+  const pasteImageFromClipboard = useCallback(async () => {
+    if (inputDisabled) return;
+    try {
+      const pasted = await readPastedImageFromClipboard();
+      if (!pasted) {
+        toast.info("Không có ảnh trong bộ nhớ tạm. Hãy copy ảnh trước (giữ tin → Copy hình ảnh).");
+        return;
+      }
+      applyPastedAttachment(pasted);
+    } catch {
+      toast.error("Không dán được ảnh.");
+    }
+  }, [inputDisabled, applyPastedAttachment]);
+
+  const onNativePastePressed = useCallback(
+    async (data: { type: string; data?: string }) => {
+      if (inputDisabled || data.type !== "image" || !data.data) return;
+      try {
+        const pasted = await pendingAttachmentFromClipboardImageData(data.data);
+        if (!pasted) {
+          toast.error("Không dán được ảnh.");
+          return;
+        }
+        applyPastedAttachment(pasted);
+      } catch {
+        toast.error("Không dán được ảnh.");
+      }
+    },
+    [inputDisabled, applyPastedAttachment],
+  );
+
   const pickFile = useCallback(async () => {
     try {
       const remaining = MAX_PENDING_FILES - pendingAttachments.length;
@@ -355,6 +409,24 @@ export const ChatInput = ({
         >
           <ImageIcon size={20} color={muted} strokeWidth={2} />
         </ToolbarIcon>
+        {isClipboardPasteButtonAvailable && !inputDisabled ? (
+          <View style={styles.nativePasteWrap} accessibilityLabel="Dán ảnh từ bộ nhớ tạm">
+            <Clipboard.ClipboardPasteButton
+              style={styles.nativePasteButton}
+              displayMode="iconOnly"
+              acceptedContentTypes={["image"]}
+              onPress={(data) => void onNativePastePressed(data)}
+            />
+          </View>
+        ) : (
+          <ToolbarIcon
+            onPress={() => void pasteImageFromClipboard()}
+            accessibilityLabel="Dán ảnh từ bộ nhớ tạm"
+            disabled={inputDisabled}
+          >
+            <ClipboardPaste size={20} color={muted} strokeWidth={2} />
+          </ToolbarIcon>
+        )}
         <ToolbarIcon
           onPress={() => void pickFile()}
           accessibilityLabel="Thêm tệp tài liệu"
@@ -531,6 +603,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingRight: 8,
   },
+  nativePasteWrap: {
+    marginRight: 2,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  nativePasteButton: {
+    width: 36,
+    height: 36,
+  },
   toolbarDivider: {
     width: 1,
     height: 20,
@@ -559,22 +640,22 @@ const styles = StyleSheet.create({
   composeRow: {
     flexDirection: "row",
     alignItems: "flex-end",
+    gap: 8,
   },
   inputBox: {
     flex: 1,
-    minHeight: 40,
-    marginRight: 8,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: "rgba(0,0,0,0.1)",
     backgroundColor: "rgba(0,0,0,0.04)",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    overflow: "hidden",
   },
   textInput: {
     margin: 0,
-    padding: 0,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     fontSize: 14,
+    lineHeight: 20,
     fontWeight: "500",
     color: "#050505",
     minHeight: 40,
@@ -584,6 +665,7 @@ const styles = StyleSheet.create({
   sendBtn: {
     width: 40,
     height: 40,
+    flexShrink: 0,
     borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
@@ -591,6 +673,7 @@ const styles = StyleSheet.create({
   likeBtn: {
     width: 40,
     height: 40,
+    flexShrink: 0,
     borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",

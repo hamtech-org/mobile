@@ -697,7 +697,7 @@ export function useChatRealtimeEvents({
         applyRejoinedGroupMemberRealtime(dispatch, gid, joinedAt);
       }
       patchConversationMemberCount(gid, payload);
-      invalidateGroupData(gid, ["members", "requests"]);
+      invalidateGroupData(gid, ["members", "requests", "tasks"]);
       prefetchGroupMembers(gid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
       emitFrameBanner(
@@ -717,7 +717,7 @@ export function useChatRealtimeEvents({
         dispatch(markGroupMemberRemovedRealtime({ conversationId: gid, userId: leftUserId }));
       }
       patchConversationMemberCount(gid, payload);
-      invalidateGroupData(gid, ["members"]);
+      invalidateGroupData(gid, ["members", "tasks"]);
       prefetchGroupMembers(gid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
       const leftAt = typeof payload.leftAt === "string" ? payload.leftAt : undefined;
@@ -742,7 +742,7 @@ export function useChatRealtimeEvents({
         applyKickedFromGroupRealtime(dispatch, gid);
       }
       patchConversationMemberCount(gid, payload);
-      invalidateGroupData(gid, ["members"]);
+      invalidateGroupData(gid, ["members", "tasks"]);
       prefetchGroupMembers(gid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
       emitFrameBanner(

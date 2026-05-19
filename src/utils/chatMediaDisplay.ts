@@ -95,7 +95,7 @@ export function chatFileTypeAccent(fileName: string, mimeType?: string | null): 
   const label = chatFileTypeLabel(fileName, mimeType);
   if (label === "PDF") return "#E53935";
   if (label === "XLSX" || label === "XLS" || label === "CSV") return "#2E7D32";
-  if (label === "DOC" || label === "DOCX") return "#1565C0";
+  if (label === "DOC" || label === "DOCX") return "#1967D2";
   if (label === "PPT" || label === "PPTX") return "#E65100";
   if (label === "ZIP" || label === "RAR" || label === "7Z") return "#F9A825";
   if (label === "MP3" || label === "WAV" || label === "M4A") return "#6A1B9A";

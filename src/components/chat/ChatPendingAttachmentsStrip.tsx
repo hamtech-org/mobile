@@ -12,9 +12,11 @@ export interface PendingAttachment {
   size?: number;
 }
 
-/** Kích thước thẻ — khớp web `w-18` + `h-16`. */
+/** Kích thước thẻ — khớp web `ChatPendingAttachmentsStrip.tsx`. */
 const CARD_WIDTH = 72;
-const PREVIEW_HEIGHT = 64;
+const CARD_HEIGHT = 100;
+const PREVIEW_HEIGHT = 56;
+const META_HEIGHT = 44;
 
 type ChatPendingAttachmentsStripProps = {
   attachments: PendingAttachment[];
@@ -22,7 +24,7 @@ type ChatPendingAttachmentsStripProps = {
   removeDisabled?: boolean;
 };
 
-/** Lưới file chờ gửi — khớp web `ChatComposer.tsx` pending attachments. */
+/** Lưới file chờ gửi — mọi loại file cùng kích thước 72×100px. */
 export function ChatPendingAttachmentsStrip({
   attachments,
   onRemove,
@@ -49,6 +51,24 @@ export function ChatPendingAttachmentsStrip({
   );
 }
 
+function fileTypeLabel(name: string, mimeType: string): string {
+  const ext = (name.split(".").pop() ?? "").toUpperCase();
+  if (ext && ext.length <= 8) return ext;
+  const m = mimeType.toLowerCase();
+  if (m.includes("pdf")) return "PDF";
+  if (m.includes("word")) return "DOC";
+  if (m.includes("sheet") || m.includes("excel")) return "XLS";
+  return "FILE";
+}
+
+function fileTypeAccent(name: string, mimeType: string): string {
+  const label = fileTypeLabel(name, mimeType);
+  if (label === "PDF") return "#E53935";
+  if (label === "XLS" || label === "XLSX" || label === "CSV") return "#2E7D32";
+  if (label === "DOC" || label === "DOCX") return "#1565C0";
+  return "#5C6BC0";
+}
+
 function PendingAttachmentTile({
   item,
   onRemove,
@@ -60,21 +80,27 @@ function PendingAttachmentTile({
 }) {
   const isImage = item.mimeType.startsWith("image/");
   const isVideo = item.mimeType.startsWith("video/");
+  const typeLabel = fileTypeLabel(item.name, item.mimeType);
+  const typeAccent = fileTypeAccent(item.name, item.mimeType);
+
   return (
     <View style={styles.card}>
       <View style={styles.previewWrap}>
         {isImage ? (
           <Image
             source={{ uri: item.uri }}
-            style={styles.previewImage}
-            resizeMode="contain"
+            style={styles.previewMedia}
+            resizeMode="cover"
             accessibilityLabel=""
           />
         ) : isVideo ? (
           <PendingVideoThumb uri={item.uri} />
         ) : (
           <View style={styles.filePlaceholder}>
-            <FileText size={24} color="#6B7280" strokeWidth={1.75} />
+            <View style={[styles.typeBadge, { backgroundColor: typeAccent }]}>
+              <Text style={styles.typeBadgeText}>{typeLabel.slice(0, 4)}</Text>
+            </View>
+            <FileText size={20} color="#6B7280" strokeWidth={1.75} />
           </View>
         )}
       </View>
@@ -85,7 +111,9 @@ function PendingAttachmentTile({
         </Text>
         {item.size != null && item.size > 0 ? (
           <Text style={styles.size}>{formatFileSize(item.size)}</Text>
-        ) : null}
+        ) : (
+          <Text style={styles.size}> </Text>
+        )}
       </View>
 
       <Pressable
@@ -110,7 +138,7 @@ function PendingVideoThumb({ uri }: { uri: string }) {
   return (
     <VideoView
       player={player}
-      style={styles.previewVideo}
+      style={styles.previewMedia}
       contentFit="cover"
       nativeControls={false}
       accessibilityLabel=""
@@ -135,6 +163,7 @@ const styles = StyleSheet.create({
   },
   card: {
     width: CARD_WIDTH,
+    height: CARD_HEIGHT,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "rgba(0,0,0,0.10)",
@@ -145,25 +174,34 @@ const styles = StyleSheet.create({
     height: PREVIEW_HEIGHT,
     width: "100%",
     overflow: "hidden",
-  },
-  previewImage: {
-    width: "100%",
-    height: PREVIEW_HEIGHT,
     backgroundColor: "rgba(244,244,245,0.90)",
   },
-  previewVideo: {
+  previewMedia: {
     width: "100%",
     height: PREVIEW_HEIGHT,
-    backgroundColor: "rgba(228,228,231,0.40)",
   },
   filePlaceholder: {
     flex: 1,
     height: PREVIEW_HEIGHT,
     alignItems: "center",
     justifyContent: "center",
+    gap: 4,
     backgroundColor: "rgba(0,0,0,0.05)",
   },
+  typeBadge: {
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  typeBadgeText: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    letterSpacing: 0.5,
+  },
   meta: {
+    height: META_HEIGHT,
+    justifyContent: "center",
     paddingHorizontal: 4,
     paddingVertical: 2,
     borderTopWidth: StyleSheet.hairlineWidth,

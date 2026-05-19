@@ -3,6 +3,7 @@ import type { RootState } from "@/store/store";
 import { chatApi, type ApiEnvelope } from "../baseChatApi";
 import { conversationApi } from "./conversationApi";
 import { mergeChatFileMessageFields, normalizeChatMediaMime } from "@/utils/chatMediaDisplay";
+import { formatGroupJoinLinkListPreview } from "@/utils/groupJoinLinkMessage";
 
 /** Khớp cache key với useChatMessageData (limit: 50). */
 export const CHAT_MESSAGES_QUERY_LIMIT = 50;
@@ -71,7 +72,12 @@ function lastMessagePreviewFromArg(arg: SendMessageRequest): string {
   if (arg.type === "image") return "[Ảnh]";
   if (arg.type === "video") return "[Video]";
   if (arg.type === "file") return "[File]";
-  return (arg.content ?? "").trim() || "";
+  const raw = (arg.content ?? "").trim();
+  if (arg.type === "text") {
+    const joinPreview = formatGroupJoinLinkListPreview(raw);
+    if (joinPreview) return joinPreview;
+  }
+  return raw || "";
 }
 
 function buildOptimisticMessage(
@@ -166,7 +172,14 @@ function updateGetMessagesCache(
 }
 
 function lastMessagePreviewFromMessage(m: IMessage): string {
-  if (m.content?.trim() !== "") return m.content;
+  const raw = (m.content ?? "").trim();
+  if (raw !== "") {
+    if (m.type === "text") {
+      const joinPreview = formatGroupJoinLinkListPreview(raw);
+      if (joinPreview) return joinPreview;
+    }
+    return m.content ?? "";
+  }
   if (m.type === "image") return "[Ảnh]";
   if (m.type === "video") return "[Video]";
   if (m.type === "file") return "[File]";

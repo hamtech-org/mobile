@@ -27,7 +27,7 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Ứng dụng cần micro để tham gia cuộc gọi thoại và video.",
-        "NSCameraUsageDescription": "Ứng dụng cần camera cho cuộc gọi video.",
+        "NSCameraUsageDescription": "Ứng dụng cần camera cho cuộc gọi video và quét mã QR tham gia nhóm.",
         "NSPhotoLibraryUsageDescription": "Ứng dụng cần quyền lưu ảnh và video từ tin nhắn vào thư viện.",
         "NSPhotoLibraryAddUsageDescription": "Ứng dụng cần quyền lưu ảnh và video từ tin nhắn vào thư viện.",
         "NSAppTransportSecurity": {
@@ -77,6 +77,13 @@
         }
       ],
       "@react-native-community/datetimepicker",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Cho phép truy cập camera để quét mã QR tham gia nhóm và gọi video.",
+          "recordAudioAndroid": false
+        }
+      ],
       [
         "expo-media-library",
         {
