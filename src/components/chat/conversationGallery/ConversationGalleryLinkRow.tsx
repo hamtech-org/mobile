@@ -1,7 +1,6 @@
 import type { ReactElement } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Link2 } from "lucide-react-native";
-
 import { chatListCardStyles } from "@/components/chat/chatListCardStyles";
 import { CONVERSATION_GALLERY_THEME } from "@/components/chat/conversationGallery/conversationGalleryTheme";
 
