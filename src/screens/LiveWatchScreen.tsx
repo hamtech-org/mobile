@@ -1,0 +1,382 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  PermissionsAndroid,
+  Platform,
+  Pressable,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
+import { router, useLocalSearchParams } from "expo-router";
+import * as ScreenOrientation from "expo-screen-orientation";
+import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  ChannelMediaOptions,
+  ChannelProfileType,
+  ClientRoleType,
+  createAgoraRtcEngine,
+  type IRtcEngine,
+  type IRtcEngineEventHandler,
+  RenderModeType,
+  RemoteVideoState,
+  RemoteVideoStateReason,
+  RtcSurfaceView,
+  VideoSourceType,
+} from "react-native-agora";
+import { ChevronLeft, MessageSquare } from "lucide-react-native";
+import BottomSheet, { BottomSheetBackdrop, BottomSheetView } from "@gorhom/bottom-sheet";
+import type { BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
+
+import { LiveChatPanel, type LiveChatLine } from "@/components/live/LiveChatPanel";
+import { env } from "@/config/env";
+import { useSocketContext } from "@/contexts/SocketContext";
+import { useAppSelector } from "@/hooks/useAppStore";
+import { useGetLiveSessionQuery } from "@/store/api/liveApi";
+import { fetchLiveRtcToken } from "@/utils/liveAgora";
+import { formatLiveDuration } from "@/utils/liveSessionUtils";
+
+function paramOne(v: string | string[] | undefined): string {
+  if (v == null) return "";
+  return Array.isArray(v) ? (v[0] ?? "") : v;
+}
+
+function paramAsViewer(v: string | string[] | undefined): boolean {
+  const raw = paramOne(v);
+  return raw === "1" || raw === "true";
+}
+
+async function ensureAndroidWatchPermissions(): Promise<boolean> {
+  if (Platform.OS !== "android") return true;
+  const res = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+  return res === PermissionsAndroid.RESULTS.GRANTED;
+}
+
+export function LiveWatchScreen() {
+  const params = useLocalSearchParams<{ sessionId?: string; asViewer?: string }>();
+  const sessionId = paramOne(params.sessionId);
+  const asViewer = paramAsViewer(params.asViewer);
+  const currentUserId = useAppSelector((s) => s.auth.user?.userId ?? "");
+  const socket = useSocketContext();
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
+
+  const {
+    data: session,
+    isLoading,
+    error,
+  } = useGetLiveSessionQuery(sessionId, {
+    skip: !sessionId,
+    pollingInterval: 12_000,
+  });
+
+  const [joined, setJoined] = useState(false);
+  const [hostUid, setHostUid] = useState<number | null>(null);
+  const [hostVideoOn, setHostVideoOn] = useState(true);
+  const [viewerCount, setViewerCount] = useState(0);
+  const [durationTick, setDurationTick] = useState(Date.now());
+  const [messages, setMessages] = useState<LiveChatLine[]>([]);
+  const [chatOpen, setChatOpen] = useState(false);
+
+  const engineRef = useRef<IRtcEngine | null>(null);
+  const registeredHandlerRef = useRef<IRtcEngineEventHandler | null>(null);
+  const hostUidRef = useRef<number | null>(null);
+  const sessionIdRef = useRef(sessionId);
+  sessionIdRef.current = sessionId;
+
+  const shutdownRtc = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    try {
+      engine.leaveChannel();
+    } catch {
+      /* ignore */
+    }
+    const h = registeredHandlerRef.current;
+    if (h) {
+      try {
+        engine.unregisterEventHandler(h);
+      } catch {
+        /* ignore */
+      }
+      registeredHandlerRef.current = null;
+    }
+    try {
+      engine.release();
+    } catch {
+      /* ignore */
+    }
+    engineRef.current = null;
+    setJoined(false);
+    setHostUid(null);
+  }, []);
+
+  useEffect(() => {
+    void ScreenOrientation.unlockAsync();
+    return () => {
+      void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!session?.startedAt) return;
+    const t = setInterval(() => setDurationTick(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [session?.startedAt]);
+
+  useEffect(() => {
+    if (!sessionId || !session) return;
+    if (!asViewer && session.hostUserId === currentUserId) {
+      router.replace(`/(main)/(live)/${sessionId}/host`);
+      return;
+    }
+    if (session.status === "ended") {
+      Alert.alert("Phiên đã kết thúc", "Phiên live này không còn hoạt động.", [
+        { text: "OK", onPress: () => router.back() },
+      ]);
+    }
+  }, [asViewer, currentUserId, session, sessionId]);
+
+  const onChatMessage = useCallback((raw: unknown) => {
+    const p = raw as LiveChatLine;
+    if (p?.sessionId !== sessionIdRef.current) return;
+    setMessages((m) => [...m.slice(-200), p]);
+  }, []);
+
+  const onSessionEnded = useCallback(() => {
+    shutdownRtc();
+    Alert.alert("Phiên đã kết thúc", "Host đã kết thúc phiên live.", [
+      { text: "OK", onPress: () => router.back() },
+    ]);
+  }, [shutdownRtc]);
+
+  useEffect(() => {
+    if (!sessionId || !socket) return;
+    socket.emit("live:join", { sessionId });
+    return () => {
+      socket.emit("live:leave", { sessionId });
+    };
+  }, [sessionId, socket]);
+
+  useEffect(() => {
+    if (!socket) return;
+    const onViewers = (raw: unknown) => {
+      const p = raw as { sessionId?: string; viewerCount?: number };
+      if (p?.sessionId !== sessionIdRef.current) return;
+      setViewerCount(typeof p.viewerCount === "number" ? p.viewerCount : 0);
+    };
+    socket.on("live:chat-message", onChatMessage);
+    socket.on("live:session-ended", onSessionEnded);
+    socket.on("live:viewers-updated", onViewers);
+    return () => {
+      socket.off("live:chat-message", onChatMessage);
+      socket.off("live:session-ended", onSessionEnded);
+      socket.off("live:viewers-updated", onViewers);
+    };
+  }, [onChatMessage, onSessionEnded, socket]);
+
+  useEffect(() => {
+    const channelName = session?.channelName;
+    if (!channelName || !env.agoraAppId) return;
+    if (session.hostUserId === currentUserId) return;
+
+    let cancelled = false;
+
+    const run = async () => {
+      const ok = await ensureAndroidWatchPermissions();
+      if (!ok || cancelled) {
+        Alert.alert("Quyền", "Cần quyền âm thanh để xem live.");
+        router.back();
+        return;
+      }
+
+      const engine = createAgoraRtcEngine();
+      engineRef.current = engine;
+      engine.initialize({
+        appId: env.agoraAppId,
+        channelProfile: ChannelProfileType.ChannelProfileLiveBroadcasting,
+      });
+      engine.enableAudio();
+      engine.enableVideo();
+      engine.setClientRole(ClientRoleType.ClientRoleAudience);
+      try {
+        engine.setEnableSpeakerphone(true);
+      } catch {
+        /* ignore */
+      }
+
+      const handler: IRtcEngineEventHandler = {
+        onJoinChannelSuccess: () => {
+          if (cancelled) return;
+          setJoined(true);
+        },
+        onUserJoined: (_connection, remoteUid) => {
+          if (cancelled) return;
+          hostUidRef.current = remoteUid;
+          setHostUid(remoteUid);
+          setHostVideoOn(true);
+        },
+        onUserOffline: (_connection, remoteUid) => {
+          if (hostUidRef.current === remoteUid) {
+            hostUidRef.current = null;
+            setHostUid(null);
+          }
+        },
+        onRemoteVideoStateChanged: (_connection, remoteUid, state, reason) => {
+          if (cancelled) return;
+          if (hostUidRef.current != null && remoteUid !== hostUidRef.current) return;
+          const isOn =
+            state === RemoteVideoState.RemoteVideoStateDecoding ||
+            state === RemoteVideoState.RemoteVideoStateStarting ||
+            reason === RemoteVideoStateReason.RemoteVideoStateReasonRemoteUnmuted;
+          const isOff =
+            state === RemoteVideoState.RemoteVideoStateStopped ||
+            reason === RemoteVideoStateReason.RemoteVideoStateReasonRemoteMuted;
+          if (!isOn && !isOff) return;
+          setHostVideoOn(isOn && !isOff);
+        },
+        onError: (err, msg) => {
+          if (__DEV__) console.warn("[LiveWatch Agora]", err, msg);
+        },
+      };
+      registeredHandlerRef.current = handler;
+      engine.registerEventHandler(handler);
+
+      try {
+        const { token, uid } = await fetchLiveRtcToken(channelName, "subscriber");
+        if (cancelled) return;
+
+        const options = {
+          clientRoleType: ClientRoleType.ClientRoleAudience,
+          channelProfile: ChannelProfileType.ChannelProfileLiveBroadcasting,
+          publishMicrophoneTrack: false,
+          publishCameraTrack: false,
+          autoSubscribeAudio: true,
+          autoSubscribeVideo: true,
+        } as ChannelMediaOptions;
+
+        engine.joinChannel(token, channelName, uid, options);
+      } catch (e) {
+        if (__DEV__) console.warn("[LiveWatch] join failed", e);
+        if (!cancelled) {
+          Alert.alert("Lỗi", "Không thể tham gia xem live.");
+          shutdownRtc();
+          router.back();
+        }
+      }
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+      shutdownRtc();
+    };
+  }, [currentUserId, session?.channelName, session?.hostUserId, shutdownRtc]);
+
+  const renderBackdrop = useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.35} />
+    ),
+    [],
+  );
+
+  if (!sessionId || isLoading) {
+    return (
+      <View className="flex-1 items-center justify-center bg-black">
+        <ActivityIndicator color="#fff" />
+      </View>
+    );
+  }
+
+  if (error || !session) {
+    return (
+      <View className="flex-1 items-center justify-center bg-black px-6">
+        <Text className="text-center text-white">Không tải được phiên live.</Text>
+        <Pressable onPress={() => router.back()} className="mt-4">
+          <Text className="text-primary">Quay lại</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  const duration = formatLiveDuration(session.startedAt, durationTick);
+
+  return (
+    <View className="flex-1 bg-black">
+      <View className={`flex-1 ${isLandscape && chatOpen ? "flex-row" : ""}`}>
+        <View className="flex-1">
+          {joined && hostUid != null && hostVideoOn ? (
+            <RtcSurfaceView
+              style={{ flex: 1 }}
+              canvas={{
+                uid: hostUid,
+                sourceType: VideoSourceType.VideoSourceRemote,
+                renderMode: RenderModeType.RenderModeFit,
+              }}
+            />
+          ) : (
+            <View className="flex-1 items-center justify-center bg-neutral-950">
+              {!joined ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text className="text-sm text-white/70">
+                  {hostUid == null ? "Đang chờ host phát..." : "Host đã tắt video"}
+                </Text>
+              )}
+            </View>
+          )}
+
+          <SafeAreaView className="absolute left-0 right-0 top-0" edges={["top"]}>
+            <View className="flex-row items-center justify-between px-3 pt-2">
+              <Pressable
+                onPress={() => {
+                  shutdownRtc();
+                  router.back();
+                }}
+                className="size-10 items-center justify-center rounded-full bg-black/50"
+              >
+                <ChevronLeft size={22} color="#fff" />
+              </Pressable>
+              <View className="flex-1 px-2">
+                <Text className="text-center text-sm font-semibold text-white" numberOfLines={1}>
+                  {session.title}
+                </Text>
+                <Text className="text-center text-xs text-white/75">
+                  {viewerCount} người xem · {duration}
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => setChatOpen((v) => !v)}
+                className="size-10 items-center justify-center rounded-full bg-black/50"
+              >
+                <MessageSquare size={20} color="#fff" />
+              </Pressable>
+            </View>
+          </SafeAreaView>
+        </View>
+
+        {chatOpen && isLandscape ? (
+          <View className="w-[300px] border-l border-white/15 bg-black/80 p-3">
+            <LiveChatPanel sessionId={sessionId} messages={messages} variant="dark" />
+          </View>
+        ) : null}
+      </View>
+
+      {chatOpen && !isLandscape ? (
+        <BottomSheet
+          index={0}
+          snapPoints={["40%"]}
+          enablePanDownToClose
+          onClose={() => setChatOpen(false)}
+          backdropComponent={renderBackdrop}
+        >
+          <BottomSheetView className="flex-1 bg-neutral-900 px-3 pb-4">
+            <LiveChatPanel sessionId={sessionId} messages={messages} variant="dark" />
+          </BottomSheetView>
+        </BottomSheet>
+      ) : null}
+    </View>
+  );
+}
