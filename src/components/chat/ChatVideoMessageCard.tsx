@@ -2,10 +2,12 @@ import type { ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { CircleCheck, Download, FolderOpen, Maximize2, Video } from "lucide-react-native";
 
+import { ChatJumpHighlightWrap } from "@/components/chat/ChatJumpHighlight";
 import { ChatMediaLongPressLayer } from "@/components/chat/ChatMediaLongPressLayer";
 import {
   chatMediaShellStyle,
   chatMediaVideoActionBtnStyle,
+  CHAT_MEDIA_SHELL_RADIUS,
   CHAT_VIDEO_FOOTER_BG,
   CHAT_VIDEO_FOOTER_BG_DARK,
   CHAT_VIDEO_FOOTER_BORDER,
@@ -18,6 +20,7 @@ export interface ChatVideoMessageCardProps {
   layout: ChatMediaLayout;
   isDark?: boolean;
   hasCaptionBelow?: boolean;
+  isJumpHighlighted?: boolean;
   title: string;
   metaLine?: string | null;
   mediaSavedOnDevice?: boolean;
@@ -34,6 +37,7 @@ export function ChatVideoMessageCard({
   layout,
   isDark = false,
   hasCaptionBelow = false,
+  isJumpHighlighted = false,
   title,
   metaLine,
   mediaSavedOnDevice = false,
@@ -47,7 +51,11 @@ export function ChatVideoMessageCard({
   const videoActionBtn = chatMediaVideoActionBtnStyle(isDark);
 
   return (
-    <View style={[chatMediaShellStyle(isDark), hasCaptionBelow && styles.withCaptionBelow]}>
+    <ChatJumpHighlightWrap
+      active={isJumpHighlighted}
+      borderRadius={CHAT_MEDIA_SHELL_RADIUS}
+      style={[chatMediaShellStyle(isDark), hasCaptionBelow && styles.withCaptionBelow]}
+    >
       <View
         style={[
           styles.playerWrap,
@@ -125,7 +133,7 @@ export function ChatVideoMessageCard({
           </Pressable>
         </View>
       </View>
-    </View>
+    </ChatJumpHighlightWrap>
   );
 }
 
