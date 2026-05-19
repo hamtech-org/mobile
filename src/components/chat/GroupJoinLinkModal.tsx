@@ -1,6 +1,15 @@
 import { useCallback, useRef } from "react";
-import { ActivityIndicator, Modal, Pressable, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { router } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
 import * as Clipboard from "expo-clipboard";
 import * as FileSystem from "expo-file-system/legacy";
 import * as MediaLibrary from "expo-media-library";
@@ -110,102 +119,155 @@ export function GroupJoinLinkModal({ open, data, onClose }: Props) {
     }
   };
 
+  const showJoinFooter =
+    !previewLoading && Boolean(preview && !preview.isMember && preview.requestStatus !== "pending");
+  const showOpenChatFooter = !previewLoading && Boolean(preview?.isMember && conversationIdForChat);
+  const showFooter = showJoinFooter || showOpenChatFooter;
+
   return (
     <Modal visible={open && Boolean(data)} animationType="slide" onRequestClose={onClose}>
-      <View className="flex-1 bg-white">
-        <View className="flex-row items-center px-3 py-3" style={{ backgroundColor: PRIMARY }}>
-          <Pressable onPress={onClose} className="p-2" accessibilityLabel="Quay lại">
-            <ArrowLeft color="#fff" size={24} />
-          </Pressable>
-          <Text className="flex-1 pr-10 text-center text-[17px] font-bold text-white">
-            Link nhóm
-          </Text>
-        </View>
-
-        <View className="flex-1 items-center px-6 pt-6">
-          {showMemberBanner ? (
-            <Text className="mb-3 text-center text-[14px] text-slate-500">
-              Bạn đã là thành viên nhóm này.
+      <View style={styles.modalRoot}>
+        <SafeAreaView style={styles.safe} edges={["top", "left", "right", "bottom"]}>
+          <View className="flex-row items-center px-3 py-3" style={{ backgroundColor: PRIMARY }}>
+            <Pressable onPress={onClose} className="p-2" accessibilityLabel="Quay lại">
+              <ArrowLeft color="#fff" size={24} />
+            </Pressable>
+            <Text className="flex-1 pr-10 text-center text-[17px] font-bold text-white">
+              Link nhóm
             </Text>
-          ) : null}
+          </View>
 
-          <Avatar uri={groupAvatar || undefined} name={groupName} size="xl" isGroup />
-          <Text className="mt-4 text-center text-[18px] font-bold text-slate-900">{groupName}</Text>
+          <View style={styles.scrollRegion}>
+            <ScrollView
+              style={styles.scroll}
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              {showMemberBanner ? (
+                <Text className="mb-3 text-center text-[14px] text-slate-500">
+                  Bạn đã là thành viên nhóm này.
+                </Text>
+              ) : null}
 
-          {showMemberCount ? (
-            <View className="mt-1.5 flex-row items-center justify-center gap-1.5">
-              <Users color="#64748b" size={16} />
-              <Text className="text-[14px] text-slate-500">
-                {preview?.memberCount ?? 0} thành viên
+              <Avatar uri={groupAvatar || undefined} name={groupName} size="xl" isGroup />
+              <Text className="mt-3 text-center text-[18px] font-bold text-slate-900">
+                {groupName}
               </Text>
+
+              {showMemberCount ? (
+                <View className="mt-1.5 flex-row items-center justify-center gap-1.5">
+                  <Users color="#64748b" size={16} />
+                  <Text className="text-[14px] text-slate-500">
+                    {preview?.memberCount ?? 0} thành viên
+                  </Text>
+                </View>
+              ) : null}
+
+              <Text className="mt-2 px-2 text-center text-[14px] leading-snug text-slate-500">
+                Mời mọi người tham gia nhóm bằng mã QR hoặc link dưới đây:
+              </Text>
+
+              <View className="mt-4 rounded-2xl border border-slate-100 bg-white p-3 shadow-sm">
+                <QRCode
+                  value={joinUrl}
+                  size={148}
+                  color="#0a1629"
+                  backgroundColor="#ffffff"
+                  ecl="M"
+                  quietZone={8}
+                  getRef={(c) => {
+                    qrRef.current = c as QrSvgRef | null;
+                  }}
+                />
+              </View>
+
+              <View className="mt-4 w-full">
+                <Pressable
+                  onPress={() => void handleCopy()}
+                  className="w-full rounded-xl border border-sky-100 bg-sky-50 px-4 py-3"
+                >
+                  <Text
+                    className="text-center font-mono text-[13px]"
+                    style={{ color: PRIMARY }}
+                    numberOfLines={2}
+                  >
+                    {joinUrl}
+                  </Text>
+                </Pressable>
+                <View className="mt-8 w-full flex-row justify-center gap-x-5 gap-y-3">
+                  <ActionChip icon={Copy} label="Sao chép link" onPress={() => void handleCopy()} />
+                  <ActionChip
+                    icon={Share2}
+                    label="Chia sẻ link"
+                    onPress={() => void handleShare()}
+                  />
+                  <ActionChip
+                    icon={Download}
+                    label="Lưu mã QR"
+                    onPress={() => void handleSaveQr()}
+                  />
+                </View>
+              </View>
+
+              {previewLoading ? <ActivityIndicator className="mt-6" color={PRIMARY} /> : null}
+            </ScrollView>
+          </View>
+
+          {showFooter ? (
+            <View style={styles.footer}>
+              {showJoinFooter ? (
+                <Pressable
+                  onPress={() => void handleJoin()}
+                  disabled={joining}
+                  className="w-full items-center rounded-xl py-3"
+                  style={{ backgroundColor: PRIMARY, opacity: joining ? 0.6 : 1 }}
+                >
+                  <Text className="text-[15px] font-bold text-white">
+                    {joining ? "Đang xử lý…" : "Tham gia nhóm"}
+                  </Text>
+                </Pressable>
+              ) : (
+                <Pressable
+                  onPress={() => {
+                    onClose();
+                    router.push(`/(main)/(chat)/${conversationIdForChat}`);
+                  }}
+                  className="w-full items-center rounded-xl border border-slate-200 py-3"
+                >
+                  <Text className="text-[15px] font-semibold text-slate-800">Mở nhóm chat</Text>
+                </Pressable>
+              )}
             </View>
           ) : null}
-
-          <Text className="mt-2 px-4 text-center text-[14px] leading-snug text-slate-500">
-            Mời mọi người tham gia nhóm bằng mã QR hoặc link dưới đây:
-          </Text>
-
-          <View className="mt-8 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-            <QRCode
-              value={joinUrl}
-              size={200}
-              color="#0a1629"
-              backgroundColor="#ffffff"
-              ecl="M"
-              getRef={(c) => {
-                qrRef.current = c as QrSvgRef | null;
-              }}
-            />
-          </View>
-
-          <Pressable
-            onPress={() => void handleCopy()}
-            className="mt-6 w-full max-w-[320px] rounded-xl border border-sky-100 bg-sky-50 px-4 py-3"
-          >
-            <Text
-              className="text-center font-mono text-[13px]"
-              style={{ color: PRIMARY }}
-              numberOfLines={2}
-            >
-              {joinUrl}
-            </Text>
-          </Pressable>
-
-          <View className="mt-10 flex-row justify-center gap-10">
-            <ActionChip icon={Copy} label="Sao chép link" onPress={() => void handleCopy()} />
-            <ActionChip icon={Share2} label="Chia sẻ link" onPress={() => void handleShare()} />
-            <ActionChip icon={Download} label="Lưu mã QR" onPress={() => void handleSaveQr()} />
-          </View>
-
-          {previewLoading ? (
-            <ActivityIndicator className="mt-8" color={PRIMARY} />
-          ) : preview && !preview.isMember && preview.requestStatus !== "pending" ? (
-            <Pressable
-              onPress={() => void handleJoin()}
-              disabled={joining}
-              className="mt-8 w-full max-w-[280px] items-center rounded-xl py-3"
-              style={{ backgroundColor: PRIMARY, opacity: joining ? 0.6 : 1 }}
-            >
-              <Text className="text-[15px] font-bold text-white">
-                {joining ? "Đang xử lý…" : "Tham gia nhóm"}
-              </Text>
-            </Pressable>
-          ) : preview?.isMember && conversationIdForChat ? (
-            <Pressable
-              onPress={() => {
-                onClose();
-                router.push(`/(main)/(chat)/${conversationIdForChat}`);
-              }}
-              className="mt-8 w-full max-w-[280px] items-center rounded-xl border border-slate-200 py-3"
-            >
-              <Text className="text-[15px] font-semibold text-slate-800">Mở nhóm chat</Text>
-            </Pressable>
-          ) : null}
-        </View>
+        </SafeAreaView>
       </View>
     </Modal>
   );
 }
+
+const styles = StyleSheet.create({
+  modalRoot: { flex: 1, backgroundColor: "#fff" },
+  safe: { flex: 1, backgroundColor: "#fff" },
+  scrollRegion: { flex: 1, minHeight: 0 },
+  scroll: { flex: 1 },
+  scrollContent: {
+    alignItems: "center",
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 20,
+    flexGrow: 1,
+  },
+  footer: {
+    flexShrink: 0,
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#e2e8f0",
+    backgroundColor: "#fff",
+  },
+});
 
 function ActionChip({
   icon: Icon,
