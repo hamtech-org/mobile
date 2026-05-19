@@ -9,6 +9,7 @@ import {
 } from "react";
 import {
   ActivityIndicator,
+  Animated,
   Image,
   Linking,
   Pressable,
@@ -38,7 +39,11 @@ import {
 } from "lucide-react-native";
 
 import { useCalendarNow } from "@/contexts/CalendarClockContext";
-import { ChatJumpHighlightWrap } from "@/components/chat/ChatJumpHighlight";
+import {
+  ChatJumpHighlightWrap,
+  useChatJumpHighlightPulse,
+} from "@/components/chat/ChatJumpHighlight";
+import { CHAT_JUMP_HIGHLIGHT_BORDER } from "@/components/chat/chatMediaShell";
 import { useIconColors } from "@/hooks/useIconColors";
 import type { IMessage } from "@/types/chat.types";
 import { formatFileSize } from "@/utils/file";
@@ -348,9 +353,14 @@ function SystemRowLeadingIcon({ kind }: { kind: SystemTextRowIcon }) {
 // ── System center (JSON + card) ───────────────────────────────────────────
 
 const SYSTEM_CENTER_SURFACE = "bg-card dark:bg-zinc-800/95";
+/** Shell thẻ system — luôn `border-2` để không nhảy layout khi bấm «Xem» (khớp web). */
+const SYSTEM_CENTER_SHELL_CLASS =
+  "w-full max-w-[92%] self-center overflow-hidden rounded-2xl border-2 shadow-sm";
+const SYSTEM_CENTER_BORDER_IDLE = "border-black/[0.06] dark:border-white/10";
 
 /**
- * Khi nhảy tới tin: chỉ **một** viền xanh ở lớp ngoài (giống web), nền thẻ nằm trong — tránh “hai viền” do thiếu nền + viền xám nội dung.
+ * Viền nhảy tới tin (task / poll / cập nhật CV) — một lớp `border-2 border-blue-500` trên shell,
+ * không overlay absolute (tránh vỡ flex hàng «Xem»).
  */
 function SystemCenterCardChrome({
   isJumpHighlighted,
@@ -361,23 +371,33 @@ function SystemCenterCardChrome({
   innerClassName: string;
   children: ReactNode;
 }) {
-  if (isJumpHighlighted) {
+  const { borderColor, shadowOpacity } = useChatJumpHighlightPulse(isJumpHighlighted);
+  const inner = <View className={innerClassName.trim()}>{children}</View>;
+
+  if (!isJumpHighlighted) {
     return (
-      <ChatJumpHighlightWrap
-        active
-        borderRadius={16}
-        style={{ width: "100%", maxWidth: "92%", overflow: "hidden" }}
+      <View
+        className={`${SYSTEM_CENTER_SHELL_CLASS} ${SYSTEM_CENTER_BORDER_IDLE} ${SYSTEM_CENTER_SURFACE}`}
       >
-        <View className={`${SYSTEM_CENTER_SURFACE} ${innerClassName}`.trim()}>{children}</View>
-      </ChatJumpHighlightWrap>
+        {inner}
+      </View>
     );
   }
+
   return (
-    <View
-      className={`w-full max-w-[92%] overflow-hidden rounded-2xl border border-black/[0.06] shadow-sm dark:border-white/10 ${SYSTEM_CENTER_SURFACE} ${innerClassName}`.trim()}
+    <Animated.View
+      className={`${SYSTEM_CENTER_SHELL_CLASS} ${SYSTEM_CENTER_SURFACE}`}
+      style={{
+        borderColor,
+        shadowColor: CHAT_JUMP_HIGHLIGHT_BORDER,
+        shadowOffset: { width: 0, height: 0 },
+        shadowRadius: 14,
+        shadowOpacity,
+        elevation: 4,
+      }}
     >
-      {children}
-    </View>
+      {inner}
+    </Animated.View>
   );
 }
 
@@ -517,7 +537,7 @@ function SystemCenterBlock({
         />
         <SystemCenterCardChrome
           isJumpHighlighted={isJumpHighlighted}
-          innerClassName="flex-row items-center justify-between gap-2 rounded-2xl px-3 py-2.5"
+          innerClassName="w-full min-w-0 flex-row flex-wrap items-center gap-x-2 gap-y-1.5 px-3 py-2.5"
         >
           <View className="min-w-0 flex-1 flex-row items-center gap-2">
             <Pencil size={16} color="#60a5fa" strokeWidth={2} />
@@ -532,7 +552,7 @@ function SystemCenterBlock({
           {showXem ? (
             <Pressable
               onPress={() => groupExtras!.onJumpToTaskCard!(tid)}
-              className="ml-1 h-7 shrink-0 items-center justify-center rounded-full border-2 border-blue-500 px-3"
+              className="h-7 shrink-0 items-center justify-center rounded-full border-2 border-blue-500 px-3"
               android_ripple={{ color: "rgba(59,130,246,0.22)", foreground: true }}
             >
               <Text className="text-[11px] font-bold text-blue-600 dark:text-blue-400">Xem</Text>
@@ -557,7 +577,7 @@ function SystemCenterBlock({
         />
         <SystemCenterCardChrome
           isJumpHighlighted={isJumpHighlighted}
-          innerClassName="flex-row items-center justify-between gap-2 rounded-2xl px-3 py-2.5"
+          innerClassName="w-full min-w-0 flex-row flex-wrap items-center gap-x-2 gap-y-1.5 px-3 py-2.5"
         >
           <View className="min-w-0 flex-1 flex-row items-center gap-2">
             <AlarmClock size={16} color="#f97316" strokeWidth={2} />
@@ -571,7 +591,7 @@ function SystemCenterBlock({
           {showOpen ? (
             <Pressable
               onPress={() => groupExtras!.onOpenGroupTaskSheet!(tid)}
-              className="ml-1 h-7 shrink-0 items-center justify-center rounded-full border border-black/10 bg-black/[0.03] px-3 dark:border-white/10 dark:bg-white/[0.06]"
+              className="h-7 shrink-0 items-center justify-center rounded-full border border-black/10 bg-black/[0.03] px-3 dark:border-white/10 dark:bg-white/[0.06]"
               android_ripple={{ color: "rgba(0,0,0,0.06)" }}
             >
               <Text className="text-[11px] font-bold text-foreground/80 dark:text-white/80">
@@ -688,10 +708,7 @@ function SystemCenterBlock({
         calendarNow={calendarNow}
         isGroup={Boolean(groupExtras)}
       />
-      <SystemCenterCardChrome
-        isJumpHighlighted={isJumpHighlighted}
-        innerClassName="min-w-0 w-full overflow-hidden rounded-2xl"
-      >
+      <SystemCenterCardChrome isJumpHighlighted={isJumpHighlighted} innerClassName="w-full min-w-0">
         <View className="px-3 py-3">
           <View className="mb-2 flex-row flex-wrap items-center gap-1.5">
             <ClipboardList size={14} color="#4F46E5" strokeWidth={2} />
@@ -802,7 +819,7 @@ function SystemCenterBlock({
         </View>
 
         {groupExtras ? (
-          <View className="flex-row flex-wrap items-center justify-between gap-3 border-t border-black/5 px-3 py-3 dark:border-white/10">
+          <View className="min-w-0 flex-row flex-wrap items-center justify-between gap-3 border-t border-black/5 px-3 py-3 dark:border-white/10">
             <View className="min-w-0 flex-1 flex-row flex-wrap items-center gap-2">
               <View className="flex-row items-center gap-1.5 rounded-full border border-black/5 bg-white px-2.5 py-1.5 dark:border-white/10 dark:bg-zinc-800">
                 <Text className="text-[11px] font-bold text-muted-foreground">
