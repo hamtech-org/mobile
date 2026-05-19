@@ -83,7 +83,7 @@ export function BulletinPinnedMessageCard({
             <ChatFileTypeBadge
               fileName={fileMeta.fileName}
               mimeType={fileMeta.mimeType}
-              size="sm"
+              size="lg"
             />
           ) : (
             <View style={[styles.kindCircle, { backgroundColor: accent }]}>
@@ -128,34 +128,35 @@ const styles = StyleSheet.create({
   card: {
     borderWidth: 1,
     borderColor: Z.border,
-    borderRadius: 16,
+    borderRadius: 18,
     backgroundColor: Z.bg,
-    padding: 12,
-    marginBottom: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginBottom: 14,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 3,
-    elevation: 1,
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    elevation: 2,
   },
   cardPressed: { opacity: 0.92 },
   cardDisabled: { opacity: 0.85 },
   row: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: 10,
+    gap: 14,
   },
   iconWrap: {
-    width: 36,
-    height: 36,
+    width: 54,
+    height: 54,
   },
   iconWrapFile: {
-    height: 40,
+    height: 54,
   },
   kindCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -163,9 +164,9 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: -2,
     left: -2,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     backgroundColor: "#fff",
     alignItems: "center",
     justifyContent: "center",
@@ -178,19 +179,19 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   title: {
-    fontSize: 14,
-    fontWeight: "700",
+    fontSize: 18,
+    fontWeight: "800",
     color: Z.text,
     lineHeight: 20,
   },
   meta: {
-    fontSize: 12,
-    fontWeight: "500",
+    fontSize: 15,
+    fontWeight: "600",
     color: Z.sub,
   },
   preview: {
     marginTop: 2,
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: "500",
     color: "#374151",
     lineHeight: 18,
