@@ -992,26 +992,6 @@ export function GroupManageModal({
     promotableMembers.length,
   ]);
 
-  const openPromoteFlow = useCallback(() => {
-    if (adminSlotsFull) {
-      toast.error(
-        `Nhóm chỉ có tối đa ${MAX_GROUP_ADMINS} phó nhóm. Hãy hạ một phó nhóm trước khi bổ nhiệm thêm.`,
-      );
-      return;
-    }
-    if (membersLeadersOnly) {
-      setMembersLeadersOnly(false);
-      setMemberManageTab("list");
-      setMemberActionMenuUserId(null);
-      return;
-    }
-    if (promotableMembers.length === 0) {
-      toast.info("Không còn thành viên thường để bổ nhiệm phó nhóm");
-      return;
-    }
-    setPromotePickerOpen(true);
-  }, [adminSlotsFull, membersLeadersOnly, promotableMembers.length]);
-
   const runLeave = useCallback(
     async (newOwnerUserId?: string) => {
       try {
@@ -1601,23 +1581,6 @@ export function GroupManageModal({
 
   const renderMembers = () => (
     <View style={styles.mmRoot}>
-      {membersLeadersOnly && canKickMembers ? (
-        <View style={styles.mmLeadersPromoteBar}>
-          <Pressable
-            onPress={openPromoteFlow}
-            disabled={changingRole || adminSlotsFull}
-            style={({ pressed }) => [
-              styles.mmAddBtn,
-              (changingRole || adminSlotsFull) && styles.mmAddBtnDisabled,
-              pressed && !(changingRole || adminSlotsFull) ? styles.mmAddBtnPressed : null,
-            ]}
-            accessibilityLabel="Bổ nhiệm thành viên làm phó nhóm"
-          >
-            <UserPlus size={14} color={Z.primary} strokeWidth={2.5} />
-            <Text style={styles.mmAddBtnText}>+ Bổ nhiệm phó nhóm</Text>
-          </Pressable>
-        </View>
-      ) : null}
       {canModerateMembers && !membersLeadersOnly ? (
         <View style={styles.mmTabsRow}>
           <Pressable
@@ -4247,25 +4210,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0,
   },
-  mmLeadersPromoteBar: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 4,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Z.line,
-  },
-  mmAddBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    backgroundColor: "rgba(0, 104, 255, 0.1)",
-  },
-  mmAddBtnPressed: { opacity: 0.88 },
-  mmAddBtnDisabled: { opacity: 0.5 },
-  mmAddBtnText: { fontSize: 12, fontWeight: "800", color: Z.primary },
   mmPromotePickerSheet: {
     marginTop: "auto",
     maxHeight: "88%",
