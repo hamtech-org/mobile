@@ -30,6 +30,7 @@
         "NSCameraUsageDescription": "Ứng dụng cần camera cho cuộc gọi video và quét mã QR tham gia nhóm.",
         "NSPhotoLibraryUsageDescription": "Ứng dụng cần quyền lưu ảnh và video từ tin nhắn vào thư viện.",
         "NSPhotoLibraryAddUsageDescription": "Ứng dụng cần quyền lưu ảnh và video từ tin nhắn vào thư viện.",
+        "NSUserNotificationsUsageDescription": "Ứng dụng cần gửi thông báo tin nhắn, lời mời kết bạn và hoạt động mới.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true,
           "NSExceptionDomains": {
@@ -52,7 +53,8 @@
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.READ_MEDIA_IMAGES",
-        "android.permission.READ_MEDIA_VIDEO"
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.POST_NOTIFICATIONS"
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -66,6 +68,13 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#2563eb"
+        }
+      ],
       "expo-audio",
       "expo-video",
       [
