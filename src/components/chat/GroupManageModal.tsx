@@ -1384,41 +1384,44 @@ export function GroupManageModal({
         />
       </View>
 
-      <View className="mt-2 gap-3 bg-white p-4">
+      <View style={styles.homeActionsWrap}>
         {isOwner ? (
           <Pressable
-            className={`flex-row items-center justify-center gap-2 rounded-xl border border-[#0068ff]/30 px-4 py-3 active:bg-[#0068ff]/10 ${busy ? "opacity-50" : ""}`}
+            style={[styles.homeBtnTransfer, busy ? { opacity: 0.5 } : null]}
+            android_ripple={{ color: "rgba(0, 104, 255, 0.15)" }}
             onPress={handleTransferPress}
             disabled={busy}
           >
             {transferringOwner ? (
               <ActivityIndicator color={Z.primary} />
             ) : (
-              <Text className="text-sm font-bold text-[#0068ff]">Chuyển quyền trưởng nhóm</Text>
+              <Text style={styles.homeBtnTransferText}>Chuyển quyền trưởng nhóm</Text>
             )}
           </Pressable>
         ) : null}
         <Pressable
-          className={`flex-row items-center justify-center gap-2 rounded-xl border border-red-500/25 px-4 py-3 active:bg-red-500/10 ${busy ? "opacity-50" : ""} ${leaveBlockedByMinMembers ? "opacity-60" : ""}`}
+          style={[styles.homeBtnLeave, busy ? { opacity: 0.5 } : null]}
+          android_ripple={{ color: "rgba(239, 68, 68, 0.15)" }}
           onPress={handleLeavePress}
           disabled={busy}
         >
           {leaving ? (
             <ActivityIndicator color={Z.red} />
           ) : (
-            <Text className="text-sm font-bold text-red-500">Rời nhóm</Text>
+            <Text style={styles.homeBtnLeaveText}>Rời nhóm</Text>
           )}
         </Pressable>
         {isOwner ? (
           <Pressable
-            className={`flex-row items-center justify-center gap-2 rounded-xl bg-[#EF4444] px-4 py-3 active:bg-red-600 ${busy ? "opacity-50" : ""}`}
+            style={[styles.homeBtnDisband, busy ? { opacity: 0.5 } : null]}
+            android_ripple={{ color: "rgba(255, 255, 255, 0.2)" }}
             onPress={handleDeleteGroup}
             disabled={busy}
           >
             {deleting ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text className="text-sm font-bold text-white">Giải tán nhóm</Text>
+              <Text style={styles.homeBtnDisbandText}>Giải tán nhóm</Text>
             )}
           </Pressable>
         ) : null}
@@ -3239,6 +3242,56 @@ const styles = StyleSheet.create({
   },
   homeNavRowLast: { borderBottomWidth: 0 },
   homeNavRowLabel: { fontSize: 14, fontWeight: "700", color: Z.text },
+  homeActionsWrap: {
+    marginTop: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    gap: 12,
+    backgroundColor: Z.bg,
+  },
+  homeBtnTransfer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "rgba(0, 104, 255, 0.4)",
+    backgroundColor: "transparent",
+  },
+  homeBtnTransferText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: Z.primary,
+  },
+  homeBtnLeave: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "rgba(239, 68, 68, 0.35)",
+    backgroundColor: "transparent",
+  },
+  homeBtnLeaveText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: Z.red,
+  },
+  homeBtnDisband: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: "#EF4444",
+  },
+  homeBtnDisbandText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#fff",
+  },
   bulletinRow: {
     flexDirection: "row",
     alignItems: "center",
