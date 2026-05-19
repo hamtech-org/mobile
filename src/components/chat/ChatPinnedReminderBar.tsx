@@ -13,7 +13,9 @@ import {
   Video as VideoIcon,
 } from "lucide-react-native";
 
+import { ChatFileTypeBadge } from "@/components/chat/ChatFileTypeBadge";
 import { PinnedRowPreview } from "@/components/chat/PinnedRowPreview";
+import { resolveChatFileBubbleMeta } from "@/utils/chatMediaDisplay";
 import { useIconColors } from "@/hooks/useIconColors";
 import type { IMessage } from "@/types/chat.types";
 import {
@@ -48,6 +50,7 @@ function PinnedRow({ msg, viewerUserId, onPress, onUnpin }: PinnedRowProps): Rea
   const kindLabel = pinnedMessageKindTitle(msg);
   const accent = pinnedMessageAccent(msg);
   const Icon = KIND_ICONS[kind];
+  const fileMeta = kind === "file" ? resolveChatFileBubbleMeta(msg) : null;
 
   const openMenu = useCallback(() => {
     moreBtnRef.current?.measureInWindow((x, y, _w, h) => {
@@ -68,25 +71,41 @@ function PinnedRow({ msg, viewerUserId, onPress, onUnpin }: PinnedRowProps): Rea
           onPress={onPress}
           android_ripple={{ color: "rgba(0,0,0,0.04)" }}
         >
-          <View
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 18,
-              alignItems: "center",
-              justifyContent: "center",
-              backgroundColor: accent,
-            }}
-          >
-            <Icon size={18} color="#fff" strokeWidth={2} />
-          </View>
-          <View className="min-w-0 flex-1 pt-0.5">
-            <Text className="text-[13px] font-bold text-foreground" numberOfLines={1}>
+          {kind === "file" && fileMeta ? (
+            <ChatFileTypeBadge
+              fileName={fileMeta.fileName}
+              mimeType={fileMeta.mimeType}
+              size="sm"
+            />
+          ) : (
+            <View
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 18,
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: accent,
+              }}
+            >
+              <Icon size={18} color="#fff" strokeWidth={2} />
+            </View>
+          )}
+          <View className="min-w-0 flex-1 overflow-hidden pt-0.5">
+            <Text
+              className="text-[13px] font-bold text-foreground"
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
               {kindLabel}
             </Text>
-            <View className="mt-0.5">
+            <View className="mt-0.5 min-w-0 overflow-hidden">
               {pollQuestion ? (
-                <Text className="text-[13px] text-muted-foreground" numberOfLines={1}>
+                <Text
+                  className="text-[13px] text-muted-foreground"
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
                   {pollQuestion}
                 </Text>
               ) : (
