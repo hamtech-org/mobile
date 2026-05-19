@@ -1,8 +1,8 @@
-import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { X } from "lucide-react-native";
 import type { ReactNode } from "react";
 
-/** `dangerSoft`: nút xác nhận nền đỏ nhạt chữ đỏ đậm (kiểu Zalo). */
+/** `dangerSoft`: nút xác nhận nền đỏ nhạt chữ đỏ đậm (kiểu Zalo — giải tán nhóm). */
 export type ConfirmModalVariant = "primary" | "danger" | "dangerSoft";
 
 type ConfirmModalProps = {
@@ -39,15 +39,14 @@ export function ConfirmModal({
   onClose,
   onConfirm,
 }: ConfirmModalProps) {
-  const confirmBtnStyle =
+  const confirmBtnVariantStyle =
     variant === "danger"
-      ? styles.confirmDanger
+      ? styles.confirmBtnDanger
       : variant === "dangerSoft"
-        ? styles.confirmDangerSoft
-        : styles.confirmPrimary;
-
-  const confirmTextStyle =
-    variant === "dangerSoft" ? styles.confirmDangerSoftText : styles.confirmBtnText;
+        ? styles.confirmBtnDangerSoft
+        : styles.confirmBtnPrimary;
+  const confirmTextVariantStyle =
+    variant === "dangerSoft" ? styles.confirmBtnTextDangerSoft : styles.confirmBtnTextLight;
 
   return (
     <Modal
@@ -55,6 +54,7 @@ export function ConfirmModal({
       transparent
       animationType="fade"
       statusBarTranslucent
+      presentationStyle="overFullScreen"
       onRequestClose={() => {
         if (!isConfirming) onClose();
       }}
@@ -100,34 +100,24 @@ export function ConfirmModal({
             <Pressable
               disabled={isConfirming}
               onPress={onClose}
-              style={({ pressed }) => [
-                styles.cancelBtn,
-                pressed && !isConfirming && { opacity: 0.85 },
-                isConfirming && styles.btnDisabled,
-              ]}
+              style={[styles.cancelBtn, isConfirming && styles.btnDisabled]}
+              android_ripple={{ color: "rgba(0,0,0,0.08)" }}
             >
               <Text style={styles.cancelBtnText}>{cancelLabel}</Text>
             </Pressable>
             <Pressable
               disabled={isConfirming}
               onPress={onConfirm}
-              style={({ pressed }) => [
+              style={[
                 styles.confirmBtn,
-                confirmBtnStyle,
-                pressed && !isConfirming && { opacity: 0.9 },
+                confirmBtnVariantStyle,
                 isConfirming && styles.btnDisabled,
               ]}
+              android_ripple={{ color: "rgba(255,255,255,0.2)" }}
             >
-              {isConfirming ? (
-                <ActivityIndicator
-                  size="small"
-                  color={variant === "dangerSoft" ? Z.redSoftText : "#fff"}
-                />
-              ) : (
-                <Text style={confirmTextStyle} numberOfLines={2}>
-                  {confirmLabel}
-                </Text>
-              )}
+              <Text style={[styles.confirmBtnText, confirmTextVariantStyle]}>
+                {isConfirming ? "Đang xử lý…" : confirmLabel}
+              </Text>
             </Pressable>
           </View>
         </Pressable>
@@ -139,16 +129,16 @@ export function ConfirmModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
+    backgroundColor: "rgba(0,0,0,0.4)",
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 24,
+    paddingHorizontal: 16,
   },
   card: {
     width: "100%",
     maxWidth: 400,
     backgroundColor: Z.bg,
-    borderRadius: 16,
+    borderRadius: 12,
     overflow: "hidden",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 8 },
@@ -160,7 +150,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
     paddingVertical: 16,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Z.line,
@@ -176,8 +166,8 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   body: {
-    paddingHorizontal: 20,
-    paddingVertical: 18,
+    paddingHorizontal: 24,
+    paddingVertical: 20,
   },
   description: {
     fontSize: 15,
@@ -189,52 +179,53 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "flex-end",
-    gap: 10,
-    paddingHorizontal: 20,
-    paddingBottom: 18,
+    gap: 12,
+    paddingHorizontal: 24,
+    paddingBottom: 20,
   },
   cancelBtn: {
-    paddingVertical: 11,
-    paddingHorizontal: 18,
-    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    borderRadius: 8,
     backgroundColor: "rgba(0,0,0,0.05)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   cancelBtnText: {
     fontSize: 15,
     fontWeight: "700",
     color: Z.text,
+    textAlign: "center",
   },
   confirmBtn: {
-    minWidth: 100,
-    maxWidth: "58%",
-    paddingVertical: 11,
-    paddingHorizontal: 16,
-    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
+    minWidth: 88,
   },
-  confirmPrimary: {
+  confirmBtnPrimary: {
     backgroundColor: Z.primary,
   },
-  confirmDanger: {
+  confirmBtnDanger: {
     backgroundColor: Z.red,
   },
-  confirmDangerSoft: {
+  confirmBtnDangerSoft: {
     backgroundColor: Z.redSoftBg,
   },
   confirmBtnText: {
     fontSize: 15,
     fontWeight: "700",
-    color: "#fff",
     textAlign: "center",
   },
-  confirmDangerSoftText: {
-    fontSize: 15,
-    fontWeight: "700",
+  confirmBtnTextLight: {
+    color: "#FFFFFF",
+  },
+  confirmBtnTextDangerSoft: {
     color: Z.redSoftText,
-    textAlign: "center",
   },
   btnDisabled: {
-    opacity: 0.55,
+    opacity: 0.5,
   },
 });
