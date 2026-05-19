@@ -7,6 +7,8 @@ export interface FriendListItem {
   userId: string;
   displayName: string;
   avatar: string | null;
+  email?: string | null;
+  phone?: string | null;
 }
 
 interface ApiEnvelope<T> {

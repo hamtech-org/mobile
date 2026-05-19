@@ -28,6 +28,8 @@
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Ứng dụng cần micro để tham gia cuộc gọi thoại và video.",
         "NSCameraUsageDescription": "Ứng dụng cần camera cho cuộc gọi video.",
+        "NSPhotoLibraryUsageDescription": "Ứng dụng cần quyền lưu ảnh và video từ tin nhắn vào thư viện.",
+        "NSPhotoLibraryAddUsageDescription": "Ứng dụng cần quyền lưu ảnh và video từ tin nhắn vào thư viện.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true,
           "NSExceptionDomains": {
@@ -46,7 +48,11 @@
         "android.permission.CAMERA",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO"
       ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -70,7 +76,15 @@
           }
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Cho phép lưu ảnh từ tin nhắn vào thư viện.",
+          "savePhotosPermission": "Cho phép lưu ảnh từ tin nhắn vào thư viện.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ]
     ],
     "extra": {
       "router": {},
