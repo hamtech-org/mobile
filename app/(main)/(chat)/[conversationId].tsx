@@ -161,14 +161,8 @@ export default function ChatDetailScreen() {
   const [openAiSummaryOnGroupModal, setOpenAiSummaryOnGroupModal] = useState(false);
   const [addMembersOpen, setAddMembersOpen] = useState(false);
 
-  const {
-    allMessages,
-    pinnedMessagesOrdered,
-    pinnedMessageOrderByConv,
-    setPinnedMessageOrderByConv,
-    isLoading,
-    latestMessageId,
-  } = useChatMessageData(conversationId);
+  const { allMessages, pinnedMessagesOrdered, isLoading, latestMessageId } =
+    useChatMessageData(conversationId);
 
   useConversationLifecycle({
     conversationId,
@@ -251,8 +245,6 @@ export default function ChatDetailScreen() {
     groupMembers: groupMembersForPerm,
     pinnedMessagesOrdered,
     allMessages,
-    pinnedMessageOrderByConv,
-    setPinnedMessageOrderByConv,
   });
 
   const canSendInGroup = useMemo(() => {
