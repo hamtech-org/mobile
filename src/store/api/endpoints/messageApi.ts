@@ -1,4 +1,10 @@
-import type { IConversation, IMessage, IReplyToDetails, MessageType } from "@/types/chat.types";
+import type {
+  IConversation,
+  IMessage,
+  IMessagePage,
+  IReplyToDetails,
+  MessageType,
+} from "@/types/chat.types";
 import type { RootState } from "@/store/store";
 import { chatApi, type ApiEnvelope } from "../baseChatApi";
 import { conversationApi } from "./conversationApi";
@@ -7,6 +13,9 @@ import { formatGroupJoinLinkListPreview } from "@/utils/groupJoinLinkMessage";
 
 /** Khớp cache key với useChatMessageData (limit: 50). */
 export const CHAT_MESSAGES_QUERY_LIMIT = 50;
+
+/** Mobile page size for paginated endpoint (smaller for mobile networks). */
+export const MOBILE_PAGINATED_LIMIT = 30;
 
 export interface SendMessageRequest {
   conversationId: string;
@@ -226,6 +235,39 @@ export const messageApi = chatApi.injectEndpoints({
         params: { category, limit },
       }),
       transformResponse: (response: ApiEnvelope<MessageGalleryItem[]>) => response.data ?? [],
+    }),
+
+    /**
+     * Cursor-based paginated messages (oldest → newest).
+     * All pages for a conversation merge into a single cache entry.
+     */
+    getMessagesPaginated: builder.query<
+      IMessagePage,
+      { conversationId: string; limit?: number; cursor?: string }
+    >({
+      query: ({ conversationId, limit = MOBILE_PAGINATED_LIMIT, cursor }) => {
+        const params = new URLSearchParams();
+        params.set("limit", String(limit));
+        if (cursor) params.set("cursor", cursor);
+        return `/chat/conversations/${conversationId}/messages/paginated?${params.toString()}`;
+      },
+      transformResponse: (response: ApiEnvelope<IMessagePage>) => response.data,
+      // Group all pages for same conversation into one cache entry
+      serializeQueryArgs: ({ queryArgs }) => queryArgs.conversationId,
+      // Merge older pages (prepend) into existing items
+      merge: (currentCache, newResponse) => {
+        const existingIds = new Set(currentCache.items.map((m) => m.messageId));
+        const uniqueNew = newResponse.items.filter((m) => !existingIds.has(m.messageId));
+        // Older items prepend (oldest → newest order)
+        currentCache.items = [...uniqueNew, ...currentCache.items];
+        currentCache.nextCursor = newResponse.nextCursor;
+        currentCache.hasMore = newResponse.hasMore;
+      },
+      // Allow refetch when cursor changes
+      forceRefetch: ({ currentArg, previousArg }) => currentArg?.cursor !== previousArg?.cursor,
+      providesTags: (_result, _error, { conversationId }) => [
+        { type: "Messages", id: `paginated-${conversationId}` },
+      ],
     }),
 
     sendMessage: builder.mutation<ApiEnvelope<IMessage>, SendMessageRequest>({
@@ -546,6 +588,8 @@ export const messageApi = chatApi.injectEndpoints({
 
 export const {
   useGetMessagesQuery,
+  useGetMessagesPaginatedQuery,
+  useLazyGetMessagesPaginatedQuery,
   useGetMessageGalleryQuery,
   useSendMessageMutation,
   useEditMessageMutation,

@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocalSearchParams } from "expo-router";
-import { Alert, FlatList, Keyboard, Text, View } from "react-native";
+import {
+  Alert,
+  FlatList,
+  Keyboard,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 
@@ -29,7 +39,7 @@ import { GroupManageModal, type GroupManagePanel } from "@/components/chat/Group
 import { GroupAddMembersModal } from "@/components/chat/GroupAddMembersModal";
 import { GroupPollModal } from "@/components/chat/GroupPollModal";
 import { GroupTaskModal } from "@/components/chat/GroupTaskModal";
-import { MessageSquare } from "lucide-react-native";
+import { ChevronDown, MessageSquare } from "lucide-react-native";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Loading } from "@/components/common/Loading";
 import { useUploadMediaMultiMutation } from "@/store/api/mediaApi";
@@ -161,6 +171,7 @@ export default function ChatDetailScreen() {
   const [groupTaskModalOpen, setGroupTaskModalOpen] = useState(false);
   const [openAiSummaryOnGroupModal, setOpenAiSummaryOnGroupModal] = useState(false);
   const [addMembersOpen, setAddMembersOpen] = useState(false);
+  const [isScrolledUp, setIsScrolledUp] = useState(false);
 
   const { allMessages, pinnedMessagesOrdered, isLoading, latestMessageId } =
     useChatMessageData(conversationId);
@@ -1073,7 +1084,24 @@ export default function ChatDetailScreen() {
               description="Hãy bắt đầu cuộc trò chuyện!"
             />
           }
+          onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
+            // Inverted FlatList: offset 0 = bottom (latest). Scrolled up = offset > threshold.
+            const offset = e.nativeEvent.contentOffset.y;
+            setIsScrolledUp(offset > 300);
+          }}
+          scrollEventThrottle={100}
         />
+
+        {/* Floating scroll-to-bottom button */}
+        {isScrolledUp && (
+          <Pressable
+            onPress={() => listRef.current?.scrollToOffset({ offset: 0, animated: true })}
+            style={scrollBtnStyles.fab}
+            accessibilityLabel="Cuộn xuống tin mới nhất"
+          >
+            <ChevronDown size={22} color="#666" />
+          </Pressable>
+        )}
 
         <View
           className="border-t border-border/40 bg-background/95 dark:bg-background"
@@ -1199,3 +1227,24 @@ export default function ChatDetailScreen() {
     </SafeAreaView>
   );
 }
+
+const scrollBtnStyles = StyleSheet.create({
+  fab: {
+    position: "absolute",
+    bottom: 80,
+    right: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.95)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.1)",
+  },
+});
