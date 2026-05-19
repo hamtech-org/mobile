@@ -34,7 +34,7 @@ export function ConversationGalleryLinkRow({
           <Link2 size={20} color={theme.tint} strokeWidth={2} />
         </View>
         <View style={styles.textCol}>
-          <Text style={styles.url} numberOfLines={2}>
+          <Text style={[styles.url, { color: theme.tint }]} numberOfLines={2}>
             {url}
           </Text>
           <Text style={chatListCardStyles.meta} numberOfLines={2}>
@@ -66,8 +66,7 @@ const styles = StyleSheet.create({
   },
   url: {
     fontSize: 14,
-    fontWeight: "600",
-    color: "#0D9488",
+    fontWeight: "500",
     lineHeight: 20,
   },
 });
