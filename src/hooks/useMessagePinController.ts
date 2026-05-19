@@ -1,4 +1,4 @@
-import { useCallback, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useState } from "react";
 
 import { useAppDispatch } from "@/hooks/useAppStore";
 import {
@@ -20,8 +20,6 @@ type UseMessagePinControllerParams = {
   groupMembers: GroupMember[];
   pinnedMessagesOrdered: IMessage[];
   allMessages: IMessage[];
-  pinnedMessageOrderByConv: Record<string, string[]>;
-  setPinnedMessageOrderByConv: Dispatch<SetStateAction<Record<string, string[]>>>;
 };
 
 export function useMessagePinController({
@@ -30,8 +28,6 @@ export function useMessagePinController({
   groupMembers,
   pinnedMessagesOrdered,
   allMessages,
-  pinnedMessageOrderByConv: _pinnedMessageOrderByConv,
-  setPinnedMessageOrderByConv,
 }: UseMessagePinControllerParams) {
   const dispatch = useAppDispatch();
   const [pinMessage] = usePinMessageMutation();
@@ -123,10 +119,6 @@ export function useMessagePinController({
             }),
           );
           patchMessageInCache(cid, msg.messageId, { isPinned: false });
-          setPinnedMessageOrderByConv((prev) => ({
-            ...prev,
-            [cid]: (prev[cid] ?? []).filter((id) => id !== msg.messageId),
-          }));
           pushLocalPinSystemLine({ conversationId: cid, actorLabel, pinned: false });
         } else {
           const visiblePinCount = allMessages.filter(
@@ -159,10 +151,6 @@ export function useMessagePinController({
             }),
           );
           patchMessageInCache(cid, msg.messageId, { isPinned: true });
-          setPinnedMessageOrderByConv((prev) => ({
-            ...prev,
-            [cid]: [msg.messageId, ...(prev[cid] ?? []).filter((id) => id !== msg.messageId)],
-          }));
           pushLocalPinSystemLine({ conversationId: cid, actorLabel, pinned: true });
         }
       } catch (e: unknown) {
@@ -180,7 +168,6 @@ export function useMessagePinController({
       patchMessageInCache,
       pinMessage,
       pushLocalPinSystemLine,
-      setPinnedMessageOrderByConv,
       unpinMessage,
     ],
   );
@@ -212,10 +199,6 @@ export function useMessagePinController({
         }),
       );
       patchMessageInCache(cid, victim.messageId, { isPinned: false });
-      setPinnedMessageOrderByConv((prev) => ({
-        ...prev,
-        [cid]: (prev[cid] ?? []).filter((id) => id !== victim.messageId),
-      }));
 
       await pinMessage({
         messageId: toPin.messageId,
@@ -230,10 +213,6 @@ export function useMessagePinController({
         }),
       );
       patchMessageInCache(cid, toPin.messageId, { isPinned: true });
-      setPinnedMessageOrderByConv((prev) => ({
-        ...prev,
-        [cid]: [toPin.messageId, ...(prev[cid] ?? []).filter((id) => id !== toPin.messageId)],
-      }));
       pushLocalPinSystemLine({ conversationId: cid, actorLabel: "Bạn", pinned: true });
       setPinLimitModalMsg(null);
     } catch {
@@ -249,7 +228,6 @@ export function useMessagePinController({
     pinReplaceIndex,
     pinnedMessagesOrdered,
     pushLocalPinSystemLine,
-    setPinnedMessageOrderByConv,
     unpinMessage,
   ]);
 
