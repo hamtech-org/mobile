@@ -9,7 +9,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { Check, Search, User, Users, X } from "lucide-react-native";
+import { Check, Search, Users, X } from "lucide-react-native";
 
 import { Avatar } from "@/components/common/Avatar";
 import type { GroupJoinLinkModalData } from "@/contexts/GroupJoinLinkModalContext";
@@ -20,7 +20,7 @@ import type { IConversation } from "@/types/chat.types";
 
 const Z = { primary: "#0068FF", line: "#E2E8F0", sub: "#64748B" };
 
-type ShareTab = "recent" | "groups" | "friends";
+type ShareTab = "all" | "groups" | "friends";
 
 type Props = {
   open: boolean;
@@ -39,26 +39,39 @@ function sortRecent(convs: IConversation[]) {
   });
 }
 
-function parseFriends(data: unknown): FriendRow[] {
+/** Chỉ lấy người đã kết bạn (accepted / friend) từ GET /contacts/friends. */
+function parseAcceptedFriends(data: unknown): FriendRow[] {
   if (!data) return [];
+  let raw: unknown[] = [];
   if (Array.isArray(data)) {
-    return (data as FriendRow[]).map((f) => ({
-      userId: f.userId,
-      displayName: f.displayName ?? f.userId,
-      avatar: f.avatar,
-    }));
-  }
-  if (typeof data === "object") {
+    raw = data;
+  } else if (typeof data === "object") {
     const o = data as { friends?: unknown };
-    if (Array.isArray(o.friends)) {
-      return (o.friends as FriendRow[]).map((f) => ({
-        userId: f.userId,
-        displayName: f.displayName ?? f.userId,
-        avatar: f.avatar,
-      }));
-    }
+    if (Array.isArray(o.friends)) raw = o.friends;
   }
-  return [];
+  return raw
+    .map((item) => {
+      const f = item as {
+        userId?: string;
+        friendId?: string;
+        displayName?: string;
+        avatar?: string | null;
+        contactStatus?: string;
+        status?: string;
+      };
+      const userId = f.userId ?? f.friendId;
+      if (!userId) return null;
+      if (f.contactStatus && f.contactStatus !== "accepted" && f.contactStatus !== "friend") {
+        return null;
+      }
+      return {
+        userId,
+        displayName: f.displayName ?? userId,
+        avatar: f.avatar ?? null,
+      };
+    })
+    .filter((row): row is FriendRow => row !== null)
+    .sort((a, b) => a.displayName.localeCompare(b.displayName, "vi"));
 }
 
 export function ShareGroupJoinLinkPickerModal({
@@ -68,7 +81,7 @@ export function ShareGroupJoinLinkPickerModal({
   excludeConversationId,
 }: Props) {
   const [q, setQ] = useState("");
-  const [tab, setTab] = useState<ShareTab>("recent");
+  const [tab, setTab] = useState<ShareTab>("all");
   const [selectedConvIds, setSelectedConvIds] = useState<Set<string>>(new Set());
   const [selectedFriendIds, setSelectedFriendIds] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
@@ -86,7 +99,8 @@ export function ShareGroupJoinLinkPickerModal({
     [conversations, excludeConversationId],
   );
 
-  const friends = useMemo(() => parseFriends(friendsRes?.data), [friendsRes?.data]);
+  // userApi.getFriends đã unwrap `data` → friendsRes là mảng bạn bè.
+  const friends = useMemo(() => parseAcceptedFriends(friendsRes), [friendsRes]);
 
   const directByFriend = useMemo(() => {
     const m = new Map<string, string>();
@@ -99,29 +113,57 @@ export function ShareGroupJoinLinkPickerModal({
   useEffect(() => {
     if (!open) return;
     setQ("");
-    setTab("recent");
+    setTab("all");
     setSelectedConvIds(new Set());
     setSelectedFriendIds(new Set());
   }, [open]);
 
-  const filteredConvs = useMemo(() => {
+  const hasSearch = q.trim().length > 0;
+
+  const groupConvs = useMemo(
+    () => sortRecent(convList.filter((c) => c.type === "group")),
+    [convList],
+  );
+
+  const filteredGroups = useMemo(() => {
     const s = q.trim().toLowerCase();
-    let list =
-      tab === "groups"
-        ? convList.filter((c) => c.type === "group")
-        : tab === "friends"
-          ? convList.filter((c) => c.type === "direct")
-          : convList;
-    if (s) list = list.filter((c) => (c.name ?? "").toLowerCase().includes(s));
-    return sortRecent(list);
-  }, [convList, q, tab]);
+    if (!s) return groupConvs;
+    return groupConvs.filter((c) => (c.name ?? "").toLowerCase().includes(s));
+  }, [groupConvs, q]);
 
   const filteredFriends = useMemo(() => {
     const s = q.trim().toLowerCase();
-    let list = friends;
-    if (s) list = list.filter((f) => f.displayName.toLowerCase().includes(s));
-    return list;
+    if (!s) return friends;
+    return friends.filter((f) => f.displayName.toLowerCase().includes(s));
   }, [friends, q]);
+
+  type ListItem =
+    | { kind: "header"; key: string; title: string }
+    | { kind: "group"; key: string; conv: IConversation }
+    | { kind: "friend"; key: string; friend: FriendRow };
+
+  const listItems = useMemo((): ListItem[] => {
+    if (hasSearch || tab === "all") {
+      const items: ListItem[] = [];
+      if (filteredGroups.length > 0) {
+        items.push({ kind: "header", key: "hdr-groups", title: "Nhóm chat" });
+        for (const c of filteredGroups) {
+          items.push({ kind: "group", key: c.conversationId, conv: c });
+        }
+      }
+      if (filteredFriends.length > 0) {
+        items.push({ kind: "header", key: "hdr-friends", title: "Bạn bè" });
+        for (const f of filteredFriends) {
+          items.push({ kind: "friend", key: f.userId, friend: f });
+        }
+      }
+      return items;
+    }
+    if (tab === "friends") {
+      return filteredFriends.map((f) => ({ kind: "friend" as const, key: f.userId, friend: f }));
+    }
+    return filteredGroups.map((c) => ({ kind: "group" as const, key: c.conversationId, conv: c }));
+  }, [filteredFriends, filteredGroups, hasSearch, tab]);
 
   const selectedCount = selectedConvIds.size + selectedFriendIds.size;
 
@@ -196,7 +238,7 @@ export function ShareGroupJoinLinkPickerModal({
         <View style={styles.tabs}>
           {(
             [
-              { id: "recent" as const, label: "Gần đây" },
+              { id: "all" as const, label: "Tất cả" },
               { id: "groups" as const, label: "Nhóm chat" },
               { id: "friends" as const, label: "Bạn bè" },
             ] as const
@@ -211,55 +253,56 @@ export function ShareGroupJoinLinkPickerModal({
 
         {loading ? (
           <ActivityIndicator style={{ marginTop: 32 }} color={Z.primary} />
-        ) : tab === "friends" ? (
-          <FlatList
-            data={filteredFriends}
-            keyExtractor={(f) => f.userId}
-            contentContainerStyle={{ paddingBottom: 16 }}
-            ListEmptyComponent={<Text style={styles.empty}>Chưa có bạn bè để chia sẻ.</Text>}
-            renderItem={({ item: f }) => {
-              const on = selectedFriendIds.has(f.userId);
-              return (
-                <Pressable style={styles.row} onPress={() => toggleFriend(f.userId)}>
-                  <View style={[styles.check, on ? styles.checkOn : null]}>
-                    {on ? <Check size={14} color="#fff" strokeWidth={3} /> : null}
-                  </View>
-                  <Avatar uri={f.avatar || undefined} name={f.displayName} size="sm" />
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={styles.rowTitle} numberOfLines={1}>
-                      {f.displayName}
-                    </Text>
-                    <Text style={styles.rowSub}>
-                      {directByFriend.has(f.userId) ? "Chat 1-1" : "Sẽ mở chat mới"}
-                    </Text>
-                  </View>
-                </Pressable>
-              );
-            }}
-          />
         ) : (
           <FlatList
-            data={filteredConvs}
-            keyExtractor={(c) => c.conversationId}
+            data={listItems}
+            keyExtractor={(item) => item.key}
             contentContainerStyle={{ paddingBottom: 16 }}
-            ListEmptyComponent={<Text style={styles.empty}>Không có hội thoại phù hợp.</Text>}
-            renderItem={({ item: c }) => {
+            ListEmptyComponent={
+              <Text style={styles.empty}>
+                {hasSearch
+                  ? "Không tìm thấy kết quả."
+                  : tab === "friends"
+                    ? "Chưa có bạn bè để chia sẻ."
+                    : tab === "groups"
+                      ? "Không có nhóm chat để chia sẻ."
+                      : "Chưa có nhóm hoặc bạn bè để chia sẻ."}
+              </Text>
+            }
+            renderItem={({ item }) => {
+              if (item.kind === "header") {
+                return <Text style={styles.sectionHeader}>{item.title}</Text>;
+              }
+              if (item.kind === "friend") {
+                const f = item.friend;
+                const on = selectedFriendIds.has(f.userId);
+                return (
+                  <Pressable style={styles.row} onPress={() => toggleFriend(f.userId)}>
+                    <View style={[styles.check, on ? styles.checkOn : null]}>
+                      {on ? <Check size={14} color="#fff" strokeWidth={3} /> : null}
+                    </View>
+                    <Avatar uri={f.avatar || undefined} name={f.displayName} size="sm" />
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={styles.rowTitle} numberOfLines={1}>
+                        {f.displayName}
+                      </Text>
+                      <Text style={styles.rowSub}>
+                        {directByFriend.has(f.userId) ? "Chat 1-1" : "Sẽ mở chat mới"}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              }
+              const c = item.conv;
               const on = selectedConvIds.has(c.conversationId);
-              const isGroup = c.type === "group";
               return (
                 <Pressable style={styles.row} onPress={() => toggleConv(c.conversationId)}>
                   <View style={[styles.check, on ? styles.checkOn : null]}>
                     {on ? <Check size={14} color="#fff" strokeWidth={3} /> : null}
                   </View>
-                  {isGroup ? (
-                    <View style={styles.iconWrap}>
-                      <Users size={18} color={Z.primary} />
-                    </View>
-                  ) : (
-                    <View style={styles.iconWrap}>
-                      <User size={18} color={Z.primary} />
-                    </View>
-                  )}
+                  <View style={styles.iconWrap}>
+                    <Users size={18} color={Z.primary} />
+                  </View>
                   <Text style={[styles.rowTitle, { flex: 1, marginLeft: 12 }]} numberOfLines={1}>
                     {c.name ?? "Hội thoại"}
                   </Text>
@@ -316,6 +359,16 @@ const styles = StyleSheet.create({
   tabBtn: { paddingHorizontal: 10, paddingVertical: 8 },
   tabText: { fontSize: 13, fontWeight: "600", color: Z.sub },
   tabTextOn: { color: Z.primary },
+  sectionHeader: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: Z.sub,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 4,
+  },
   row: {
     flexDirection: "row",
     alignItems: "center",
