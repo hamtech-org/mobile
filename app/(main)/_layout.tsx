@@ -3,6 +3,7 @@ import { useColorScheme, View } from "react-native";
 import { MessageCircleMore, Newspaper, PlayCircle, User, Users } from "lucide-react-native";
 
 import { ChatSocketBootstrap } from "@/components/chat/ChatSocketBootstrap";
+import { ReelUploadBanner } from "@/features/reels/components/ReelUploadBanner";
 
 interface TabConfig {
   name: string;
@@ -58,6 +59,7 @@ export default function MainLayout() {
           />
         ))}
       </Tabs>
+      <ReelUploadBanner />
     </View>
   );
 }
