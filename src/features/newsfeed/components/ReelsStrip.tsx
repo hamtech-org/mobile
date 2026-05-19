@@ -65,11 +65,17 @@ export const ReelsStrip = () => {
             className="relative h-[200px] w-[126px] overflow-hidden rounded-2xl"
             onPress={() => router.push("/(main)/(reels)")}
           >
-            <Image
-              source={{ uri: reel.thumbnailUrl }}
-              className="h-full w-full"
-              resizeMode="cover"
-            />
+            {reel.thumbnailUrl ? (
+              <Image
+                source={{ uri: reel.thumbnailUrl }}
+                className="h-full w-full"
+                resizeMode="cover"
+              />
+            ) : (
+              <View className="h-full w-full items-center justify-center bg-neutral-900">
+                <Ionicons name="play" size={32} color="rgba(255,255,255,0.82)" />
+              </View>
+            )}
             <View className="absolute inset-0 bg-black/35" />
 
             {/* Author avatar placeholder */}
