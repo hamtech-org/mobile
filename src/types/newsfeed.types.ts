@@ -95,7 +95,7 @@ export interface IReel {
   reelId: string;
   authorId: string;
   videoUrl: string;
-  thumbnailUrl: string;
+  thumbnailUrl: string | null;
   caption: string;
   durationMs: number;
   width: number;
