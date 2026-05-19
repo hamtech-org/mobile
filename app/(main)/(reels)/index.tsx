@@ -1,17 +1,31 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, FlatList, Pressable, StatusBar, Text, View } from "react-native";
+import { ActivityIndicator, FlatList, Pressable, StatusBar, Text, View } from "react-native";
 import type { LayoutChangeEvent, ViewToken } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useGetReelsFeedQuery, useLazyGetReelsFeedQuery } from "@/store/api/newsfeedApi";
+import {
+  newsfeedApi,
+  useGetReelsFeedQuery,
+  useLazyGetReelsFeedQuery,
+} from "@/store/api/newsfeedApi";
 import { ReelPlayer } from "@/features/reels/components/ReelPlayer";
 import { ReelActionBar } from "@/features/reels/components/ReelActionBar";
 import { ReelCommentsSheet } from "@/features/reels/components/ReelCommentsSheet";
 import { ReelCommentInputBar } from "@/features/reels/components/ReelCommentInputBar";
+import { useAppDispatch } from "@/hooks/useAppStore";
+import { useSocket } from "@/hooks/useSocket";
 import type { IReel } from "@/types/newsfeed.types";
+
+function getReelEventId(payload: unknown): string | null {
+  const p = payload as { reelId?: unknown; targetId?: unknown } | null;
+  const reelId = typeof p?.reelId === "string" ? p.reelId : p?.targetId;
+  return typeof reelId === "string" ? reelId : null;
+}
 
 export default function ReelsFeedScreen() {
   const router = useRouter();
+  const dispatch = useAppDispatch();
+  const socket = useSocket();
   const [visibleIndex, setVisibleIndex] = useState(0);
   const [commentsReelId, setCommentsReelId] = useState<string | null>(null);
   const [itemHeight, setItemHeight] = useState(0);
@@ -67,7 +81,10 @@ export default function ReelsFeedScreen() {
       .unwrap()
       .then((res) => {
         if (res) {
-          setAllReels((prev) => [...prev, ...res.items]);
+          setAllReels((prev) => {
+            const existing = new Set(prev.map((r) => r.reelId));
+            return [...prev, ...res.items.filter((r) => !existing.has(r.reelId))];
+          });
           setNextCursor(res.nextCursor);
           setHasMore(res.hasMore);
         }
@@ -81,22 +98,70 @@ export default function ReelsFeedScreen() {
       setCommentsReelId(allReels[visibleIndex].reelId);
       setReplyTo(null); // reset reply khi đổi reel
     }
-  }, [visibleIndex, allReels]);
+  }, [visibleIndex, allReels, commentsReelId]);
+
+  const visibleReelId = allReels[visibleIndex]?.reelId ?? null;
+
+  useEffect(() => {
+    if (!socket || !visibleReelId) return undefined;
+    socket.emit("newsfeed:reel_join", { reelId: visibleReelId });
+    return () => {
+      socket.emit("newsfeed:reel_leave", { reelId: visibleReelId });
+    };
+  }, [socket, visibleReelId]);
+
+  useEffect(() => {
+    if (!socket) return undefined;
+
+    const invalidateReel = (payload: unknown) => {
+      const reelId = getReelEventId(payload);
+      dispatch(
+        newsfeedApi.util.invalidateTags([
+          "ReelsFeed",
+          ...(reelId ? [{ type: "ReelDetail" as const, id: reelId }] : []),
+        ]),
+      );
+    };
+
+    const handleReelDeleted = (payload: unknown) => {
+      const reelId = getReelEventId(payload);
+      if (!reelId) return;
+      setAllReels((prev) => prev.filter((r) => r.reelId !== reelId));
+      setCommentsReelId((current) => (current === reelId ? null : current));
+      invalidateReel(payload);
+    };
+
+    const handleReelCommented = (payload: unknown) => {
+      const reelId = getReelEventId(payload);
+      dispatch(
+        newsfeedApi.util.invalidateTags([
+          "ReelsFeed",
+          ...(reelId
+            ? [
+                { type: "ReelDetail" as const, id: reelId },
+                { type: "ReelComments" as const, id: reelId },
+              ]
+            : []),
+        ]),
+      );
+    };
+
+    socket.on("newsfeed:reel_deleted", handleReelDeleted);
+    socket.on("newsfeed:reel_reacted", invalidateReel);
+    socket.on("newsfeed:reel_commented", handleReelCommented);
+
+    return () => {
+      socket.off("newsfeed:reel_deleted", handleReelDeleted);
+      socket.off("newsfeed:reel_reacted", invalidateReel);
+      socket.off("newsfeed:reel_commented", handleReelCommented);
+    };
+  }, [socket, dispatch]);
 
   const renderItem = useCallback(
     ({ item, index }: { item: IReel; index: number }) => (
       <View style={{ height: itemHeight }}>
         <ReelPlayer reel={item} isVisible={visibleIndex === index} height={itemHeight} />
-        <ReelActionBar
-          reel={item}
-          onOpenComments={() => setCommentsReelId(item.reelId)}
-          onOpenReport={() =>
-            Alert.alert("Báo cáo", "Bạn muốn báo cáo reel này?", [
-              { text: "Hủy", style: "cancel" },
-              { text: "Báo cáo", style: "destructive" },
-            ])
-          }
-        />
+        <ReelActionBar reel={item} onOpenComments={() => setCommentsReelId(item.reelId)} />
       </View>
     ),
     [visibleIndex, itemHeight],
@@ -141,6 +206,10 @@ export default function ReelsFeedScreen() {
           viewabilityConfig={viewabilityConfig}
           onEndReached={handleEndReached}
           onEndReachedThreshold={0.5}
+          initialNumToRender={2}
+          maxToRenderPerBatch={2}
+          windowSize={5}
+          removeClippedSubviews
           getItemLayout={(_data, index) => ({
             length: itemHeight,
             offset: itemHeight * index,
