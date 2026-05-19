@@ -6,6 +6,7 @@ import LottieView from "lottie-react-native";
 import { useSelector } from "react-redux";
 import { useRouter } from "expo-router";
 import { EmojiPicker } from "@/components/common/ReactionButton/EmojiPicker";
+import { ReelReportSheet } from "./ReelReportSheet";
 import {
   useReactToReelMutation,
   useToggleSaveReelMutation,
@@ -19,7 +20,6 @@ import type { RootState } from "@/store/store";
 interface Props {
   reel: IReel;
   onOpenComments: () => void;
-  onOpenReport: () => void;
 }
 
 function totalReactions(counts: Partial<Record<ReactionType, number>>): number {
@@ -32,7 +32,7 @@ function formatCount(n: number): string {
   return String(n);
 }
 
-export const ReelActionBar = ({ reel, onOpenComments, onOpenReport }: Props) => {
+export const ReelActionBar = ({ reel, onOpenComments }: Props) => {
   const [reactToReel] = useReactToReelMutation();
   const [toggleSave] = useToggleSaveReelMutation();
   const [deleteReel] = useDeleteReelMutation();
@@ -45,6 +45,7 @@ export const ReelActionBar = ({ reel, onOpenComments, onOpenReport }: Props) => 
   const [saved, setSaved] = useState(reel.isSaved ?? false);
   const [saveCount, setSaveCount] = useState(reel.savesCount);
   const [moreVisible, setMoreVisible] = useState(false);
+  const [reportVisible, setReportVisible] = useState(false);
   const [reactionPickerVisible, setReactionPickerVisible] = useState(false);
   const [anchorY, setAnchorY] = useState<number | undefined>(undefined);
   const [anchorX, setAnchorX] = useState<number | undefined>(undefined);
@@ -246,7 +247,7 @@ export const ReelActionBar = ({ reel, onOpenComments, onOpenReport }: Props) => 
             <Pressable
               onPress={() => {
                 setMoreVisible(false);
-                onOpenReport();
+                setReportVisible(true);
               }}
               className="flex-row items-center gap-3 rounded-xl px-3 py-3.5 active:bg-white/10"
             >
@@ -276,6 +277,13 @@ export const ReelActionBar = ({ reel, onOpenComments, onOpenReport }: Props) => 
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* Report sheet */}
+      <ReelReportSheet
+        reelId={reel.reelId}
+        visible={reportVisible}
+        onClose={() => setReportVisible(false)}
+      />
     </>
   );
 };
