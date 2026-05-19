@@ -20,6 +20,7 @@ import {
   type PollVoteModalPoll,
 } from "@/components/chat";
 import { ChatPinnedReminderBar } from "@/components/chat/ChatPinnedReminderBar";
+import { PinLimitModal } from "@/components/chat/PinLimitModal";
 import {
   ChatMediaLightbox,
   type ChatMediaLightboxState,
@@ -49,6 +50,7 @@ import { useCallContext } from "@/contexts/CallContext";
 import { useAppDispatch, useAppSelector } from "@/hooks/useAppStore";
 import { useChat } from "@/hooks/useChat";
 import { useChatMessageData } from "@/hooks/useChatMessageData";
+import { useMessagePinController } from "@/hooks/useMessagePinController";
 import { useConversationLifecycle } from "@/hooks/useConversationLifecycle";
 import { useTaskReminderScheduler, type GroupTaskLike } from "@/hooks/useTaskReminderScheduler";
 import { setReplyingTo, clearReplyingTo, clearChatFrameBanner } from "@/store/slices/chatSlice";
@@ -65,14 +67,11 @@ import { openOrShareChatFile } from "@/utils/chatMediaDownload";
 import {
   canUserCreatePollInGroup,
   canUserCreateTaskInGroup,
-  canUserPinMessageInGroup,
   canUserSendMessageInGroup,
   resolveGroupMemberRole,
 } from "@/utils/groupConversationPermissions";
 import { filterGroupMembersExcludingRemoved } from "@/utils/groupMembersRealtime";
 import { isTaskJoinDeadlinePassed } from "@/utils/taskJoin";
-import { MAX_PINNED_PER_CONVERSATION } from "@/constants/chatPin";
-
 const EMPTY_TYPING_USERS: TypingUserEntry[] = [];
 
 function toPollVoteModalPoll(raw: unknown): PollVoteModalPoll | null {
@@ -162,15 +161,14 @@ export default function ChatDetailScreen() {
   const [openAiSummaryOnGroupModal, setOpenAiSummaryOnGroupModal] = useState(false);
   const [addMembersOpen, setAddMembersOpen] = useState(false);
 
-  const { allMessages, isLoading, latestMessageId } = useChatMessageData(conversationId);
-
-  const pinnedMessages = useMemo(
-    () =>
-      allMessages
-        .filter((m) => m.isPinned && !m.isRecalled && !m.isDeleted)
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
-    [allMessages],
-  );
+  const {
+    allMessages,
+    pinnedMessagesOrdered,
+    pinnedMessageOrderByConv,
+    setPinnedMessageOrderByConv,
+    isLoading,
+    latestMessageId,
+  } = useChatMessageData(conversationId);
 
   useConversationLifecycle({
     conversationId,
@@ -206,7 +204,6 @@ export default function ChatDetailScreen() {
     sendReplyMessage,
     recallMessage,
     deleteMessage,
-    togglePinMessage,
     reactMessage,
     emitTyping,
   } = useChat();
@@ -247,6 +244,16 @@ export default function ChatDetailScreen() {
       conversationCreatorId: conversation?.creatorId,
     });
   }, [groupMembersForPerm, currentUserId, conversation?.creatorId]);
+
+  const pinController = useMessagePinController({
+    activeConversation: conversation,
+    currentUserId: currentUserId ?? "",
+    groupMembers: groupMembersForPerm,
+    pinnedMessagesOrdered,
+    allMessages,
+    pinnedMessageOrderByConv,
+    setPinnedMessageOrderByConv,
+  });
 
   const canSendInGroup = useMemo(() => {
     if (groupDisbanded) return false;
@@ -817,42 +824,9 @@ export default function ChatDetailScreen() {
 
   const handleTogglePinForSheet = useCallback(
     async (msg: IMessage) => {
-      try {
-        if (
-          conversation?.type === "group" &&
-          !canUserPinMessageInGroup({
-            conversation,
-            userRole: myRoleInGroup,
-          })
-        ) {
-          toast.error(
-            msg.isPinned
-              ? "Nhóm không cho phép thành viên bỏ/ghim tin nhắn."
-              : "Nhóm không cho phép thành viên ghim tin nhắn.",
-          );
-          return;
-        }
-        if (!msg.isPinned) {
-          const pinCount = allMessages.filter(
-            (m) =>
-              m.conversationId === msg.conversationId &&
-              m.isPinned &&
-              !m.isRecalled &&
-              !m.isDeleted,
-          ).length;
-          if (pinCount >= MAX_PINNED_PER_CONVERSATION) {
-            toast.error(
-              `Đã đủ ${MAX_PINNED_PER_CONVERSATION} tin ghim. Bỏ ghim một tin cũ để ghim tin mới.`,
-            );
-            return;
-          }
-        }
-        await togglePinMessage(msg);
-      } catch {
-        toast.error("Không cập nhật ghim được. Thử lại.");
-      }
+      await pinController.handleTogglePinMsg(msg);
     },
-    [allMessages, conversation, myRoleInGroup, togglePinMessage],
+    [pinController],
   );
 
   const handleTogglePinPoll = useCallback(
@@ -999,10 +973,22 @@ export default function ChatDetailScreen() {
       ) : null}
 
       <ChatPinnedReminderBar
-        pinnedMessages={pinnedMessages}
+        pinnedMessages={pinnedMessagesOrdered}
         currentUserId={currentUserId ?? ""}
         onJumpToMessage={handleJumpToMessage}
         onTogglePin={handleTogglePinForSheet}
+      />
+
+      <PinLimitModal
+        visible={pinController.pinLimitModalMsg !== null}
+        currentPinned={pinnedMessagesOrdered}
+        pendingPin={pinController.pinLimitModalMsg}
+        replaceIndex={pinController.pinReplaceIndex}
+        onReplaceIndexChange={pinController.setPinReplaceIndex}
+        isSubmitting={pinController.pinLimitSubmitting}
+        currentUserId={currentUserId ?? ""}
+        onClose={() => pinController.setPinLimitModalMsg(null)}
+        onConfirm={() => void pinController.handleConfirmPinReplace()}
       />
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
