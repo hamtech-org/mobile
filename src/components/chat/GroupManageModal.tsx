@@ -82,6 +82,7 @@ import { ChatSharedFileRow } from "@/components/chat/ChatSharedFileRow";
 import { BulletinTaskCard } from "@/components/chat/BulletinTaskCard";
 import { Avatar } from "@/components/common/Avatar";
 import { MAX_PINNED_PER_CONVERSATION } from "@/constants/chatPin";
+import { orderPinnedMessagesMRU } from "@/utils/pinnedMessageOrder";
 import { MIN_GROUP_MEMBERS } from "@/constants/group";
 import { env } from "@/config/env";
 import { useAppSelector } from "@/hooks/useAppStore";
@@ -697,18 +698,10 @@ export function GroupManageModal({
     return out;
   }, [messages]);
 
-  const pinnedList = useMemo(
-    () =>
-      messages
-        .filter((m) => m.isPinned && !m.isRecalled && !m.isDeleted)
-        .slice()
-        .sort((a, b) => {
-          const am = new Date(a.createdAt).getTime();
-          const bm = new Date(b.createdAt).getTime();
-          return (Number.isFinite(bm) ? bm : 0) - (Number.isFinite(am) ? am : 0);
-        }),
-    [messages],
-  );
+  const pinnedList = useMemo(() => {
+    const pinned = messages.filter((m) => m.isPinned && !m.isRecalled && !m.isDeleted);
+    return orderPinnedMessagesMRU(pinned, []);
+  }, [messages]);
 
   const memberNameById = useMemo(() => {
     const m = new Map<string, string>();
