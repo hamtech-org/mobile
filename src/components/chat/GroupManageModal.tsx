@@ -200,6 +200,43 @@ const mmAvatarStyles = StyleSheet.create({
   fallbackText: { fontSize: 14, fontWeight: "700", color: MM.avatarText },
 });
 
+/** Avatar hero màn Thông tin nhóm — ảnh phủ kín khung tròn 80×80 (không thu nhỏ như size lg). */
+function GroupHeroAvatar({
+  uri,
+  name,
+}: {
+  uri?: string | null;
+  name?: string | null;
+}): ReactElement {
+  const imageUri = uri?.trim() ? normalizeMediaUrl(uri.trim()) : undefined;
+  if (imageUri) {
+    return (
+      <Image source={{ uri: imageUri }} style={groupHeroAvatarStyles.image} resizeMode="cover" />
+    );
+  }
+  return (
+    <View style={groupHeroAvatarStyles.fallback}>
+      <Text style={groupHeroAvatarStyles.fallbackText}>{memberAvatarInitials(name ?? "Nhóm")}</Text>
+    </View>
+  );
+}
+
+const groupHeroAvatarStyles = StyleSheet.create({
+  image: {
+    ...StyleSheet.absoluteFillObject,
+    width: undefined,
+    height: undefined,
+    backgroundColor: "#DBEAFE",
+  },
+  fallback: {
+    flex: 1,
+    alignSelf: "stretch",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  fallbackText: { fontSize: 28, fontWeight: "700", color: "#0068FF" },
+});
+
 export type GroupManagePanel =
   | "home"
   | "rename"
@@ -1279,12 +1316,7 @@ export function GroupManageModal({
           style={[styles.avatarWrap, !canEditGroupProfile && { opacity: 0.85 }]}
         >
           <View style={styles.heroAvatarFrame}>
-            <Avatar
-              uri={conversation.avatar || undefined}
-              name={conversation.name || undefined}
-              size="lg"
-              isGroup
-            />
+            <GroupHeroAvatar uri={conversation.avatar} name={conversation.name} />
           </View>
           {canEditGroupProfile ? (
             <View style={styles.camBadge}>
@@ -1534,12 +1566,7 @@ export function GroupManageModal({
           style={[styles.avatarWrap, (!canEditGroupProfile || busy) && { opacity: 0.75 }]}
         >
           <View style={styles.heroAvatarFrame}>
-            <Avatar
-              uri={conversation.avatar || undefined}
-              name={conversation.name || undefined}
-              size="lg"
-              isGroup
-            />
+            <GroupHeroAvatar uri={conversation.avatar} name={conversation.name} />
           </View>
           {canEditGroupProfile ? (
             <View style={styles.camBadge}>
