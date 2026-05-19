@@ -1,12 +1,11 @@
 import { useCallback, useMemo, useRef, useState, type ReactElement } from "react";
-import { Dimensions, Image, Modal, Pressable, ScrollView, Text, View } from "react-native";
+import { Dimensions, Modal, Pressable, ScrollView, Text, View } from "react-native";
 import {
   BarChart2,
   ChevronDown,
   ChevronUp,
   FileText,
   Image as ImageIcon,
-  Link2,
   MessageSquare,
   MoreHorizontal,
   Pin,
@@ -14,19 +13,16 @@ import {
   Video as VideoIcon,
 } from "lucide-react-native";
 
+import { PinnedRowPreview } from "@/components/chat/PinnedRowPreview";
 import { useIconColors } from "@/hooks/useIconColors";
 import type { IMessage } from "@/types/chat.types";
-import { formatChatPreviewLine } from "@/utils/messageDisplay";
-import { chatFileTypeAccent } from "@/utils/chatMediaDisplay";
 import {
-  pinnedChatFileDisplayName,
   pinnedMessageAccent,
   pinnedMessageKind,
   pinnedMessageKindTitle,
   pollQuestionFromPinnedMessage,
   type PinnedMessageKind,
 } from "@/utils/pinnedMessageDisplay";
-import { normalizeMediaUrl } from "@/utils/url";
 
 const KIND_ICONS: Record<PinnedMessageKind, typeof MessageSquare> = {
   message: MessageSquare,
@@ -35,152 +31,6 @@ const KIND_ICONS: Record<PinnedMessageKind, typeof MessageSquare> = {
   video: VideoIcon,
   file: FileText,
 };
-
-function extractFirstHttpUrl(content: string): string | null {
-  const m = (content ?? "").trim().match(/https?:\/\/[^\s<]+/);
-  return m ? m[0] : null;
-}
-
-function truncateUrl(url: string, max = 42): string {
-  if (url.length <= max) return url;
-  return `${url.slice(0, 28)}…${url.slice(-8)}`;
-}
-
-function mediaThumbForPinnedRow(msg: IMessage): string | undefined {
-  if (msg.type === "image" || msg.type === "video") {
-    return normalizeMediaUrl(msg.thumbnailUrl ?? msg.mediaUrl);
-  }
-  return undefined;
-}
-
-function pollQuestionFromMsg(msg: IMessage): string | null {
-  if ((msg as { type?: string }).type !== "system") return null;
-  const raw = String((msg as { content?: string }).content ?? "").trim();
-  if (!raw.startsWith("{")) return null;
-  try {
-    const obj = JSON.parse(raw) as { kind?: string; poll?: { question?: string } };
-    if (obj?.kind !== "poll_created") return null;
-    const q = String(obj?.poll?.question ?? "").trim();
-    return q || null;
-  } catch {
-    return null;
-  }
-}
-
-/** Một dòng preview cho hàng pinned (đồng bộ web `PinnedRowPreview`). */
-function PinnedRowPreview({
-  msg,
-  viewerUserId,
-  mutedColor,
-}: {
-  msg: IMessage;
-  viewerUserId: string;
-  mutedColor: string;
-}): ReactElement {
-  const sender = msg.senderDisplayName?.trim() || "Người dùng";
-  const thumb = mediaThumbForPinnedRow(msg);
-
-  if (msg.type === "image") {
-    return (
-      <View className="flex-row items-center" style={{ flexShrink: 1 }}>
-        <Text className="text-[13px] font-semibold text-foreground" numberOfLines={1}>
-          {sender}:{" "}
-        </Text>
-        {thumb ? (
-          <Image
-            source={{ uri: thumb }}
-            style={{
-              width: 20,
-              height: 20,
-              borderRadius: 4,
-              marginRight: 6,
-              backgroundColor: "#e2e8f0",
-            }}
-            resizeMode="cover"
-          />
-        ) : (
-          <ImageIcon size={14} color={mutedColor} style={{ marginRight: 4 }} />
-        )}
-        <Text className="text-[13px] text-muted-foreground" numberOfLines={1}>
-          Ảnh
-        </Text>
-      </View>
-    );
-  }
-
-  if (msg.type === "video") {
-    return (
-      <View className="flex-row items-center" style={{ flexShrink: 1 }}>
-        <Text className="text-[13px] font-semibold text-foreground" numberOfLines={1}>
-          {sender}:{" "}
-        </Text>
-        {thumb ? (
-          <Image
-            source={{ uri: thumb }}
-            style={{
-              width: 20,
-              height: 20,
-              borderRadius: 4,
-              marginRight: 6,
-              backgroundColor: "#0a0a0a",
-            }}
-            resizeMode="cover"
-          />
-        ) : (
-          <VideoIcon size={14} color={mutedColor} style={{ marginRight: 4 }} />
-        )}
-        <Text className="text-[13px] text-muted-foreground" numberOfLines={1}>
-          Video
-        </Text>
-      </View>
-    );
-  }
-
-  if (msg.type === "file") {
-    const name = pinnedChatFileDisplayName(msg);
-    const fileAccent = chatFileTypeAccent(name, msg.mediaType);
-    return (
-      <View className="flex-row items-center" style={{ flexShrink: 1 }}>
-        <Text className="text-[13px] font-semibold text-foreground" numberOfLines={1}>
-          {sender}:{" "}
-        </Text>
-        <FileText size={14} color={fileAccent} style={{ marginRight: 4 }} />
-        <Text className="text-[13px] text-muted-foreground" numberOfLines={1}>
-          {name}
-        </Text>
-      </View>
-    );
-  }
-
-  if (msg.type === "text") {
-    const url = extractFirstHttpUrl(msg.content ?? "");
-    if (url) {
-      return (
-        <View className="flex-row items-center" style={{ flexShrink: 1 }}>
-          <Text className="text-[13px] font-semibold text-foreground" numberOfLines={1}>
-            {sender}:{" "}
-          </Text>
-          <Link2 size={13} color={mutedColor} style={{ marginRight: 4 }} />
-          <Text className="text-[13px] text-muted-foreground" numberOfLines={1}>
-            Link · {truncateUrl(url)}
-          </Text>
-        </View>
-      );
-    }
-  }
-
-  const line = formatChatPreviewLine(msg, viewerUserId);
-  return (
-    <View className="flex-row items-center" style={{ flexShrink: 1 }}>
-      <Text className="text-[13px] font-semibold text-foreground" numberOfLines={1}>
-        {sender}:{" "}
-      </Text>
-      <Text className="flex-1 text-[13px] text-muted-foreground" numberOfLines={1}>
-        {line}
-      </Text>
-    </View>
-  );
-}
 
 interface PinnedRowProps {
   msg: IMessage;
