@@ -989,7 +989,7 @@ export function GroupManageModal({
     const highlightsBlock =
       highlights.length > 0
         ? `Điểm nổi bật\n${highlights.map((h) => `• ${String(h).trim()}`).join("\n")}`
-        : "Điểm nổi bật\n• (Không có)";
+        : "Điểm nổi bật\n• Không có";
     return [summaryBlock, highlightsBlock].join("\n\n");
   }, []);
 
