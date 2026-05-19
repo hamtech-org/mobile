@@ -2,6 +2,7 @@ import type { ReactElement, ReactNode } from "react";
 import { Image, Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Pin } from "lucide-react-native";
 
+import { ChatJumpHighlightWrap } from "@/components/chat/ChatJumpHighlight";
 import {
   ChatFileAttachmentCard,
   ChatFilePreviewPlaceholder,
@@ -13,6 +14,7 @@ import {
   CHAT_FILE_PREVIEW_BG_DARK,
   CHAT_MEDIA_SHELL_BG,
   CHAT_MEDIA_SHELL_BG_DARK,
+  CHAT_MEDIA_SHELL_RADIUS,
   type ChatMediaLayout,
 } from "@/components/chat/chatMediaShell";
 
@@ -27,6 +29,7 @@ export interface ChatFileMessageBubbleProps {
   isOwn?: boolean;
   isDark?: boolean;
   isPinned?: boolean;
+  isJumpHighlighted?: boolean;
   header?: ReactNode;
   /** Chạm thẻ → MessageActionSheet. */
   onShowActions: () => void;
@@ -50,6 +53,7 @@ export function ChatFileMessageBubble({
   isOwn = false,
   isDark = false,
   isPinned = false,
+  isJumpHighlighted = false,
   header,
   onShowActions,
   onDownload,
@@ -61,80 +65,91 @@ export function ChatFileMessageBubble({
   const shellBg = isDark ? CHAT_MEDIA_SHELL_BG_DARK : CHAT_MEDIA_SHELL_BG;
 
   return (
-    <Pressable
-      onLongPress={onShowActions}
-      delayLongPress={300}
+    <ChatJumpHighlightWrap
+      active={isJumpHighlighted}
+      borderRadius={CHAT_MEDIA_SHELL_RADIUS}
       style={chatFileMessageShellStyle(isDark, isOwn)}
-      accessibilityLabel="Tùy chọn tin nhắn file"
     >
-      {header ? <View style={[styles.header, { backgroundColor: shellBg }]}>{header}</View> : null}
-
-      <TouchableOpacity
-        activeOpacity={0.92}
-        onPress={onShowActions}
+      <Pressable
+        onLongPress={onShowActions}
+        delayLongPress={300}
+        style={styles.pressableFill}
         accessibilityLabel="Tùy chọn tin nhắn file"
       >
-        {hasPreview ? (
-          <Image
-            source={{ uri: previewUri! }}
+        {header ? (
+          <View style={[styles.header, { backgroundColor: shellBg }]}>{header}</View>
+        ) : null}
+
+        <TouchableOpacity
+          activeOpacity={0.92}
+          onPress={onShowActions}
+          accessibilityLabel="Tùy chọn tin nhắn file"
+        >
+          {hasPreview ? (
+            <Image
+              source={{ uri: previewUri! }}
+              style={[
+                styles.previewImage,
+                {
+                  height: layout.filePreviewHeight,
+                  backgroundColor: isDark ? CHAT_FILE_PREVIEW_BG_DARK : CHAT_FILE_PREVIEW_BG,
+                },
+              ]}
+              resizeMode="cover"
+            />
+          ) : (
+            <ChatFilePreviewPlaceholder isDark={isDark} height={layout.filePlaceholderHeight} />
+          )}
+        </TouchableOpacity>
+
+        <ChatFileAttachmentCard
+          fileName={fileName}
+          fileSizeLabel={fileSizeLabel}
+          mimeType={mimeType}
+          mediaSavedOnDevice={mediaSavedOnDevice}
+          isDark={isDark}
+          onOpen={onShowActions}
+          onDownload={onDownload}
+          onFolderHint={onFolderHint}
+        />
+
+        {hasCaption ? (
+          <View
             style={[
-              styles.previewImage,
+              styles.captionBlock,
               {
-                height: layout.filePreviewHeight,
-                backgroundColor: isDark ? CHAT_FILE_PREVIEW_BG_DARK : CHAT_FILE_PREVIEW_BG,
+                backgroundColor: shellBg,
+                borderTopColor: isDark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.06)",
               },
             ]}
-            resizeMode="cover"
-          />
-        ) : (
-          <ChatFilePreviewPlaceholder isDark={isDark} height={layout.filePlaceholderHeight} />
-        )}
-      </TouchableOpacity>
-
-      <ChatFileAttachmentCard
-        fileName={fileName}
-        fileSizeLabel={fileSizeLabel}
-        mimeType={mimeType}
-        mediaSavedOnDevice={mediaSavedOnDevice}
-        isDark={isDark}
-        onOpen={onShowActions}
-        onDownload={onDownload}
-        onFolderHint={onFolderHint}
-      />
-
-      {hasCaption ? (
-        <View
-          style={[
-            styles.captionBlock,
-            {
-              backgroundColor: shellBg,
-              borderTopColor: isDark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.06)",
-            },
-          ]}
-        >
-          <View style={styles.captionInner}>
-            {renderCaption ? (
-              renderCaption(caption!.trim())
-            ) : (
-              <Text style={[styles.captionText, { color: isDark ? "#E4E6EB" : "#1C1E21" }]}>
-                {caption!.trim()}
-              </Text>
-            )}
+          >
+            <View style={styles.captionInner}>
+              {renderCaption ? (
+                renderCaption(caption!.trim())
+              ) : (
+                <Text style={[styles.captionText, { color: isDark ? "#E4E6EB" : "#1C1E21" }]}>
+                  {caption!.trim()}
+                </Text>
+              )}
+            </View>
           </View>
-        </View>
-      ) : null}
+        ) : null}
 
-      {isPinned ? (
-        <View style={[styles.pinnedRow, { backgroundColor: shellBg }]}>
-          <Pin size={11} color="#0068ff" strokeWidth={2.25} />
-          <Text style={styles.pinnedLabel}>Đã ghim</Text>
-        </View>
-      ) : null}
-    </Pressable>
+        {isPinned ? (
+          <View style={[styles.pinnedRow, { backgroundColor: shellBg }]}>
+            <Pin size={11} color="#0068ff" strokeWidth={2.25} />
+            <Text style={styles.pinnedLabel}>Đã ghim</Text>
+          </View>
+        ) : null}
+      </Pressable>
+    </ChatJumpHighlightWrap>
   );
 }
 
 const styles = StyleSheet.create({
+  pressableFill: {
+    width: CHAT_FILE_CARD_WIDTH,
+  },
   header: {
     paddingHorizontal: 8,
     paddingTop: 8,
