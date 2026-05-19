@@ -333,6 +333,20 @@ export function GroupManageModal({
   const [bulletinAddOpen, setBulletinAddOpen] = useState(false);
   const [promotePickerOpen, setPromotePickerOpen] = useState(false);
 
+  const [successorSearchQuery, setSuccessorSearchQuery] = useState("");
+  const [selectedSuccessorId, setSelectedSuccessorId] = useState<string | null>(null);
+  const [transferNewRole, setTransferNewRole] = useState<"admin" | "member">("admin");
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
+  const [disbandConfirmOpen, setDisbandConfirmOpen] = useState(false);
+
+  useEffect(() => {
+    if (adminSlotsFull) {
+      setTransferNewRole("member");
+    } else {
+      setTransferNewRole("admin");
+    }
+  }, [adminSlotsFull]);
+
   useEffect(() => {
     if (visible) {
       const init = initialPanel ?? "home";
@@ -498,6 +512,12 @@ export function GroupManageModal({
     () => members.filter((m) => m.userId !== effectiveUserId),
     [members, effectiveUserId],
   );
+
+  const filteredSuccessors = useMemo(() => {
+    const q = successorSearchQuery.trim().toLowerCase();
+    if (!q) return othersForOwnerHandoff;
+    return othersForOwnerHandoff.filter((m) => m.displayName.toLowerCase().includes(q));
+  }, [othersForOwnerHandoff, successorSearchQuery]);
 
   const effectiveMemberCount = members.length;
   const leaveBlockedByMinMembers = effectiveMemberCount <= MIN_GROUP_MEMBERS;
@@ -889,58 +909,32 @@ export function GroupManageModal({
         toast.warning("Không còn thành viên khác để chuyển quyền. Hãy giải tán nhóm.");
         return;
       }
+      setSuccessorSearchQuery("");
+      setSelectedSuccessorId(null);
       setPickOwnerForLeave(true);
       return;
     }
-    Alert.alert("Rời nhóm", "Bạn sẽ không còn nhận tin nhắn từ nhóm này.", [
-      { text: "Hủy", style: "cancel" },
-      { text: "Rời nhóm", style: "destructive", onPress: () => void runLeave() },
-    ]);
-  }, [
-    leaveBlockedByMinMembers,
-    leaveMinMembersHint,
-    isOwner,
-    othersForOwnerHandoff.length,
-    runLeave,
-  ]);
+    setLeaveConfirmOpen(true);
+  }, [leaveBlockedByMinMembers, leaveMinMembersHint, isOwner, othersForOwnerHandoff.length]);
 
   const handleTransferPress = useCallback(() => {
     if (othersForOwnerHandoff.length === 0) {
       toast.warning("Không còn thành viên khác để chuyển quyền. Hãy giải tán nhóm.");
       return;
     }
+    setSuccessorSearchQuery("");
+    setSelectedSuccessorId(null);
+    if (adminSlotsFull) {
+      setTransferNewRole("member");
+    } else {
+      setTransferNewRole("admin");
+    }
     setPanel("transferOwner");
-  }, [othersForOwnerHandoff.length]);
+  }, [othersForOwnerHandoff.length, adminSlotsFull]);
 
   const handleDeleteGroup = useCallback(() => {
-    Alert.alert("Giải tán nhóm", "Mọi thành viên sẽ bị xóa khỏi nhóm.", [
-      { text: "Hủy", style: "cancel" },
-      {
-        text: "Giải tán",
-        style: "destructive",
-        onPress: () => {
-          Alert.alert("Xác nhận lần nữa", "Hành động này không thể hoàn tác.", [
-            { text: "Hủy", style: "cancel" },
-            {
-              text: "Giải tán nhóm",
-              style: "destructive",
-              onPress: () => {
-                void (async () => {
-                  try {
-                    await deleteGroup(groupId).unwrap();
-                    toast.success("Đã giải tán nhóm");
-                    navigateOut();
-                  } catch {
-                    toast.error("Không thể giải tán nhóm");
-                  }
-                })();
-              },
-            },
-          ]);
-        },
-      },
-    ]);
-  }, [deleteGroup, groupId, navigateOut]);
+    setDisbandConfirmOpen(true);
+  }, []);
 
   const toggleMuted = useCallback(
     async (next: boolean) => {
@@ -2410,20 +2404,140 @@ export function GroupManageModal({
     );
   };
 
-  const renderTransfer = () => (
-    <FlatList
-      data={othersForOwnerHandoff}
-      keyExtractor={(m) => m.userId}
-      ListEmptyComponent={<Text style={styles.help}>Không có thành viên khác.</Text>}
-      renderItem={({ item: m }) => (
-        <Pressable style={styles.memberRow} onPress={() => void transferOwnerTo(m.userId)}>
-          <Avatar uri={m.avatar || undefined} name={m.displayName} size="sm" />
-          <Text style={[styles.menuLabel, { flex: 1, marginLeft: 12 }]}>{m.displayName}</Text>
-          <Text style={{ color: Z.primary, fontWeight: "600" }}>Chọn</Text>
-        </Pressable>
-      )}
-    />
-  );
+  const renderTransfer = () => {
+    const handleConfirmTransfer = async () => {
+      if (!selectedSuccessorId) return;
+      try {
+        await transferOwner({
+          groupId,
+          newOwnerUserId: selectedSuccessorId,
+          currentOwnerNewRole: transferNewRole,
+        }).unwrap();
+        setPanel("home");
+        void refetch();
+        toast.success("Trưởng nhóm mới đã được cập nhật");
+      } catch {
+        toast.error("Không thể chuyển quyền. Thử lại hoặc kiểm tra quyền trên máy chủ");
+      }
+    };
+
+    return (
+      <View style={{ flex: 1, backgroundColor: "#fff" }}>
+        {/* Role selection block */}
+        <View className="border-b border-gray-100 bg-gray-50/50 px-4 py-3">
+          <Text className="mb-2 text-xs font-medium leading-relaxed text-gray-500">
+            Bạn sẽ mất quyền trưởng nhóm sau khi xác nhận. Chọn vai trò mới của bạn:
+          </Text>
+          <View className="flex-row gap-3">
+            <Pressable
+              disabled={adminSlotsFull}
+              onPress={() => setTransferNewRole("admin")}
+              className={`flex-1 flex-row items-center justify-between rounded-xl border px-3 py-2.5 ${transferNewRole === "admin" ? "border-[#0068ff] bg-blue-500/5" : "border-gray-200 bg-white"} ${adminSlotsFull ? "opacity-40" : ""}`}
+            >
+              <Text
+                className={`text-[13px] font-bold ${transferNewRole === "admin" ? "text-[#0068ff]" : "text-gray-700"}`}
+              >
+                Phó nhóm
+              </Text>
+              <View
+                className={`h-4 w-4 items-center justify-center rounded-full border ${transferNewRole === "admin" ? "border-[#0068ff]" : "border-gray-300"}`}
+              >
+                {transferNewRole === "admin" && (
+                  <View className="h-2 w-2 rounded-full bg-[#0068ff]" />
+                )}
+              </View>
+            </Pressable>
+            <Pressable
+              onPress={() => setTransferNewRole("member")}
+              className={`flex-1 flex-row items-center justify-between rounded-xl border px-3 py-2.5 ${transferNewRole === "member" ? "border-[#0068ff] bg-blue-500/5" : "border-gray-200 bg-white"}`}
+            >
+              <Text
+                className={`text-[13px] font-bold ${transferNewRole === "member" ? "text-[#0068ff]" : "text-gray-700"}`}
+              >
+                Thành viên
+              </Text>
+              <View
+                className={`h-4 w-4 items-center justify-center rounded-full border ${transferNewRole === "member" ? "border-[#0068ff]" : "border-gray-300"}`}
+              >
+                {transferNewRole === "member" && (
+                  <View className="h-2 w-2 rounded-full bg-[#0068ff]" />
+                )}
+              </View>
+            </Pressable>
+          </View>
+          {adminSlotsFull ? (
+            <Text className="mt-2 text-[11px] font-semibold text-amber-600">
+              Nhóm đã đủ {MAX_GROUP_ADMINS} phó nhóm — bạn chỉ có thể trở thành thành viên.
+            </Text>
+          ) : null}
+        </View>
+
+        {/* Search bar block */}
+        <View className="border-b border-gray-100 bg-white px-4 py-2">
+          <View className="flex-row items-center rounded-xl border border-gray-200 bg-gray-100 px-3 py-1.5">
+            <TextInput
+              value={successorSearchQuery}
+              onChangeText={setSuccessorSearchQuery}
+              placeholder="Tìm kiếm thành viên nhận quyền..."
+              placeholderTextColor="#9CA3AF"
+              className="flex-grow p-0 text-[14px]"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </View>
+        </View>
+
+        {/* Candidates list */}
+        <FlatList
+          data={filteredSuccessors}
+          keyExtractor={(m) => m.userId}
+          ListEmptyComponent={
+            <Text style={[styles.help, { textAlign: "center", marginTop: 24 }]}>
+              Không tìm thấy thành viên phù hợp.
+            </Text>
+          }
+          renderItem={({ item: m }) => {
+            const isSelected = selectedSuccessorId === m.userId;
+            return (
+              <Pressable
+                className={`flex-row items-center border-b border-gray-50 px-4 py-3 active:bg-gray-50 ${isSelected ? "bg-blue-500/5" : ""}`}
+                onPress={() => setSelectedSuccessorId(m.userId)}
+              >
+                <Avatar uri={m.avatar || undefined} name={m.displayName} size="sm" />
+                <View className="ml-3 flex-1">
+                  <Text className="text-[14px] font-bold text-gray-800">{m.displayName}</Text>
+                  {m.role === "admin" ? (
+                    <Text className="mt-0.5 text-[11px] font-medium text-gray-400">Phó nhóm</Text>
+                  ) : null}
+                </View>
+                {/* Radio button */}
+                <View
+                  className={`h-5 w-5 items-center justify-center rounded-full border ${isSelected ? "border-[#0068ff]" : "border-gray-300"}`}
+                >
+                  {isSelected && <View className="h-2.5 w-2.5 rounded-full bg-[#0068ff]" />}
+                </View>
+              </Pressable>
+            );
+          }}
+        />
+
+        {/* Action Button at the bottom */}
+        <View className="border-t border-gray-100 bg-white p-4">
+          <Pressable
+            disabled={!selectedSuccessorId || busy}
+            onPress={() => void handleConfirmTransfer()}
+            className={`w-full items-center justify-center rounded-xl bg-[#0068ff] py-3.5 active:bg-blue-700 ${!selectedSuccessorId || busy ? "opacity-50" : ""}`}
+          >
+            {transferringOwner ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text className="text-[15px] font-bold text-white">Xác nhận chuyển quyền</Text>
+            )}
+          </Pressable>
+        </View>
+      </View>
+    );
+  };
 
   const muteUntilLabel = (() => {
     const u = conversation.notificationsMutedUntil;
@@ -2647,31 +2761,174 @@ export function GroupManageModal({
 
         <Modal visible={pickOwnerForLeave} transparent animationType="fade">
           <Pressable style={styles.overlay} onPress={() => setPickOwnerForLeave(false)}>
-            <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
-              <Text style={styles.sheetTitle}>Chọn trưởng nhóm mới</Text>
+            <Pressable style={styles.sheet} className="p-4" onPress={(e) => e.stopPropagation()}>
+              <Text className="mb-2 px-1 text-[17px] font-bold text-gray-800">
+                Chọn trưởng nhóm mới trước khi rời
+              </Text>
+
+              {/* Search bar block */}
+              <View className="mb-3 px-1">
+                <View className="flex-row items-center rounded-xl border border-gray-200 bg-gray-100 px-3 py-1.5">
+                  <TextInput
+                    value={successorSearchQuery}
+                    onChangeText={setSuccessorSearchQuery}
+                    placeholder="Tìm kiếm..."
+                    placeholderTextColor="#9CA3AF"
+                    className="flex-grow p-0 text-[14px]"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
+              </View>
+
+              {/* Successor selection list */}
               <FlatList
-                data={othersForOwnerHandoff}
+                data={filteredSuccessors}
                 keyExtractor={(m) => m.userId}
-                style={{ maxHeight: 360 }}
-                renderItem={({ item }) => (
-                  <Pressable
-                    style={styles.memberRow}
-                    onPress={() => {
-                      setPickOwnerForLeave(false);
-                      void runLeave(item.userId);
-                    }}
-                  >
-                    <Avatar uri={item.avatar || undefined} name={item.displayName} size="sm" />
-                    <Text style={[styles.menuLabel, { flex: 1, marginLeft: 12 }]}>
-                      {item.displayName}
-                    </Text>
-                    <Text style={{ color: Z.primary, fontWeight: "600" }}>Chọn</Text>
-                  </Pressable>
-                )}
+                style={{ maxHeight: 260 }}
+                ListEmptyComponent={
+                  <Text style={[styles.help, { textAlign: "center", paddingVertical: 16 }]}>
+                    Không tìm thấy thành viên
+                  </Text>
+                }
+                renderItem={({ item: m }) => {
+                  const isSelected = selectedSuccessorId === m.userId;
+                  return (
+                    <Pressable
+                      className={`flex-row items-center rounded-xl px-2 py-2.5 active:bg-gray-50 ${isSelected ? "bg-blue-500/5" : ""}`}
+                      onPress={() => setSelectedSuccessorId(m.userId)}
+                    >
+                      <Avatar uri={m.avatar || undefined} name={m.displayName} size="sm" />
+                      <View className="ml-3 flex-1">
+                        <Text className="text-[14px] font-bold text-gray-800">{m.displayName}</Text>
+                        {m.role === "admin" ? (
+                          <Text className="text-[11px] font-medium text-gray-400">Phó nhóm</Text>
+                        ) : null}
+                      </View>
+                      {/* Radio button */}
+                      <View
+                        className={`h-5 w-5 items-center justify-center rounded-full border ${isSelected ? "border-[#0068ff]" : "border-gray-300"}`}
+                      >
+                        {isSelected && <View className="h-2.5 w-2.5 rounded-full bg-[#0068ff]" />}
+                      </View>
+                    </Pressable>
+                  );
+                }}
               />
-              <Pressable style={styles.sheetCancel} onPress={() => setPickOwnerForLeave(false)}>
-                <Text style={{ color: Z.sub, fontWeight: "600" }}>Hủy</Text>
-              </Pressable>
+
+              {/* Bottom buttons */}
+              <View className="mt-4 flex-row gap-3 px-1">
+                <Pressable
+                  onPress={() => setPickOwnerForLeave(false)}
+                  className="flex-1 items-center justify-center rounded-xl bg-gray-100 py-3 active:bg-gray-200"
+                >
+                  <Text className="text-[14px] font-bold text-gray-700">Hủy</Text>
+                </Pressable>
+                <Pressable
+                  disabled={!selectedSuccessorId || leaving}
+                  onPress={() => {
+                    if (!selectedSuccessorId) return;
+                    setPickOwnerForLeave(false);
+                    void runLeave(selectedSuccessorId);
+                  }}
+                  className={`flex-1 items-center justify-center rounded-xl bg-[#0068ff] py-3 active:bg-blue-700 ${!selectedSuccessorId || leaving ? "opacity-50" : ""}`}
+                >
+                  {leaving ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text className="text-[14px] font-bold text-white">Chọn & tiếp tục</Text>
+                  )}
+                </Pressable>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
+        {/* Custom Leave Confirm Modal */}
+        <Modal visible={leaveConfirmOpen} transparent animationType="fade">
+          <Pressable style={styles.overlay} onPress={() => setLeaveConfirmOpen(false)}>
+            <Pressable
+              style={styles.sheet}
+              className="items-stretch p-5"
+              onPress={(e) => e.stopPropagation()}
+            >
+              <Text className="mb-2 text-center text-[17px] font-bold text-gray-800">
+                Rời nhóm?
+              </Text>
+              <Text className="mb-5 text-center text-[14px] leading-relaxed text-gray-500">
+                Bạn sẽ rời khỏi nhóm và không còn nhận tin nhắn từ nhóm này.
+              </Text>
+              <View className="flex-row gap-3">
+                <Pressable
+                  onPress={() => setLeaveConfirmOpen(false)}
+                  className="flex-1 items-center justify-center rounded-xl bg-gray-100 py-3 active:bg-gray-200"
+                >
+                  <Text className="text-[14px] font-bold text-gray-700">Hủy</Text>
+                </Pressable>
+                <Pressable
+                  disabled={leaving}
+                  onPress={() => {
+                    setLeaveConfirmOpen(false);
+                    void runLeave();
+                  }}
+                  className={`flex-1 items-center justify-center rounded-xl bg-[#EF4444] py-3 active:bg-red-600 ${leaving ? "opacity-50" : ""}`}
+                >
+                  {leaving ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text className="text-[14px] font-bold text-white">Rời nhóm</Text>
+                  )}
+                </Pressable>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
+        {/* Custom Disband Confirm Modal */}
+        <Modal visible={disbandConfirmOpen} transparent animationType="fade">
+          <Pressable style={styles.overlay} onPress={() => setDisbandConfirmOpen(false)}>
+            <Pressable
+              style={styles.sheet}
+              className="items-stretch p-5"
+              onPress={(e) => e.stopPropagation()}
+            >
+              <Text className="mb-2 text-center text-[17px] font-bold text-gray-800">
+                Giải tán nhóm?
+              </Text>
+              <Text className="mb-5 text-center text-[14px] leading-relaxed text-gray-500">
+                Tất cả thành viên sẽ bị xóa khỏi nhóm và cuộc trò chuyện này sẽ bị giải tán vĩnh
+                viễn.
+              </Text>
+              <View className="flex-row gap-3">
+                <Pressable
+                  onPress={() => setDisbandConfirmOpen(false)}
+                  className="flex-1 items-center justify-center rounded-xl bg-gray-100 py-3 active:bg-gray-200"
+                >
+                  <Text className="text-[14px] font-bold text-gray-700">Hủy</Text>
+                </Pressable>
+                <Pressable
+                  disabled={deleting}
+                  onPress={() => {
+                    setDisbandConfirmOpen(false);
+                    void (async () => {
+                      try {
+                        await deleteGroup(groupId).unwrap();
+                        toast.success("Đã giải tán nhóm");
+                        navigateOut();
+                      } catch {
+                        toast.error("Không thể giải tán nhóm");
+                      }
+                    })();
+                  }}
+                  className={`flex-1 items-center justify-center rounded-xl bg-[#EF4444] py-3 active:bg-red-600 ${deleting ? "opacity-50" : ""}`}
+                >
+                  {deleting ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text className="text-[14px] font-bold text-white">Giải tán nhóm</Text>
+                  )}
+                </Pressable>
+              </View>
             </Pressable>
           </Pressable>
         </Modal>
