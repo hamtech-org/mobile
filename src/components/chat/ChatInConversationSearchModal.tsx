@@ -495,9 +495,7 @@ export function ChatInConversationSearchModal({
               ) : null}
 
               <View className="mb-6">
-                <Text className="mb-2 px-1 text-[13px] font-bold text-foreground">
-                  Tin nhắn (trong hội thoại hiện tại)
-                </Text>
+                <Text className="mb-2 px-1 text-[13px] font-bold text-foreground">Tin nhắn</Text>
                 {messageHits.length === 0 ? (
                   <Text className="py-4 text-center text-[13px] text-muted-foreground">
                     Không có tin nhắn khớp.
