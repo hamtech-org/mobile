@@ -581,6 +581,10 @@ function SystemCenterBlock({
 
   const t = (groupExtras?.groupTasks ?? []).find((x) => String(x.taskId ?? "") === view.taskId);
   const tx = t as Record<string, unknown> | undefined;
+  const cardTitle =
+    tx?.title != null && String(tx.title).trim() !== ""
+      ? String(tx.title)
+      : String(view.title ?? "");
   const byId = new Map<string, string>();
   for (const row of groupExtras?.groupMembers ?? []) {
     byId.set(String(row.userId), String(row.displayName ?? row.userId).trim());
@@ -693,7 +697,7 @@ function SystemCenterBlock({
 
           {(() => {
             const expanded = expandedTaskIds.has(String(view.taskId ?? ""));
-            const long = (view.title?.length ?? 0) > 60;
+            const long = cardTitle.length > 60;
             return (
               <>
                 <Pressable onPress={() => long && toggleExpanded(view.taskId)}>
@@ -701,7 +705,7 @@ function SystemCenterBlock({
                     className="mb-3 pr-1 text-center text-[16px] font-black leading-snug text-foreground"
                     numberOfLines={expanded || !long ? undefined : 3}
                   >
-                    {view.title}
+                    {cardTitle}
                   </Text>
                 </Pressable>
                 {long ? (
