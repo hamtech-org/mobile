@@ -1,5 +1,6 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import type { IMessage, MessageStatus, TypingUserEntry } from "@/types/chat.types";
+import { applyPinnedMruOrderUpdate } from "@/utils/pinnedMessageOrder";
 
 /** Giống web `ChatFrameNoticeVariant` — màu + icon banner nhóm. */
 export type ChatFrameBannerVariant = "poll" | "task_assigned" | "task_joined";
@@ -26,6 +27,8 @@ interface ChatState {
   groupBoardRefreshTickByConversationId: Record<string, number>;
   /** Thành viên đã rời/bị kick (socket) — lọc khỏi danh sách UI realtime. */
   removedGroupMemberIdsByConversationId: Record<string, string[]>;
+  /** Thứ tự ghim MRU theo hội thoại — tin ghim mới nhất ở đầu (đồng bộ web). */
+  pinnedMessageOrderByConv: Record<string, string[]>;
 }
 
 const initialState: ChatState = {
@@ -37,6 +40,7 @@ const initialState: ChatState = {
   messageJoinCutoffMsByConversation: {},
   groupBoardRefreshTickByConversationId: {},
   removedGroupMemberIdsByConversationId: {},
+  pinnedMessageOrderByConv: {},
 };
 
 const chatSlice = createSlice({
@@ -85,6 +89,8 @@ const chatSlice = createSlice({
           msg.isRecalled = true;
           msg.content = "Tin nhắn đã được thu hồi";
           msg.isPinned = false;
+          const cur = state.pinnedMessageOrderByConv[conversationId] ?? [];
+          state.pinnedMessageOrderByConv[conversationId] = cur.filter((id) => id !== messageId);
         }
       }
     },
@@ -147,6 +153,12 @@ const chatSlice = createSlice({
       }>,
     ) => {
       const { messageId, conversationId, isPinned } = action.payload;
+      const cur = state.pinnedMessageOrderByConv[conversationId] ?? [];
+      state.pinnedMessageOrderByConv[conversationId] = applyPinnedMruOrderUpdate(
+        cur,
+        messageId,
+        isPinned,
+      );
       const messages = state.messages[conversationId];
       if (!messages) return;
       const msg = messages.find((m) => m.messageId === messageId);
