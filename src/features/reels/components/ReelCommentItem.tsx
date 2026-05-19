@@ -1,14 +1,17 @@
-import { ActivityIndicator, Image, Modal, Pressable, Text, View } from "react-native";
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, Image, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
 import ImageViewing from "react-native-image-viewing";
 import { Ionicons } from "@expo/vector-icons";
 import type { IComment } from "@/types/newsfeed.types";
 import type { ReactionType } from "@/types/reaction.types";
-import { useReactToCommentMutation, useLazyGetCommentRepliesQuery } from "@/store/api/newsfeedApi";
+import {
+  useReactToReelCommentMutation,
+  useGetReelCommentRepliesQuery,
+  useLazyGetReelCommentRepliesQuery,
+} from "@/store/api/newsfeedApi";
 import { ReactionButton } from "@/components/common/ReactionButton";
 import { ReactionSummary } from "@/components/common/ReactionButton/ReactionSummary";
-import { HashtagText } from "./HashtagText";
 import { formatRelativeTime } from "@/utils/time";
 
 const IS_VIDEO = /\.(mp4|webm|ogg|mov)(\?|$)/i;
@@ -45,58 +48,37 @@ const CommentVideoPlayer = ({ uri }: { uri: string }) => {
 
 interface Props {
   comment: IComment;
-  postId: string;
+  reelId: string;
   isNested?: boolean;
   onReply?: (commentId: string, authorName: string) => void;
-  newReply?: IComment;
 }
 
-export const CommentItem = ({ comment, postId, isNested = false, onReply, newReply }: Props) => {
+export const ReelCommentItem = ({ comment, reelId, isNested = false, onReply }: Props) => {
   const [localReaction, setLocalReaction] = useState<ReactionType | null>(
     comment.currentUserReaction ?? null,
   );
   const [localReactionsCount, setLocalReactionsCount] = useState(comment.reactionsCount || {});
   const [showReplies, setShowReplies] = useState(false);
-  const [replies, setReplies] = useState<IComment[]>([]);
+  const [extraReplies, setExtraReplies] = useState<IComment[]>([]);
   const [replyNextCursor, setReplyNextCursor] = useState<string | null>(null);
   const [hasMoreReplies, setHasMoreReplies] = useState(false);
-  const [localRepliesCount, setLocalRepliesCount] = useState(comment.repliesCount ?? 0);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const addedReplyIds = useRef<Set<string>>(new Set());
 
-  const [reactToComment] = useReactToCommentMutation();
-  const [fetchReplies, { isLoading: isLoadingReplies }] = useLazyGetCommentRepliesQuery();
+  const [reactToReelComment] = useReactToReelCommentMutation();
+  const { data: firstPageData, isLoading: isLoadingReplies } = useGetReelCommentRepliesQuery(
+    { reelId, commentId: comment.commentId, cursor: null },
+    { skip: !showReplies },
+  );
+  const [loadMoreReplies] = useLazyGetReelCommentRepliesQuery();
 
-  // Thêm reply mới từ parent vào danh sách replies
+  // Reset extra pages when first page refetches (cache invalidated by new reply)
   useEffect(() => {
-    if (!newReply || addedReplyIds.current.has(newReply.commentId)) return;
-    addedReplyIds.current.add(newReply.commentId);
-    setReplies((prev) => [...prev, newReply]);
-    setLocalRepliesCount((prev) => prev + 1);
-    setShowReplies(true);
-  }, [newReply]);
+    setExtraReplies([]);
+    setReplyNextCursor(firstPageData?.nextCursor ?? null);
+    setHasMoreReplies(firstPageData?.hasMore ?? false);
+  }, [firstPageData]);
 
-  const loadReplies = async (cursor?: string | null, append = false) => {
-    try {
-      const page = await fetchReplies({
-        postId,
-        commentId: comment.commentId,
-        cursor: cursor ?? null,
-      }).unwrap();
-      setReplies((prev) => (append ? [...prev, ...page.items] : page.items));
-      setReplyNextCursor(page.nextCursor);
-      setHasMoreReplies(page.hasMore);
-    } catch {
-      // no-op
-    }
-  };
-
-  const handleToggleReplies = async () => {
-    if (!showReplies && replies.length === 0) {
-      await loadReplies(null, false);
-    }
-    setShowReplies((prev) => !prev);
-  };
+  const replies = [...(firstPageData?.items ?? []), ...extraReplies];
 
   const authorName = comment.author?.displayName ?? comment.authorId;
   const authorAvatar = comment.author?.avatar ?? "";
@@ -104,50 +86,85 @@ export const CommentItem = ({ comment, postId, isNested = false, onReply, newRep
   const mediaUrl = comment.mediaUrls?.[0];
   const isVideoMedia = !!mediaUrl && IS_VIDEO.test(mediaUrl);
 
+  const handleLoadMoreReplies = async () => {
+    if (!replyNextCursor) return;
+    try {
+      const page = await loadMoreReplies({
+        reelId,
+        commentId: comment.commentId,
+        cursor: replyNextCursor,
+      }).unwrap();
+      setExtraReplies((prev) => [...prev, ...page.items]);
+      setReplyNextCursor(page.nextCursor);
+      setHasMoreReplies(page.hasMore);
+    } catch {
+      // no-op
+    }
+  };
+
+  const handleToggleReplies = () => setShowReplies((prev) => !prev);
+
+  const handleReact = (type: ReactionType | null) => {
+    const prevReaction = localReaction;
+    const serverType = type ?? prevReaction;
+    if (!serverType) return;
+    const newCounts = { ...localReactionsCount };
+    if (prevReaction) {
+      newCounts[prevReaction] = Math.max(0, (newCounts[prevReaction] || 0) - 1);
+    }
+    if (type) {
+      newCounts[type] = (newCounts[type] || 0) + 1;
+    }
+    setLocalReaction(type);
+    setLocalReactionsCount(newCounts);
+    void reactToReelComment({ reelId, commentId: comment.commentId, type: serverType });
+  };
+
   return (
     <View>
-      <View className="flex-row items-start gap-2">
+      <View style={s.row}>
+        {/* Avatar */}
         <View
-          className={`items-center justify-center overflow-hidden rounded-full bg-muted/60 ${isNested ? "size-6" : "size-7"}`}
+          className={`shrink-0 items-center justify-center overflow-hidden bg-muted ${isNested ? "h-6 w-6 rounded-full" : "h-8 w-8 rounded-full"}`}
         >
           {authorAvatar ? (
-            <Image source={{ uri: authorAvatar }} className="h-full w-full" resizeMode="cover" />
+            <Image
+              source={{ uri: authorAvatar }}
+              style={StyleSheet.absoluteFillObject}
+              resizeMode="cover"
+            />
           ) : (
             <Text
-              className={`font-bold text-muted-foreground ${isNested ? "text-[9px]" : "text-[10px]"}`}
+              className={`font-bold text-muted-foreground ${isNested ? "text-[9px]" : "text-[12px]"}`}
             >
               {authorName.charAt(0).toUpperCase()}
             </Text>
           )}
         </View>
 
-        <View className="flex-1">
-          {/* Author name — ngoài bubble */}
+        <View style={{ flex: 1 }}>
+          {/* Tên tác giả ngoài bubble */}
           <Text
-            className={`mb-0.5 px-1 font-semibold text-foreground/80 ${isNested ? "text-[11px]" : "text-xs"}`}
+            className={`mb-0.5 px-1 font-semibold text-foreground/90 ${isNested ? "text-[11px]" : "text-[13px]"}`}
           >
             {authorName}
           </Text>
 
-          {/* Bubble — chỉ render khi có text */}
+          {/* Bubble */}
           {!!comment.content && (
-            <View className="self-start rounded-xl bg-muted/50 px-3 py-2">
-              <HashtagText text={comment.content} />
+            <View className="max-w-full self-start rounded-xl bg-muted px-3 py-2">
+              <Text className="text-sm leading-5 text-foreground">{comment.content}</Text>
             </View>
           )}
 
-          {/* Media — thumbnail tappable + lightbox */}
+          {/* Media */}
           {mediaUrl && (
-            <Pressable
-              onPress={() => setPreviewOpen(true)}
-              className="mt-1 overflow-hidden rounded-xl"
-              style={{ width: 200, height: 150 }}
-            >
+            <Pressable onPress={() => setPreviewOpen(true)} style={s.mediaThumbnail}>
               {isVideoMedia ? (
                 <>
                   <CommentVideoThumb uri={mediaUrl} />
-                  <View className="absolute inset-0 items-center justify-center">
-                    <View className="rounded-full bg-black/60 p-2.5">
+                  <View style={s.playOverlay}>
+                    <View style={s.playBtn}>
                       <Ionicons name="play" size={20} color="white" style={{ marginLeft: 2 }} />
                     </View>
                   </View>
@@ -181,23 +198,21 @@ export const CommentItem = ({ comment, postId, isNested = false, onReply, newRep
             transparent
             onRequestClose={() => setPreviewOpen(false)}
           >
-            <View className="flex-1 items-center justify-center bg-black">
-              <Pressable
-                className="absolute right-4 top-12 z-10 rounded-full bg-black/40 p-2"
-                onPress={() => setPreviewOpen(false)}
-              >
+            <View style={s.videoModal}>
+              <Pressable style={s.closeBtn} onPress={() => setPreviewOpen(false)}>
                 <Ionicons name="close" size={24} color="white" />
               </Pressable>
               {previewOpen && mediaUrl && <CommentVideoPlayer uri={mediaUrl} />}
             </View>
           </Modal>
 
-          <View className="mt-0.5 flex-row items-center gap-3 px-1">
+          {/* Metadata row */}
+          <View className="mt-1 flex-row items-center gap-3 px-1">
             <Text className="text-[11px] text-muted-foreground">
               {formatRelativeTime(comment.createdAt)}
             </Text>
 
-            <View className="flex-row items-center gap-1">
+            <View style={s.reactionRow}>
               {!localReaction && totalReactions > 0 && (
                 <ReactionSummary
                   summary={localReactionsCount as Record<string, number>}
@@ -212,34 +227,13 @@ export const CommentItem = ({ comment, postId, isNested = false, onReply, newRep
                   summary={
                     localReaction ? (localReactionsCount as Record<string, number>) : undefined
                   }
-                  onReact={(type) => {
-                    const prevReaction = localReaction;
-                    const serverType = type ?? prevReaction;
-                    if (!serverType) return;
-                    const newCounts = { ...localReactionsCount };
-                    if (prevReaction) {
-                      newCounts[prevReaction] = Math.max(0, (newCounts[prevReaction] || 0) - 1);
-                    }
-                    if (type) {
-                      newCounts[type] = (newCounts[type] || 0) + 1;
-                    }
-                    setLocalReaction(type);
-                    setLocalReactionsCount(newCounts);
-                    void reactToComment({
-                      postId,
-                      commentId: comment.commentId,
-                      type: serverType,
-                    });
-                  }}
+                  onReact={handleReact}
                 />
               </View>
             </View>
 
             {!isNested && (
-              <Pressable
-                onPress={() => onReply?.(comment.commentId, authorName)}
-                className="active:opacity-60"
-              >
+              <Pressable onPress={() => onReply?.(comment.commentId, authorName)}>
                 <Ionicons
                   name="chatbubble-outline"
                   size={14}
@@ -249,28 +243,27 @@ export const CommentItem = ({ comment, postId, isNested = false, onReply, newRep
             )}
           </View>
 
-          {!isNested && localRepliesCount > 0 && (
+          {/* "Xem N trả lời" toggle */}
+          {!isNested && (comment.repliesCount ?? 0) > 0 && (
             <Pressable
-              onPress={() => void handleToggleReplies()}
+              onPress={handleToggleReplies}
               className="mt-1 flex-row items-center gap-1.5 px-1"
             >
-              {isLoadingReplies && <ActivityIndicator size={10} color="#3b82f6" />}
-              <Text className="text-xs font-semibold text-blue-500">
-                {showReplies ? "Ẩn trả lời" : `Xem ${localRepliesCount} trả lời`}
+              {isLoadingReplies && <ActivityIndicator size={10} color="#60a5fa" />}
+              <Text className="text-xs font-semibold text-blue-400">
+                {showReplies ? "Ẩn trả lời" : `Xem ${comment.repliesCount} trả lời`}
               </Text>
             </Pressable>
           )}
 
+          {/* Nested replies */}
           {!isNested && showReplies && replies.length > 0 && (
-            <View className="mt-2 gap-2">
+            <View style={{ marginTop: 8, gap: 8 }}>
               {replies.map((reply) => (
-                <CommentItem key={reply.commentId} comment={reply} postId={postId} isNested />
+                <ReelCommentItem key={reply.commentId} comment={reply} reelId={reelId} isNested />
               ))}
               {hasMoreReplies && (
-                <Pressable
-                  onPress={() => void loadReplies(replyNextCursor, true)}
-                  className="px-1 py-0.5"
-                >
+                <Pressable onPress={() => void handleLoadMoreReplies()} className="ml-9 py-1">
                   <Text className="text-xs font-semibold text-muted-foreground">
                     Xem thêm trả lời
                   </Text>
@@ -283,3 +276,21 @@ export const CommentItem = ({ comment, postId, isNested = false, onReply, newRep
     </View>
   );
 };
+
+const s = StyleSheet.create({
+  row: { flexDirection: "row", gap: 10 },
+  mediaThumbnail: { marginTop: 6, width: 200, height: 150, borderRadius: 12, overflow: "hidden" },
+  playOverlay: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
+  playBtn: { borderRadius: 999, backgroundColor: "rgba(0,0,0,0.6)", padding: 10 },
+  videoModal: { flex: 1, backgroundColor: "#000", alignItems: "center", justifyContent: "center" },
+  closeBtn: {
+    position: "absolute",
+    right: 16,
+    top: 48,
+    zIndex: 10,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    borderRadius: 999,
+    padding: 8,
+  },
+  reactionRow: { flexDirection: "row", alignItems: "center", gap: 4 },
+});

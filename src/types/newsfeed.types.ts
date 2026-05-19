@@ -84,3 +84,61 @@ export interface ICommentsPage {
   nextCursor: string | null;
   hasMore: boolean;
 }
+
+// ─── Reel (synced from backend newsfeed.types.ts) ──────────────────────────────
+
+export type ReelAspectRatio = "9:16" | "1:1" | "4:5";
+export type ReelProcessingStatus = "pending" | "ready" | "failed";
+export type ReelFeedKind = "foryou" | "following";
+
+export interface IReel {
+  reelId: string;
+  authorId: string;
+  videoUrl: string;
+  thumbnailUrl: string | null;
+  caption: string;
+  durationMs: number;
+  width: number;
+  height: number;
+  aspectRatio: ReelAspectRatio;
+  visibility: PostVisibility;
+  processingStatus: ReelProcessingStatus;
+  hashtags: string[];
+  mentions: string[];
+  viewsCount: number;
+  reactionsCount: Partial<Record<ReactionType, number>>;
+  commentsCount: number;
+  sharesCount: number;
+  savesCount: number;
+  engagementScore?: number;
+  createdAt: string;
+  updatedAt: string;
+  // Enriched from BE
+  author?: IAuthorInfo;
+  currentUserReaction?: ReactionType | null;
+  isSaved?: boolean;
+}
+
+export interface IReelFeedPage {
+  items: IReel[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
+export interface ICreateReelDto {
+  videoUrl: string;
+  thumbnailUrl?: string | null;
+  caption?: string;
+  durationMs: number;
+  width: number;
+  height: number;
+  aspectRatio?: ReelAspectRatio;
+  visibility?: PostVisibility;
+}
+
+export type ReelReportReason = "spam" | "nudity" | "hate" | "violence" | "other";
+
+export interface IReportReelDto {
+  reason: ReelReportReason;
+  details?: string;
+}
