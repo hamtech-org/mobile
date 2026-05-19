@@ -16,6 +16,7 @@ export {
 
 export {
   useGetMessagesQuery,
+  useGetMessageGalleryQuery,
   useSendMessageMutation,
   useEditMessageMutation,
   useDeleteMessageMutation,

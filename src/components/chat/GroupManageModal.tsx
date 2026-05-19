@@ -80,11 +80,10 @@ import { BulletinPinnedMessageCard } from "@/components/chat/BulletinPinnedMessa
 import { ChatSharedFileRow } from "@/components/chat/ChatSharedFileRow";
 import {
   ConversationGalleryLinkRow,
-  ConversationGalleryTabBar,
-  ConversationGalleryIcon,
   CONVERSATION_GALLERY_THEME,
   type ConversationGalleryKind,
 } from "@/components/chat/conversationGallery";
+import { matchesGalleryCategory } from "@/components/chat/conversationGallery/conversationGalleryFilters";
 import { BulletinTaskCard } from "@/components/chat/BulletinTaskCard";
 import { Avatar } from "@/components/common/Avatar";
 import { MAX_PINNED_PER_CONVERSATION } from "@/constants/chatPin";
@@ -109,6 +108,7 @@ import {
   usePatchConversationPreferencesMutation,
   useLeaveGroupMutation,
   useGetMessagesQuery,
+  useGetMessageGalleryQuery,
   useGetGroupSettingsQuery,
   useSendMessageMutation,
   useGetGroupRequestsQuery,
@@ -530,6 +530,16 @@ export function GroupManageModal({
     { skip: !visible },
   );
 
+  const galleryOpen = visible && panel === "media";
+  const {
+    data: galleryItems = [],
+    isFetching: galleryFetching,
+    isError: galleryError,
+  } = useGetMessageGalleryQuery(
+    { conversationId: groupId, category: mediaTab, limit: 120 },
+    { skip: !galleryOpen },
+  );
+
   const {
     data: settings,
     refetch: refetchSettings,
@@ -681,28 +691,10 @@ export function GroupManageModal({
   const isMuted = conversation.isMuted ?? false;
   const isPinnedToTop = conversation.isPinnedToTop ?? false;
 
-  const mediaMessages = useMemo(
-    () =>
-      messages.filter(
-        (m) =>
-          !m.isRecalled &&
-          !m.isDeleted &&
-          (m.type === "image" || m.type === "video" || m.type === "file"),
-      ),
-    [messages],
+  const visibleGalleryItems = useMemo(
+    () => galleryItems.filter((item) => matchesGalleryCategory(item, mediaTab)),
+    [galleryItems, mediaTab],
   );
-
-  const linkGalleryRows = useMemo(() => {
-    const out: { key: string; message: IMessage; url: string }[] = [];
-    for (const m of messages) {
-      if (m.type !== "text" || m.isRecalled || m.isDeleted) continue;
-      const raw = (m.content ?? "").trim();
-      const match = raw.match(/https?:\/\/[^\s<]+/i);
-      if (!match?.[0]) continue;
-      out.push({ key: m.messageId, message: m, url: match[0] });
-    }
-    return out;
-  }, [messages]);
 
   const pinnedMessageOrder = useAppSelector((s) => s.chat.pinnedMessageOrderByConv[groupId] ?? []);
 
@@ -2322,31 +2314,50 @@ export function GroupManageModal({
     const pad = 12;
     const cell = (w - pad * 2 - gap * 2) / 3;
 
-    const gridMessages = mediaMessages.filter((m) => m.type === "image" || m.type === "video");
+    const listLoading =
+      galleryFetching && visibleGalleryItems.length === 0 ? (
+        <Text style={[styles.help, { textAlign: "center", marginTop: 24, paddingHorizontal: 16 }]}>
+          Đang tải...
+        </Text>
+      ) : null;
 
-    const tabBar = <ConversationGalleryTabBar active={mediaTab} onChange={setMediaTab} />;
+    const listError = galleryError ? (
+      <Text
+        style={[
+          styles.help,
+          { textAlign: "center", marginTop: 24, paddingHorizontal: 16, color: "#DC2626" },
+        ]}
+      >
+        Không tải được danh sách.
+      </Text>
+    ) : null;
 
     if (mediaTab === "file") {
-      const fileMessages = mediaMessages.filter((m) => m.type === "file");
       return (
         <View style={{ flex: 1 }}>
-          {tabBar}
           <FlatList
             style={styles.mediaFileList}
-            data={fileMessages}
+            data={visibleGalleryItems}
             keyExtractor={(m) => m.messageId}
             contentContainerStyle={styles.mediaFileListContent}
             showsVerticalScrollIndicator={false}
             ListEmptyComponent={
-              <Text
-                style={[styles.help, { textAlign: "center", marginTop: 24, paddingHorizontal: 16 }]}
-              >
-                Chưa có file được chia sẻ.
-              </Text>
+              listLoading ??
+              listError ?? (
+                <Text
+                  style={[
+                    styles.help,
+                    { textAlign: "center", marginTop: 24, paddingHorizontal: 16 },
+                  ]}
+                >
+                  Chưa có file được chia sẻ.
+                </Text>
+              )
             }
             ItemSeparatorComponent={() => <View style={styles.mediaFileListSeparator} />}
             renderItem={({ item: m }) => {
-              const { fileName, mimeType } = resolveChatFileBubbleMeta(m);
+              const msg = m as IMessage;
+              const { fileName, mimeType } = resolveChatFileBubbleMeta(msg);
               const who =
                 memberNameById.get(m.senderId) ?? m.senderDisplayName?.trim() ?? "Thành viên";
               const when = formatBulletinFooterTime(m.createdAt);
@@ -2355,14 +2366,7 @@ export function GroupManageModal({
                   fileName={fileName}
                   mimeType={mimeType}
                   metaLine={`${who} · ${when || "—"}`}
-                  onPress={() => {
-                    if (!m.mediaUrl) return;
-                    void openOrShareChatFile(
-                      m.mediaUrl,
-                      chatMediaDownloadFilename(m, "file"),
-                      m.mediaType,
-                    );
-                  }}
+                  onPress={() => jumpToPinnedMessage(m.messageId)}
                 />
               );
             }}
@@ -2374,35 +2378,36 @@ export function GroupManageModal({
     if (mediaTab === "link") {
       return (
         <View style={{ flex: 1 }}>
-          {tabBar}
           <FlatList
-            data={linkGalleryRows}
-            keyExtractor={(item) => item.key}
+            data={visibleGalleryItems}
+            keyExtractor={(item) => item.messageId}
             contentContainerStyle={styles.mediaFileListContent}
             ItemSeparatorComponent={() => <View style={styles.mediaFileListSeparator} />}
             ListEmptyComponent={
-              <Text
-                style={[styles.help, { textAlign: "center", marginTop: 24, paddingHorizontal: 16 }]}
-              >
-                Chưa có link trong tin nhắn gần đây.
-              </Text>
+              listLoading ??
+              listError ?? (
+                <Text
+                  style={[
+                    styles.help,
+                    { textAlign: "center", marginTop: 24, paddingHorizontal: 16 },
+                  ]}
+                >
+                  Chưa có link trong tin nhắn gần đây.
+                </Text>
+              )
             }
             renderItem={({ item }) => {
+              const url = (item.content ?? "").trim();
               const who =
-                memberNameById.get(item.message.senderId) ??
-                item.message.senderDisplayName?.trim() ??
-                "Thành viên";
-              const when = formatBulletinFooterTime(item.message.createdAt);
+                memberNameById.get(item.senderId) ?? item.senderDisplayName?.trim() ?? "Thành viên";
+              const when = formatBulletinFooterTime(item.createdAt);
               return (
                 <ConversationGalleryLinkRow
-                  url={item.url}
+                  url={url}
                   previewLine={`${who} · ${when || "—"}`}
-                  onPress={() => {
-                    const href = /^https?:\/\//i.test(item.url) ? item.url : `https://${item.url}`;
-                    void Linking.openURL(href);
-                  }}
+                  onPress={() => jumpToPinnedMessage(item.messageId)}
                   onLongPress={async () => {
-                    await Clipboard.setStringAsync(item.url);
+                    await Clipboard.setStringAsync(url);
                     toast.success("Đã sao chép link");
                   }}
                 />
@@ -2415,46 +2420,52 @@ export function GroupManageModal({
 
     return (
       <View style={{ flex: 1 }}>
-        {tabBar}
         <FlatList
-          data={gridMessages}
+          data={visibleGalleryItems}
           keyExtractor={(m) => m.messageId}
           numColumns={3}
           columnWrapperStyle={{ gap, paddingHorizontal: pad, marginBottom: gap }}
           contentContainerStyle={{ paddingTop: 8, paddingBottom: 24 }}
           ListEmptyComponent={
-            <Text
-              style={[styles.help, { textAlign: "center", marginTop: 24, paddingHorizontal: 16 }]}
-            >
-              Chưa có ảnh hoặc video.
-            </Text>
+            listLoading ??
+            listError ?? (
+              <Text
+                style={[styles.help, { textAlign: "center", marginTop: 24, paddingHorizontal: 16 }]}
+              >
+                Chưa có ảnh hoặc video.
+              </Text>
+            )
           }
           renderItem={({ item: m }) => {
-            const imageUri = m.type === "image" ? chatImageDisplayUrl(m) : null;
-            const videoUri = m.type === "video" ? chatVideoPlayUrl(m) : null;
-            const thumbUri = imageUri || videoUri;
+            const msg = m as IMessage;
+            const isVideo =
+              m.type === "video" || (m.mediaType ?? "").toLowerCase().startsWith("video/");
+            const imageUri = !isVideo ? chatImageDisplayUrl(msg) : null;
+            const videoUri = isVideo ? chatVideoPlayUrl(msg) : null;
+            const thumbUri = (m.thumbnailUrl ?? "").trim() || imageUri || videoUri;
             return (
               <Pressable
                 style={{ width: cell }}
-                onPress={() => {
-                  if (m.type === "image" && imageUri) {
+                onPress={() => jumpToPinnedMessage(m.messageId)}
+                onLongPress={() => {
+                  if (!isVideo && imageUri) {
                     setGalleryLightbox({
                       kind: "image",
                       uri: imageUri,
-                      filename: chatMediaDownloadFilename(m, "image"),
+                      filename: chatMediaDownloadFilename(msg, "image"),
                     });
                     return;
                   }
-                  if (m.type === "video" && videoUri) {
+                  if (isVideo && videoUri) {
                     setGalleryLightbox({
                       kind: "video",
                       uri: videoUri,
-                      filename: chatMediaDownloadFilename(m, "video"),
+                      filename: chatMediaDownloadFilename(msg, "video"),
                     });
                   }
                 }}
               >
-                {thumbUri && (m.type === "image" || m.type === "video") ? (
+                {thumbUri ? (
                   <Image
                     source={{ uri: thumbUri }}
                     style={{ width: cell, height: cell, borderRadius: 8 }}
@@ -3295,7 +3306,7 @@ export function GroupManageModal({
   );
 }
 
-/** Hàng điều hướng màn Thông tin nhóm — icon + label đồng bộ web. */
+/** Hàng điều hướng màn Thông tin nhóm — label đồng bộ web. */
 function HomeNavRow({
   kind,
   onPress,
@@ -3312,9 +3323,6 @@ function HomeNavRow({
       onPress={onPress}
       android_ripple={{ color: "rgba(0,0,0,0.04)" }}
     >
-      <View style={[styles.homeNavIconWrap, { backgroundColor: theme.softBg }]}>
-        <ConversationGalleryIcon kind={kind} color={theme.tint} size={18} />
-      </View>
       <Text style={styles.homeNavRowLabel}>{theme.navLabel}</Text>
       <ChevronRight size={16} color={Z.sub} />
     </Pressable>
@@ -3686,13 +3694,6 @@ const styles = StyleSheet.create({
     borderBottomColor: Z.line,
   },
   homeNavRowLast: { borderBottomWidth: 0 },
-  homeNavIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   homeNavRowLabel: { flex: 1, fontSize: 14, fontWeight: "700", color: Z.text },
   homeActionsWrap: {
     marginTop: 8,
