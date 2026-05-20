@@ -9,10 +9,10 @@ export const useIconColors = () => {
   const isDark = colorScheme === "dark";
 
   return {
-    foreground: isDark ? "hsl(210 30% 95%)" : "hsl(220 25% 10%)",
-    muted: isDark ? "hsl(220 15% 58%)" : "hsl(220 10% 46%)",
-    primary: isDark ? "hsl(214 100% 58%)" : "hsl(214 100% 50%)",
-    destructive: isDark ? "hsl(0 72% 51%)" : "hsl(0 84% 60%)",
+    foreground: isDark ? "#eef3f8" : "#131722",
+    muted: isDark ? "#858da3" : "#697080",
+    primary: isDark ? "#297fff" : "#006eff",
+    destructive: isDark ? "#dc2828" : "#ef4444",
     isDark,
   };
 };

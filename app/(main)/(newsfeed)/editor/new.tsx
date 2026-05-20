@@ -12,7 +12,7 @@ import {
   DeviceEventEmitter,
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useCreatePostMutation } from "@/store/api/newsfeedApi";
@@ -69,6 +69,7 @@ const VideoPreviewPlayer = ({ url }: { url: string }) => {
 
 export default function NewPostEditorScreen() {
   const router = useRouter();
+  const { groupId } = useLocalSearchParams<{ groupId?: string }>();
   const currentUser = useSelector((state: RootState) => state.auth.user);
 
   const emptyDoc = useMemo(
@@ -161,6 +162,7 @@ export default function NewPostEditorScreen() {
       type: postType,
       visibility,
       publicationStatus: status,
+      ...(groupId ? { groupId, communityId: groupId } : {}),
       categories: [] as string[],
       tags,
       mediaUrls: finalMediaUrls,
@@ -170,7 +172,7 @@ export default function NewPostEditorScreen() {
     if (res && status === "published") {
       DeviceEventEmitter.emit("post:created", res);
     }
-    router.replace("/(main)/(newsfeed)");
+    router.replace(groupId ? `/(main)/(communities)/${groupId}` : "/(main)/(newsfeed)");
   };
 
   const handleCancel = () => {
