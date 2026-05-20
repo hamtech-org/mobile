@@ -89,6 +89,12 @@ export function buildGroupJoinLinkMessageContent(input: {
   return JSON.stringify(payload);
 }
 
+export function formatGroupJoinLinkListPreview(content: string): string | null {
+  const p = resolveGroupJoinLinkFromMessageContent(content);
+  if (!p) return null;
+  return `Link mời tham gia nhóm: ${p.groupName}`;
+}
+
 export function joinLinkMessageDomain(url: string): string {
   try {
     return new URL(url).hostname.replace(/^www\./, "");

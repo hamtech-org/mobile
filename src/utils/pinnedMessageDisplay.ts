@@ -80,6 +80,34 @@ export function pinnedMessageAccent(msg: IMessage): string {
   return PINNED_STATIC_ACCENTS[kind];
 }
 
+/** Preview một dòng — đồng bộ web `formatPinnedMessagePreviewLine`. */
+export function formatPinnedMessagePreviewLine(msg: IMessage): string {
+  if (msg.isRecalled) return "Tin nhắn đã được thu hồi";
+  if (msg.isDeleted) return "Tin nhắn đã xóa";
+  if (msg.type === "call") {
+    const content = msg.content ?? "";
+    try {
+      const payload = JSON.parse(content) as { kind?: string; callType?: string };
+      if (payload.kind === "missed") return "Cuộc gọi nhỡ";
+      if (payload.kind === "rejected") return "Cuộc gọi bị từ chối";
+      return payload.callType === "video" ? "Cuộc gọi video" : "Cuộc gọi thoại";
+    } catch {
+      return "Cuộc gọi";
+    }
+  }
+  if (msg.type === "system") {
+    const pollQ = pollQuestionFromPinnedMessage(msg);
+    if (pollQ) return pollQ;
+    return "Thông báo";
+  }
+  if (msg.type === "poll") return "Bình chọn";
+  if (msg.type === "file") return pinnedChatFileDisplayName(msg);
+  if (msg.type === "sticker" || msg.type === "emoji") return "Nhãn dán";
+  if (msg.type === "location") return "Vị trí";
+  if (msg.type === "schedule") return "Lịch hẹn";
+  return formatChatPreviewLine(msg, "");
+}
+
 export function mediaThumbForPinnedRow(msg: IMessage): string | undefined {
   if (msg.type === "image" || msg.type === "video") {
     return normalizeMediaUrl(msg.thumbnailUrl ?? msg.mediaUrl);

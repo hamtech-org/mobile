@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Clipboard from "expo-clipboard";
 import * as FileSystem from "expo-file-system/legacy";
 import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
@@ -69,6 +70,15 @@ export function buildAppMediaDownloadUrl(mediaId: string): string {
   return `${base}/media/${mediaId}/download`;
 }
 
+/** Stream qua API (không redirect CDN) — dùng copy ảnh / tải blob, khớp web `?attachment=1`. */
+export function buildAppMediaAttachmentUrl(mediaId: string, filename?: string): string {
+  const base = buildAppMediaDownloadUrl(mediaId);
+  const params = new URLSearchParams({ attachment: "1" });
+  const safe = filename?.trim();
+  if (safe) params.set("filename", sanitizeFilename(safe));
+  return `${base}?${params.toString()}`;
+}
+
 /**
  * URL dùng để tải: ưu tiên `/api/v1/media/:id/download`, fallback URL đã chuẩn hóa.
  */
@@ -79,6 +89,17 @@ export function resolveChatMediaDownloadUrl(storedUrl: string): string {
   const mediaId = parseMediaIdFromStoredUrl(normalized);
   if (mediaId) return buildAppMediaDownloadUrl(mediaId);
   return normalized;
+}
+
+/** URL stream file — tránh lỗi redirect khi `fetch` blob (copy ảnh). */
+export function resolveChatMediaAttachmentUrl(storedUrl: string, filename?: string): string {
+  const normalized = (normalizeMediaUrl(storedUrl) ?? storedUrl).trim();
+  if (!normalized) return "";
+  if (isLocalUri(normalized)) return normalized;
+  const mediaId = parseMediaIdFromStoredUrl(normalized);
+  if (mediaId) return buildAppMediaAttachmentUrl(mediaId, filename);
+  if (isCloudFrontSignedUrl(normalized)) return normalized;
+  return resolveChatMediaDownloadUrl(normalized);
 }
 
 function authHeadersForDownload(url: string): Record<string, string> {
@@ -230,14 +251,17 @@ export async function downloadChatMediaToCache(
   remoteUrl: string,
   filename: string,
 ): Promise<{ ok: boolean; localUri?: string; status?: number }> {
-  const url = resolveChatMediaDownloadUrl(remoteUrl);
+  const safeName = sanitizeFilename(filename);
+  const mediaId = parseMediaIdFromStoredUrl(remoteUrl);
+  const url = mediaId
+    ? resolveChatMediaAttachmentUrl(remoteUrl, safeName)
+    : resolveChatMediaDownloadUrl(remoteUrl);
   if (!url) return { ok: false };
 
   if (isLocalUri(url)) {
     return { ok: true, localUri: url };
   }
 
-  const safeName = sanitizeFilename(filename);
   const dest = `${FileSystem.cacheDirectory}chat-${Date.now()}-${safeName}`;
 
   try {
@@ -341,3 +365,138 @@ export async function downloadChatFileToDevice(
   const saved = await saveChatFileToDocuments(localUri, filename, mimeType);
   return Boolean(saved);
 }
+
+export type PastedImageAttachment = {
+  uri: string;
+  name: string;
+  mimeType: string;
+  size?: number;
+};
+
+/** File cache sau «Copy hình ảnh» — dán lại trong app khi clipboard hệ thống không đọc được. */
+let inAppCopiedImageCache: PastedImageAttachment | null = null;
+
+/** `getImageAsync` trả `data:image/...;base64,...` — tách base64 thuần trước khi ghi file. */
+function stripDataUriToRawBase64(data: string): { base64: string; mimeType: string } | null {
+  const trimmed = data.trim();
+  if (!trimmed) return null;
+
+  const dataUri = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i.exec(trimmed);
+  if (dataUri?.[2]) {
+    return {
+      mimeType: dataUri[1],
+      base64: dataUri[2].replace(/\s/g, ""),
+    };
+  }
+
+  const compact = trimmed.replace(/\s/g, "");
+  if (/^[A-Za-z0-9+/]+=*$/.test(compact)) {
+    return { base64: compact, mimeType: "image/png" };
+  }
+
+  return null;
+}
+
+async function writeBase64ToCacheFile(
+  base64: string,
+  mimeType: string,
+): Promise<PastedImageAttachment | null> {
+  const baseDir = FileSystem.cacheDirectory;
+  if (!baseDir) return null;
+
+  const ext =
+    mimeType.includes("jpeg") || mimeType.includes("jpg")
+      ? "jpg"
+      : mimeType.includes("png")
+        ? "png"
+        : "png";
+  const name = `paste-${Date.now()}.${ext}`;
+  const uri = baseDir.endsWith("/") ? `${baseDir}${name}` : `${baseDir}/${name}`;
+
+  await FileSystem.writeAsStringAsync(uri, base64, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+
+  const info = await FileSystem.getInfoAsync(uri);
+  return {
+    uri,
+    name,
+    mimeType,
+    size: info.exists && "size" in info && typeof info.size === "number" ? info.size : undefined,
+  };
+}
+
+/** Chuyển payload ảnh clipboard (data URI hoặc base64) → file cache `file://`. */
+export async function pendingAttachmentFromClipboardImageData(
+  data: string,
+): Promise<PastedImageAttachment | null> {
+  const parsed = stripDataUriToRawBase64(data);
+  if (!parsed) return null;
+  return writeBase64ToCacheFile(parsed.base64, parsed.mimeType);
+}
+
+/** Copy ảnh chat vào clipboard hệ thống (khớp web `fetchChatMediaBlob` + `clipboard.write`). */
+export async function copyChatImageToClipboard(
+  storedUrl: string,
+  filename: string,
+): Promise<boolean> {
+  try {
+    const { ok, localUri } = await downloadChatMediaToCache(storedUrl, filename);
+    if (!ok || !localUri) return false;
+
+    const base64 = await FileSystem.readAsStringAsync(localUri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    await Clipboard.setImageAsync(base64);
+
+    const safeName = sanitizeFilename(filename);
+    const lower = safeName.toLowerCase();
+    const mimeType = lower.endsWith(".png")
+      ? "image/png"
+      : lower.endsWith(".webp")
+        ? "image/webp"
+        : "image/jpeg";
+
+    const info = await FileSystem.getInfoAsync(localUri);
+    inAppCopiedImageCache = {
+      uri: localUri,
+      name: safeName,
+      mimeType,
+      size: info.exists && "size" in info && typeof info.size === "number" ? info.size : undefined,
+    };
+
+    return true;
+  } catch {
+    inAppCopiedImageCache = null;
+    return false;
+  }
+}
+
+/** Dán ảnh từ clipboard — không dùng `hasImageAsync` (hay false dù đã copy). */
+export async function readPastedImageFromClipboard(): Promise<PastedImageAttachment | null> {
+  for (const format of ["png", "jpeg"] as const) {
+    try {
+      const image = await Clipboard.getImageAsync({ format });
+      const data = image?.data?.trim();
+      if (!data) continue;
+      const file = await pendingAttachmentFromClipboardImageData(data);
+      if (file) return file;
+    } catch {
+      /* thử format khác */
+    }
+  }
+
+  if (inAppCopiedImageCache) {
+    try {
+      const info = await FileSystem.getInfoAsync(inAppCopiedImageCache.uri);
+      if (info.exists) return { ...inAppCopiedImageCache };
+    } catch {
+      inAppCopiedImageCache = null;
+    }
+  }
+
+  return null;
+}
+
+/** iOS 16+: nút `UIPasteControl` — không cần quyền paste thủ công. */
+export const isClipboardPasteButtonAvailable = Clipboard.isPasteButtonAvailable;

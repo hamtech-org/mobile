@@ -20,14 +20,17 @@ import {
   Trash2,
 } from "lucide-react-native";
 import * as Clipboard from "expo-clipboard";
-import * as FileSystem from "expo-file-system/legacy";
 
 import { useIconColors } from "@/hooks/useIconColors";
 import type { IMessage } from "@/types/chat.types";
-import { chatMediaDownloadFilename, chatMediaDownloadUrl } from "@/utils/chatMediaDisplay";
 import {
+  chatImageDisplayUrl,
+  chatMediaDownloadFilename,
+  chatMediaDownloadUrl,
+} from "@/utils/chatMediaDisplay";
+import {
+  copyChatImageToClipboard,
   downloadChatFileToDevice,
-  downloadChatMediaToCache,
   openOrShareChatFile,
   saveChatMediaToLibrary,
 } from "@/utils/chatMediaDownload";
@@ -137,29 +140,17 @@ export const MessageActionSheet = ({
   const handleCopyImage = useCallback(async () => {
     if (!message || !isImageCopyMessage(message)) return;
     onClose();
-    const downloadUrl = chatMediaDownloadUrl(message);
+    const downloadUrl = chatImageDisplayUrl(message) || chatMediaDownloadUrl(message);
     if (!downloadUrl) {
       toast.error("Không có hình ảnh để copy.");
       return;
     }
 
-    try {
-      const { ok, localUri } = await downloadChatMediaToCache(
-        downloadUrl,
-        chatMediaDownloadFilename(message, message.type === "sticker" ? "sticker" : "image"),
-      );
-      if (!ok || !localUri) {
-        toast.error("Không copy được hình ảnh.");
-        return;
-      }
-      const base64 = await FileSystem.readAsStringAsync(localUri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      await Clipboard.setImageAsync(base64);
-      toast.success("Đã copy hình ảnh");
-    } catch {
-      toast.error("Không copy được hình ảnh.");
-    }
+    const ok = await copyChatImageToClipboard(
+      downloadUrl,
+      chatMediaDownloadFilename(message, message.type === "sticker" ? "sticker" : "image"),
+    );
+    toast[ok ? "success" : "error"](ok ? "Đã copy hình ảnh" : "Không copy được hình ảnh.");
   }, [message, onClose]);
 
   const handleSaveMedia = useCallback(async () => {

@@ -7,6 +7,7 @@ import {
   MessageCircle,
   MessageSquare,
   Pin,
+  QrCode,
   Search,
   UserPlus,
   Users,
@@ -22,6 +23,9 @@ import {
   MutedConversationsFooter,
   MuteNotificationsModal,
 } from "@/components/chat";
+import { GroupJoinQrScannerModal } from "@/components/chat/GroupJoinQrScannerModal";
+import { useGroupJoinLinkModal } from "@/contexts/GroupJoinLinkModalContext";
+import { getJoinGroupUrl } from "@/utils/joinGroupUrl";
 import {
   useGetConversationsQuery,
   usePatchConversationPreferencesMutation,
@@ -39,7 +43,8 @@ import {
 import { MAX_PINNED_CHATS_TO_TOP } from "@/constants/chatPin";
 import { formatConversationListLastPreview } from "@/utils/conversationListPreview";
 import { sortConversationsForSidebar } from "@/utils/conversationListSort";
-import { formatUnreadBadge } from "@/utils/chatBadge";
+import { NotificationBellButton } from "@/components/notifications/NotificationBellButton";
+import { useDueTaskNotifications } from "@/hooks/useDueTaskNotifications";
 
 type ChatListRow =
   | {
@@ -58,11 +63,18 @@ export default function ChatListScreen() {
   const [patchPrefs] = usePatchConversationPreferencesMutation();
   const [searchText, setSearchText] = useState("");
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
+  const [qrScannerOpen, setQrScannerOpen] = useState(false);
+  const { openGroupJoinLinkModal } = useGroupJoinLinkModal();
   const [muteTarget, setMuteTarget] = useState<IConversation | null>(null);
   const [muteSubmitting, setMuteSubmitting] = useState(false);
   const [mutedExpanded, setMutedExpanded] = useState(false);
   const [quickMenuConversation, setQuickMenuConversation] = useState<IConversation | null>(null);
   const { primary, muted: iconMuted } = useIconColors();
+
+  useDueTaskNotifications({
+    conversations: data ?? [],
+    currentUserId,
+  });
 
   const handleRetryFetch = useCallback(() => {
     void refetch();
@@ -115,98 +127,101 @@ export default function ChatListScreen() {
     setQuickMenuConversation(item);
   }, []);
 
-  const {
-    listRows,
-    mutedConversations,
-    totalUnread,
-    mutedUnreadTotal,
-    listableCount,
-    searchOnlyInMuted,
-  } = useMemo(() => {
-    const raw = data ?? [];
-    const listable = raw.filter((c) => !(c.type === "group" && c.isDeleted));
-    const q = searchText.trim().toLowerCase();
+  const handleQrScannedSuffix = useCallback(
+    (suffix: string) => {
+      setQrScannerOpen(false);
+      openGroupJoinLinkModal({
+        suffix,
+        url: getJoinGroupUrl(suffix),
+        groupName: "Nhóm chat",
+      });
+    },
+    [openGroupJoinLinkModal],
+  );
 
-    const totalUnread = listable.reduce((s, c) => s + (c.unreadCount ?? 0), 0);
+  const { listRows, mutedConversations, mutedUnreadTotal, listableCount, searchOnlyInMuted } =
+    useMemo(() => {
+      const raw = data ?? [];
+      const listable = raw.filter((c) => !(c.type === "group" && c.isDeleted));
+      const q = searchText.trim().toLowerCase();
 
-    /** Cùng quy tắc web `sidebarBaseConversations`: lọc rồi sort. */
-    const sidebarBase = !q
-      ? sortConversationsForSidebar(listable)
-      : sortConversationsForSidebar(
-          listable.filter((c) => {
-            const name = (c.name ?? "").toLowerCase();
-            const preview = formatConversationListLastPreview(c, currentUserId).toLowerCase();
-            return (
-              name.includes(q) || preview.includes(q) || c.conversationId.toLowerCase().includes(q)
-            );
-          }),
-        );
+      /** Cùng quy tắc web `sidebarBaseConversations`: lọc rồi sort. */
+      const sidebarBase = !q
+        ? sortConversationsForSidebar(listable)
+        : sortConversationsForSidebar(
+            listable.filter((c) => {
+              const name = (c.name ?? "").toLowerCase();
+              const preview = formatConversationListLastPreview(c, currentUserId).toLowerCase();
+              return (
+                name.includes(q) ||
+                preview.includes(q) ||
+                c.conversationId.toLowerCase().includes(q)
+              );
+            }),
+          );
 
-    const pinned = sidebarBase.filter((c) => c.isPinnedToTop).slice(0, MAX_PINNED_CHATS_TO_TOP);
-    const normal = sidebarBase.filter((c) => !c.isPinnedToTop && !c.isMuted);
-    const muted = sidebarBase.filter((c) => !c.isPinnedToTop && c.isMuted);
-    const mutedUnreadTotal = muted.reduce((s, c) => s + (c.unreadCount ?? 0), 0);
+      const pinned = sidebarBase.filter((c) => c.isPinnedToTop).slice(0, MAX_PINNED_CHATS_TO_TOP);
+      const normal = sidebarBase.filter((c) => !c.isPinnedToTop && !c.isMuted);
+      const muted = sidebarBase.filter((c) => !c.isPinnedToTop && c.isMuted);
+      const mutedUnreadTotal = muted.reduce((s, c) => s + (c.unreadCount ?? 0), 0);
 
-    const rows: ChatListRow[] = [];
+      const rows: ChatListRow[] = [];
 
-    if (listable.length === 0) {
-      return {
-        listRows: rows,
-        mutedConversations: muted,
-        totalUnread: 0,
-        mutedUnreadTotal: 0,
-        listableCount: 0,
-        searchOnlyInMuted: false,
-      };
-    }
+      if (listable.length === 0) {
+        return {
+          listRows: rows,
+          mutedConversations: muted,
+          mutedUnreadTotal: 0,
+          listableCount: 0,
+          searchOnlyInMuted: false,
+        };
+      }
 
-    if (q && sidebarBase.length === 0) {
-      return {
-        listRows: rows,
-        mutedConversations: muted,
-        totalUnread,
-        mutedUnreadTotal,
-        listableCount: listable.length,
-        searchOnlyInMuted: false,
-      };
-    }
+      if (q && sidebarBase.length === 0) {
+        return {
+          listRows: rows,
+          mutedConversations: muted,
+          mutedUnreadTotal,
+          listableCount: listable.length,
+          searchOnlyInMuted: false,
+        };
+      }
 
-    if (pinned.length > 0) {
+      if (pinned.length > 0) {
+        rows.push({
+          kind: "header",
+          key: "h:pinned",
+          title: "GHIM",
+          count: pinned.length,
+          variant: "pinned",
+        });
+        for (const c of pinned) {
+          rows.push({ kind: "conversation", key: `c:${c.conversationId}`, conversation: c });
+        }
+      }
       rows.push({
         kind: "header",
-        key: "h:pinned",
-        title: "GHIM",
-        count: pinned.length,
-        variant: "pinned",
+        key: "h:chats",
+        title: "TIN NHẮN",
+        count: normal.length,
+        variant: "chats",
       });
-      for (const c of pinned) {
+      for (const c of normal) {
         rows.push({ kind: "conversation", key: `c:${c.conversationId}`, conversation: c });
       }
-    }
-    rows.push({
-      kind: "header",
-      key: "h:chats",
-      title: "TIN NHẮN",
-      count: normal.length,
-      variant: "chats",
-    });
-    for (const c of normal) {
-      rows.push({ kind: "conversation", key: `c:${c.conversationId}`, conversation: c });
-    }
 
-    const searchOnlyInMuted = Boolean(
-      q && pinned.length === 0 && normal.length === 0 && muted.length > 0,
-    );
+      const searchOnlyInMuted = Boolean(
+        q && pinned.length === 0 && normal.length === 0 && muted.length > 0,
+      );
 
-    return {
-      listRows: rows,
-      mutedConversations: muted,
-      totalUnread,
-      mutedUnreadTotal,
-      listableCount: listable.length,
-      searchOnlyInMuted,
-    };
-  }, [data, searchText, currentUserId]);
+      return {
+        listRows: rows,
+        mutedConversations: muted,
+        mutedUnreadTotal,
+        listableCount: listable.length,
+        searchOnlyInMuted,
+      };
+    }, [data, searchText, currentUserId]);
 
   const conversationRowCount = useMemo(
     () => listRows.filter((r) => r.kind === "conversation").length,
@@ -226,22 +241,24 @@ export default function ChatListScreen() {
   return (
     <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
       <View className="flex-row items-center justify-between px-4 pb-2 pt-3">
-        <View className="min-w-0 flex-1 flex-row flex-wrap items-center gap-2">
-          <Text className="text-2xl font-bold tracking-tight text-foreground">Tin nhắn</Text>
-          {totalUnread > 0 ? (
-            <View className="min-h-[22px] min-w-[22px] items-center justify-center rounded-full bg-red-500 px-1.5">
-              <Text className="text-[11px] font-bold leading-none text-white">
-                {formatUnreadBadge(totalUnread)}
-              </Text>
-            </View>
-          ) : null}
-        </View>
+        <Text className="min-w-0 flex-1 text-2xl font-bold tracking-tight text-foreground">
+          Tin nhắn
+        </Text>
+        <NotificationBellButton />
       </View>
 
       <View className="flex-row items-center gap-2 px-4 pb-3">
         <View className="min-w-0 flex-1">
           <SearchBar value={searchText} onChangeText={setSearchText} placeholder="Tìm kiếm" />
         </View>
+        <Pressable
+          className="size-10 shrink-0 items-center justify-center rounded-lg active:bg-muted/60"
+          hitSlop={6}
+          onPress={() => setQrScannerOpen(true)}
+          accessibilityLabel="Quét mã QR tham gia nhóm"
+        >
+          <QrCode size={20} color={primary} strokeWidth={1.75} />
+        </Pressable>
         <Pressable
           className="size-10 shrink-0 items-center justify-center rounded-lg active:bg-muted/60"
           hitSlop={6}
@@ -379,6 +396,12 @@ export default function ChatListScreen() {
       </View>
 
       <CreateGroupModal visible={createGroupOpen} onClose={() => setCreateGroupOpen(false)} />
+
+      <GroupJoinQrScannerModal
+        visible={qrScannerOpen}
+        onClose={() => setQrScannerOpen(false)}
+        onScannedSuffix={handleQrScannedSuffix}
+      />
 
       <ConversationListActionSheet
         conversation={quickMenuConversation}

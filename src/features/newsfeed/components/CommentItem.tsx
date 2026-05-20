@@ -105,7 +105,7 @@ export const CommentItem = ({ comment, postId, isNested = false, onReply, newRep
   const isVideoMedia = !!mediaUrl && IS_VIDEO.test(mediaUrl);
 
   return (
-    <View style={isNested ? { marginLeft: 36 } : undefined}>
+    <View>
       <View className="flex-row items-start gap-2">
         <View
           className={`items-center justify-center overflow-hidden rounded-full bg-muted/60 ${isNested ? "size-6" : "size-7"}`}
@@ -240,7 +240,11 @@ export const CommentItem = ({ comment, postId, isNested = false, onReply, newRep
                 onPress={() => onReply?.(comment.commentId, authorName)}
                 className="active:opacity-60"
               >
-                <Text className="text-[11px] font-semibold text-muted-foreground">Trả lời</Text>
+                <Ionicons
+                  name="chatbubble-outline"
+                  size={14}
+                  color="hsl(var(--muted-foreground))"
+                />
               </Pressable>
             )}
           </View>
@@ -265,7 +269,6 @@ export const CommentItem = ({ comment, postId, isNested = false, onReply, newRep
               {hasMoreReplies && (
                 <Pressable
                   onPress={() => void loadReplies(replyNextCursor, true)}
-                  style={{ marginLeft: 36 }}
                   className="px-1 py-0.5"
                 >
                   <Text className="text-xs font-semibold text-muted-foreground">

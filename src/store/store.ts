@@ -10,8 +10,12 @@ import { chatReducer } from "./slices/chatSlice";
 import { contactReducer } from "./slices/contactSlice";
 import { newsfeedReducer } from "./slices/newsfeedSlice";
 import { notificationReducer } from "./slices/notificationSlice";
+import { inboxNotificationReducer } from "./slices/inboxNotificationSlice";
+import { notificationApi } from "./api/notificationApi";
+import { reelUploadReducer } from "./slices/reelUploadSlice";
 import { uiReducer } from "./slices/uiSlice";
 import { newsfeedApi } from "./api/newsfeedApi";
+import { liveApi } from "./api/liveApi";
 
 export const store = configureStore({
   reducer: {
@@ -21,12 +25,16 @@ export const store = configureStore({
     contact: contactReducer,
     newsfeed: newsfeedReducer,
     notification: notificationReducer,
+    inboxNotification: inboxNotificationReducer,
+    reelUpload: reelUploadReducer,
     ui: uiReducer,
     [authApi.reducerPath]: authApi.reducer,
     [chatApi.reducerPath]: chatApi.reducer,
     [mediaApi.reducerPath]: mediaApi.reducer,
     [userApi.reducerPath]: userApi.reducer,
     [newsfeedApi.reducerPath]: newsfeedApi.reducer,
+    [notificationApi.reducerPath]: notificationApi.reducer,
+    [liveApi.reducerPath]: liveApi.reducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(
@@ -35,6 +43,8 @@ export const store = configureStore({
       mediaApi.middleware,
       userApi.middleware,
       newsfeedApi.middleware,
+      notificationApi.middleware,
+      liveApi.middleware,
     ),
 });
 

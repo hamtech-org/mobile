@@ -477,7 +477,7 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
   return (
     <CallContext.Provider value={value}>
       {children}
-      <IncomingCallModal />
+      <IncomingCallModal acceptCall={acceptCall} rejectCall={rejectCall} />
     </CallContext.Provider>
   );
 };

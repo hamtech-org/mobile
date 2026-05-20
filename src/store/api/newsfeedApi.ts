@@ -3,11 +3,16 @@ import { baseQueryWithReauth } from "@/store/api/baseQueryWithReauth";
 import type {
   IComment,
   ICommentsPage,
+  ICreateReelDto,
   IFeedPage,
   IPost,
+  IReel,
+  IReelFeedPage,
+  IReportReelDto,
   ISavedPostsPage,
   PostPublicationStatus,
   PostVisibility,
+  ReelFeedKind,
 } from "@/types/newsfeed.types";
 import type { ReactionType, IReactionSummary } from "@/types/reaction.types";
 
@@ -53,10 +58,31 @@ export interface CommentsQueryParams {
   cursor?: string | null;
 }
 
+export interface ReelsFeedQueryParams {
+  feed?: ReelFeedKind;
+  limit?: number;
+  cursor?: string | null;
+}
+
+export interface ReelCommentsQueryParams {
+  reelId: string;
+  limit?: number;
+  cursor?: string | null;
+}
+
 export const newsfeedApi = createApi({
   reducerPath: "newsfeedApi",
   baseQuery: baseQueryWithReauth,
-  tagTypes: ["Feed", "Posts", "PostDetail", "Comments"],
+  tagTypes: [
+    "Feed",
+    "Posts",
+    "PostDetail",
+    "Comments",
+    "ReelsFeed",
+    "ReelDetail",
+    "ReelComments",
+    "ReelCommentReplies",
+  ],
   endpoints: (builder) => ({
     getFeed: builder.query<IFeedPage, FeedQueryParams | void>({
       query: (params) => ({
@@ -300,6 +326,7 @@ export const newsfeedApi = createApi({
         body: { type },
       }),
       transformResponse: (response: ApiEnvelope<IReactionSummary>) => response.data,
+      invalidatesTags: ["ReelsFeed", "ReelDetail"],
     }),
 
     sharePost: builder.mutation<IPost, { postId: string } & SharePostBody>({
@@ -348,6 +375,183 @@ export const newsfeedApi = createApi({
       }),
       providesTags: ["Feed"],
     }),
+
+    // ─── Reels ──────────────────────────────────────────────────────────────
+
+    getReelsFeed: builder.query<IReelFeedPage, ReelsFeedQueryParams | void>({
+      query: (params) => ({
+        url: "/newsfeed/reels",
+        params: {
+          feed: params?.feed ?? "foryou",
+          limit: params?.limit ?? 10,
+          cursor: params?.cursor ?? undefined,
+        },
+      }),
+      transformResponse: (response: ApiEnvelope<IReelFeedPage>) => ({
+        items: Array.isArray(response?.data?.items) ? response.data.items : [],
+        nextCursor: response?.data?.nextCursor ?? null,
+        hasMore: Boolean(response?.data?.hasMore),
+      }),
+      providesTags: ["ReelsFeed"],
+    }),
+
+    getReelById: builder.query<IReel, string>({
+      query: (reelId) => `/newsfeed/reels/${reelId}`,
+      transformResponse: (response: ApiEnvelope<IReel>) => response.data,
+      providesTags: (_res, _err, reelId) => [{ type: "ReelDetail", id: reelId }],
+    }),
+
+    getReelsByAuthor: builder.query<
+      IReelFeedPage,
+      { authorId: string; limit?: number; cursor?: string | null }
+    >({
+      query: ({ authorId, limit, cursor }) => ({
+        url: `/newsfeed/reels/by-author/${authorId}`,
+        params: { limit, cursor: cursor ?? undefined },
+      }),
+      transformResponse: (response: ApiEnvelope<IReelFeedPage>) => ({
+        items: Array.isArray(response?.data?.items) ? response.data.items : [],
+        nextCursor: response?.data?.nextCursor ?? null,
+        hasMore: Boolean(response?.data?.hasMore),
+      }),
+    }),
+
+    createReel: builder.mutation<IReel, ICreateReelDto>({
+      query: (body) => ({
+        url: "/newsfeed/reels",
+        method: "POST",
+        body,
+      }),
+      transformResponse: (response: ApiEnvelope<IReel>) => response.data,
+      invalidatesTags: ["ReelsFeed"],
+    }),
+
+    deleteReel: builder.mutation<null, string>({
+      query: (reelId) => ({
+        url: `/newsfeed/reels/${reelId}`,
+        method: "DELETE",
+      }),
+      transformResponse: () => null,
+      invalidatesTags: (_res, _err, reelId) => ["ReelsFeed", { type: "ReelDetail", id: reelId }],
+    }),
+
+    recordReelView: builder.mutation<
+      null,
+      { reelId: string; watchedMs: number; completed?: boolean }
+    >({
+      query: ({ reelId, ...body }) => ({
+        url: `/newsfeed/reels/${reelId}/view`,
+        method: "POST",
+        body,
+      }),
+      transformResponse: () => null,
+    }),
+
+    toggleSaveReel: builder.mutation<{ isSaved: boolean }, string>({
+      query: (reelId) => ({
+        url: `/newsfeed/reels/${reelId}/save`,
+        method: "POST",
+      }),
+      transformResponse: (response: ApiEnvelope<{ isSaved: boolean }>) => response.data,
+      invalidatesTags: ["ReelsFeed", "ReelDetail"],
+    }),
+
+    reportReel: builder.mutation<null, { reelId: string } & IReportReelDto>({
+      query: ({ reelId, ...body }) => ({
+        url: `/newsfeed/reels/${reelId}/report`,
+        method: "POST",
+        body,
+      }),
+      transformResponse: () => null,
+    }),
+
+    getReelComments: builder.query<ICommentsPage, ReelCommentsQueryParams>({
+      query: ({ reelId, limit, cursor }) => ({
+        url: `/newsfeed/reels/${reelId}/comments`,
+        params: { limit: limit ?? 20, cursor: cursor ?? undefined },
+      }),
+      transformResponse: (response: ApiEnvelope<ICommentsPage>) => ({
+        items: Array.isArray(response?.data?.items) ? response.data.items : [],
+        nextCursor: response?.data?.nextCursor ?? null,
+        hasMore: Boolean(response?.data?.hasMore),
+      }),
+      providesTags: (_res, _err, arg) => [{ type: "ReelComments", id: arg.reelId }],
+    }),
+
+    addReelComment: builder.mutation<
+      IComment,
+      { reelId: string; content: string; parentId?: string; mediaUrls?: string[] }
+    >({
+      query: ({ reelId, content, parentId, mediaUrls }) => ({
+        url: `/newsfeed/reels/${reelId}/comments`,
+        method: "POST",
+        body: { content, parentId, mediaUrls },
+      }),
+      transformResponse: (response: ApiEnvelope<IComment>) => response.data,
+      invalidatesTags: (_res, _err, arg) => [
+        { type: "ReelComments", id: arg.reelId },
+        ...(arg.parentId ? [{ type: "ReelCommentReplies" as const, id: arg.parentId }] : []),
+      ],
+    }),
+
+    reactToReelComment: builder.mutation<
+      IReactionSummary,
+      { reelId: string; commentId: string; type: ReactionType }
+    >({
+      query: ({ reelId, commentId, type }) => ({
+        url: `/newsfeed/reels/${reelId}/comments/${commentId}/react`,
+        method: "POST",
+        body: { type },
+      }),
+      transformResponse: (response: ApiEnvelope<IReactionSummary>) => response.data,
+      async onQueryStarted({ reelId, commentId, type }, { dispatch, queryFulfilled }) {
+        const patch = dispatch(
+          newsfeedApi.util.updateQueryData("getReelComments", { reelId, limit: 20 }, (draft) => {
+            const comment = draft.items.find((c) => c.commentId === commentId);
+            if (comment) {
+              const oldType = comment.currentUserReaction;
+              if (oldType === type) {
+                comment.currentUserReaction = null;
+                if (comment.reactionsCount[type] && comment.reactionsCount[type]! > 0) {
+                  comment.reactionsCount[type]! -= 1;
+                }
+              } else {
+                if (
+                  oldType &&
+                  comment.reactionsCount[oldType] &&
+                  comment.reactionsCount[oldType]! > 0
+                ) {
+                  comment.reactionsCount[oldType]! -= 1;
+                }
+                comment.currentUserReaction = type;
+                comment.reactionsCount[type] = (comment.reactionsCount[type] ?? 0) + 1;
+              }
+            }
+          }),
+        );
+        try {
+          await queryFulfilled;
+        } catch {
+          patch.undo();
+        }
+      },
+    }),
+
+    getReelCommentReplies: builder.query<
+      ICommentsPage,
+      { reelId: string; commentId: string; cursor?: string | null }
+    >({
+      query: ({ reelId, commentId, cursor }) => ({
+        url: `/newsfeed/reels/${reelId}/comments`,
+        params: { parentId: commentId, limit: 5, cursor: cursor ?? undefined },
+      }),
+      transformResponse: (response: ApiEnvelope<ICommentsPage>) => ({
+        items: Array.isArray(response?.data?.items) ? response.data.items : [],
+        nextCursor: response?.data?.nextCursor ?? null,
+        hasMore: Boolean(response?.data?.hasMore),
+      }),
+      providesTags: (_res, _err, arg) => [{ type: "ReelCommentReplies", id: arg.commentId }],
+    }),
   }),
 });
 
@@ -369,4 +573,20 @@ export const {
   useSharePostMutation,
   useToggleSavePostMutation,
   useGetSavedPostsQuery,
+  // Reels
+  useGetReelsFeedQuery,
+  useLazyGetReelsFeedQuery,
+  useGetReelByIdQuery,
+  useGetReelsByAuthorQuery,
+  useCreateReelMutation,
+  useDeleteReelMutation,
+  useRecordReelViewMutation,
+  useToggleSaveReelMutation,
+  useReportReelMutation,
+  useGetReelCommentsQuery,
+  useLazyGetReelCommentsQuery,
+  useAddReelCommentMutation,
+  useReactToReelCommentMutation,
+  useLazyGetReelCommentRepliesQuery,
+  useGetReelCommentRepliesQuery,
 } = newsfeedApi;

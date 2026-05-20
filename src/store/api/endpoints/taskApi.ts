@@ -59,6 +59,35 @@ export const taskApi = chatApi.injectEndpoints({
         body,
       }),
       invalidatesTags: (_result, _error, { groupId }) => [{ type: "Tasks", id: groupId }],
+      async onQueryStarted(
+        { groupId, taskId, title, description, assignees, assignToAll, dueDate, subtasks },
+        { dispatch, queryFulfilled },
+      ) {
+        const patchResult = dispatch(
+          chatApi.util.updateQueryData("getTasks", groupId, (draft) => {
+            if (!draft?.data || !Array.isArray(draft.data)) return;
+            const idx = draft.data.findIndex(
+              (row) => String((row as { taskId?: string })?.taskId ?? "") === String(taskId),
+            );
+            if (idx < 0) return;
+            const row = draft.data[idx] as Record<string, unknown>;
+            if (title !== undefined) row.title = title;
+            if (description !== undefined) row.description = description;
+            if (assignees !== undefined) row.assignees = assignees;
+            if (assignToAll !== undefined) {
+              row.assignToAll = assignToAll;
+              row.broadcast = assignToAll;
+            }
+            if (dueDate !== undefined) row.dueDate = dueDate;
+            if (subtasks !== undefined) row.subtasks = subtasks;
+          }),
+        );
+        try {
+          await queryFulfilled;
+        } catch {
+          patchResult.undo();
+        }
+      },
     }),
 
     deleteTask: builder.mutation<ApiEnvelope<unknown>, { groupId: string; taskId: string }>({
@@ -76,6 +105,16 @@ export const taskApi = chatApi.injectEndpoints({
       }),
       invalidatesTags: (_result, _error, { groupId }) => [{ type: "Tasks", id: groupId }],
     }),
+
+    triggerTaskDueReminder: builder.mutation<
+      ApiEnvelope<{ sent: boolean }>,
+      { groupId: string; taskId: string }
+    >({
+      query: ({ groupId, taskId }) => ({
+        url: `/chat/groups/${groupId}/tasks/${taskId}/remind-due`,
+        method: "POST",
+      }),
+    }),
   }),
   overrideExisting: false,
 });
@@ -87,4 +126,5 @@ export const {
   useJoinTaskMutation,
   useUpdateTaskMutation,
   useDeleteTaskMutation,
+  useTriggerTaskDueReminderMutation,
 } = taskApi;

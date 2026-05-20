@@ -1,10 +1,13 @@
 import { Stack } from "expo-router";
 import { CalendarClockProvider } from "@/contexts/CalendarClockContext";
+import { GroupJoinLinkModalProvider } from "@/contexts/GroupJoinLinkModalContext";
 
 export default function ChatLayout() {
   return (
     <CalendarClockProvider>
-      <Stack screenOptions={{ headerShown: false }} />
+      <GroupJoinLinkModalProvider>
+        <Stack screenOptions={{ headerShown: false }} />
+      </GroupJoinLinkModalProvider>
     </CalendarClockProvider>
   );
 }

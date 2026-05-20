@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocalSearchParams } from "expo-router";
-import { Alert, FlatList, Keyboard, Text, View } from "react-native";
+import {
+  Alert,
+  FlatList,
+  Keyboard,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 
@@ -20,6 +30,7 @@ import {
   type PollVoteModalPoll,
 } from "@/components/chat";
 import { ChatPinnedReminderBar } from "@/components/chat/ChatPinnedReminderBar";
+import { PinLimitModal } from "@/components/chat/PinLimitModal";
 import {
   ChatMediaLightbox,
   type ChatMediaLightboxState,
@@ -28,7 +39,7 @@ import { GroupManageModal, type GroupManagePanel } from "@/components/chat/Group
 import { GroupAddMembersModal } from "@/components/chat/GroupAddMembersModal";
 import { GroupPollModal } from "@/components/chat/GroupPollModal";
 import { GroupTaskModal } from "@/components/chat/GroupTaskModal";
-import { MessageSquare } from "lucide-react-native";
+import { ChevronDown, MessageSquare } from "lucide-react-native";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Loading } from "@/components/common/Loading";
 import { useUploadMediaMultiMutation } from "@/store/api/mediaApi";
@@ -49,6 +60,7 @@ import { useCallContext } from "@/contexts/CallContext";
 import { useAppDispatch, useAppSelector } from "@/hooks/useAppStore";
 import { useChat } from "@/hooks/useChat";
 import { useChatMessageData } from "@/hooks/useChatMessageData";
+import { useMessagePinController } from "@/hooks/useMessagePinController";
 import { useConversationLifecycle } from "@/hooks/useConversationLifecycle";
 import { useTaskReminderScheduler, type GroupTaskLike } from "@/hooks/useTaskReminderScheduler";
 import { setReplyingTo, clearReplyingTo, clearChatFrameBanner } from "@/store/slices/chatSlice";
@@ -65,14 +77,11 @@ import { openOrShareChatFile } from "@/utils/chatMediaDownload";
 import {
   canUserCreatePollInGroup,
   canUserCreateTaskInGroup,
-  canUserPinMessageInGroup,
   canUserSendMessageInGroup,
   resolveGroupMemberRole,
 } from "@/utils/groupConversationPermissions";
 import { filterGroupMembersExcludingRemoved } from "@/utils/groupMembersRealtime";
 import { isTaskJoinDeadlinePassed } from "@/utils/taskJoin";
-import { MAX_PINNED_PER_CONVERSATION } from "@/constants/chatPin";
-
 const EMPTY_TYPING_USERS: TypingUserEntry[] = [];
 
 function toPollVoteModalPoll(raw: unknown): PollVoteModalPoll | null {
@@ -130,6 +139,7 @@ export default function ChatDetailScreen() {
 
   const currentUserId = useAppSelector((state) => state.auth.user?.userId);
   const currentUserName = useAppSelector((state) => state.auth.user?.displayName ?? null);
+  const currentUserAvatar = useAppSelector((state) => state.auth.user?.avatar ?? null);
   const frameBanner = useAppSelector((state) => state.chat.frameBanner);
   const activeGroupCall = useAppSelector((state) => state.call.activeGroupCall);
   const callStatus = useAppSelector((state) => state.call.status);
@@ -161,16 +171,10 @@ export default function ChatDetailScreen() {
   const [groupTaskModalOpen, setGroupTaskModalOpen] = useState(false);
   const [openAiSummaryOnGroupModal, setOpenAiSummaryOnGroupModal] = useState(false);
   const [addMembersOpen, setAddMembersOpen] = useState(false);
+  const [isScrolledUp, setIsScrolledUp] = useState(false);
 
-  const { allMessages, isLoading, latestMessageId } = useChatMessageData(conversationId);
-
-  const pinnedMessages = useMemo(
-    () =>
-      allMessages
-        .filter((m) => m.isPinned)
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
-    [allMessages],
-  );
+  const { allMessages, pinnedMessagesOrdered, isLoading, latestMessageId } =
+    useChatMessageData(conversationId);
 
   useConversationLifecycle({
     conversationId,
@@ -206,7 +210,6 @@ export default function ChatDetailScreen() {
     sendReplyMessage,
     recallMessage,
     deleteMessage,
-    togglePinMessage,
     reactMessage,
     emitTyping,
   } = useChat();
@@ -230,6 +233,56 @@ export default function ChatDetailScreen() {
     return filterGroupMembersExcludingRemoved(conversationId, groupMembersRaw);
   }, [conversationId, groupMembersRaw]);
 
+  const conversationSearchMembers = useMemo(() => {
+    if (groupMembersForPerm.length > 0) {
+      return groupMembersForPerm.map((m) => ({
+        userId: m.userId,
+        displayName: m.displayName,
+        avatar: m.avatar ?? null,
+      }));
+    }
+    if (!conversation || conversation.type === "group") return [];
+    const otherId = conversation.otherUserId?.trim();
+    if (!otherId) return [];
+    const rows: {
+      userId: string;
+      displayName: string | null;
+      avatar?: string | null;
+    }[] = [];
+    const selfId = currentUserId?.trim();
+    const selfAvatar = (typeof currentUserAvatar === "string" ? currentUserAvatar : "").trim();
+    if (selfId) {
+      rows.push({ userId: selfId, displayName: "Bạn", avatar: selfAvatar || null });
+    }
+    rows.push({
+      userId: otherId,
+      displayName: (conversation.name ?? "").trim() || null,
+      avatar: conversation.avatar ?? null,
+    });
+    return rows;
+  }, [groupMembersForPerm, conversation, currentUserId, currentUserAvatar]);
+
+  const memberAvatarById = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const m of groupMembersForPerm) {
+      const url = m.avatar?.trim();
+      if (url) map[m.userId] = url;
+    }
+    const otherId = conversation?.otherUserId?.trim();
+    const avatar = conversation?.avatar?.trim();
+    if (otherId && avatar) map[otherId] = avatar;
+    const selfId = currentUserId?.trim();
+    const selfAvatar = (typeof currentUserAvatar === "string" ? currentUserAvatar : "").trim();
+    if (selfId && selfAvatar) map[selfId] = selfAvatar;
+    return map;
+  }, [
+    groupMembersForPerm,
+    conversation?.otherUserId,
+    conversation?.avatar,
+    currentUserId,
+    currentUserAvatar,
+  ]);
+
   const resolvedGroupMemberCount = useMemo(() => {
     if (!isGroup) return undefined;
     const fromList = groupMembersForPerm.length;
@@ -247,6 +300,14 @@ export default function ChatDetailScreen() {
       conversationCreatorId: conversation?.creatorId,
     });
   }, [groupMembersForPerm, currentUserId, conversation?.creatorId]);
+
+  const pinController = useMessagePinController({
+    activeConversation: conversation,
+    currentUserId: currentUserId ?? "",
+    groupMembers: groupMembersForPerm,
+    pinnedMessagesOrdered,
+    allMessages,
+  });
 
   const canSendInGroup = useMemo(() => {
     if (groupDisbanded) return false;
@@ -817,42 +878,9 @@ export default function ChatDetailScreen() {
 
   const handleTogglePinForSheet = useCallback(
     async (msg: IMessage) => {
-      try {
-        if (
-          conversation?.type === "group" &&
-          !canUserPinMessageInGroup({
-            conversation,
-            userRole: myRoleInGroup,
-          })
-        ) {
-          toast.error(
-            msg.isPinned
-              ? "Nhóm không cho phép thành viên bỏ/ghim tin nhắn."
-              : "Nhóm không cho phép thành viên ghim tin nhắn.",
-          );
-          return;
-        }
-        if (!msg.isPinned) {
-          const pinCount = allMessages.filter(
-            (m) =>
-              m.conversationId === msg.conversationId &&
-              m.isPinned &&
-              !m.isRecalled &&
-              !m.isDeleted,
-          ).length;
-          if (pinCount >= MAX_PINNED_PER_CONVERSATION) {
-            toast.error(
-              `Đã đủ ${MAX_PINNED_PER_CONVERSATION} tin ghim. Bỏ ghim một tin cũ để ghim tin mới.`,
-            );
-            return;
-          }
-        }
-        await togglePinMessage(msg);
-      } catch {
-        toast.error("Không cập nhật ghim được. Thử lại.");
-      }
+      await pinController.handleTogglePinMsg(msg);
     },
-    [allMessages, conversation, myRoleInGroup, togglePinMessage],
+    [pinController],
   );
 
   const handleTogglePinPoll = useCallback(
@@ -999,10 +1027,22 @@ export default function ChatDetailScreen() {
       ) : null}
 
       <ChatPinnedReminderBar
-        pinnedMessages={pinnedMessages}
+        pinnedMessages={pinnedMessagesOrdered}
         currentUserId={currentUserId ?? ""}
         onJumpToMessage={handleJumpToMessage}
         onTogglePin={handleTogglePinForSheet}
+      />
+
+      <PinLimitModal
+        visible={pinController.pinLimitModalMsg !== null}
+        currentPinned={pinnedMessagesOrdered}
+        pendingPin={pinController.pinLimitModalMsg}
+        replaceIndex={pinController.pinReplaceIndex}
+        onReplaceIndexChange={pinController.setPinReplaceIndex}
+        isSubmitting={pinController.pinLimitSubmitting}
+        currentUserId={currentUserId ?? ""}
+        onClose={() => pinController.setPinLimitModalMsg(null)}
+        onConfirm={() => void pinController.handleConfirmPinReplace()}
       />
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
@@ -1044,7 +1084,24 @@ export default function ChatDetailScreen() {
               description="Hãy bắt đầu cuộc trò chuyện!"
             />
           }
+          onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
+            // Inverted FlatList: offset 0 = bottom (latest). Scrolled up = offset > threshold.
+            const offset = e.nativeEvent.contentOffset.y;
+            setIsScrolledUp(offset > 300);
+          }}
+          scrollEventThrottle={100}
         />
+
+        {/* Floating scroll-to-bottom button */}
+        {isScrolledUp && (
+          <Pressable
+            onPress={() => listRef.current?.scrollToOffset({ offset: 0, animated: true })}
+            style={scrollBtnStyles.fab}
+            accessibilityLabel="Cuộn xuống tin mới nhất"
+          >
+            <ChevronDown size={22} color="#666" />
+          </Pressable>
+        )}
 
         <View
           className="border-t border-border/40 bg-background/95 dark:bg-background"
@@ -1161,8 +1218,33 @@ export default function ChatDetailScreen() {
         onClose={() => setInChatSearchOpen(false)}
         messages={allMessages}
         currentUserId={currentUserId}
+        conversationId={conversationId}
+        conversationTitle={conversation?.name ?? undefined}
+        conversationMembers={conversationSearchMembers}
+        memberAvatarById={memberAvatarById}
         onSelectMessage={handleJumpToMessage}
       />
     </SafeAreaView>
   );
 }
+
+const scrollBtnStyles = StyleSheet.create({
+  fab: {
+    position: "absolute",
+    bottom: 80,
+    right: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.95)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.1)",
+  },
+});

@@ -9,6 +9,7 @@ import {
 } from "react";
 import {
   ActivityIndicator,
+  Animated,
   Image,
   Linking,
   Pressable,
@@ -38,6 +39,11 @@ import {
 } from "lucide-react-native";
 
 import { useCalendarNow } from "@/contexts/CalendarClockContext";
+import {
+  ChatJumpHighlightWrap,
+  useChatJumpHighlightPulse,
+} from "@/components/chat/ChatJumpHighlight";
+import { CHAT_JUMP_HIGHLIGHT_BORDER } from "@/components/chat/chatMediaShell";
 import { useIconColors } from "@/hooks/useIconColors";
 import type { IMessage } from "@/types/chat.types";
 import { formatFileSize } from "@/utils/file";
@@ -66,7 +72,7 @@ import { isTaskJoinDeadlinePassed } from "@/utils/taskJoin";
 import { mergePollWithGroupList, parsePollPayloadFromMessageContent } from "@/utils/groupPollMerge";
 import { resolveGroupJoinLinkFromMessageContent } from "@/utils/groupJoinLinkMessage";
 import { ChatFileMessageBubble } from "@/components/chat/ChatFileMessageBubble";
-import { ChatImageMessageCard } from "@/components/chat/ChatImageMessageCard";
+import { ChatImageMessageWithJoinQr } from "@/components/chat/ChatImageMessageWithJoinQr";
 import type { ChatMediaLightboxState } from "@/components/chat/ChatMediaLightbox";
 import { ChatVideoMessageCard } from "@/components/chat/ChatVideoMessageCard";
 import { chatMediaCaptionStyle, getChatMediaLayout } from "@/components/chat/chatMediaShell";
@@ -347,9 +353,14 @@ function SystemRowLeadingIcon({ kind }: { kind: SystemTextRowIcon }) {
 // ── System center (JSON + card) ───────────────────────────────────────────
 
 const SYSTEM_CENTER_SURFACE = "bg-card dark:bg-zinc-800/95";
+/** Shell thẻ system — luôn `border-2` để không nhảy layout khi bấm «Xem» (khớp web). */
+const SYSTEM_CENTER_SHELL_CLASS =
+  "w-full max-w-[92%] self-center overflow-hidden rounded-2xl border-2 shadow-sm";
+const SYSTEM_CENTER_BORDER_IDLE = "border-black/[0.06] dark:border-white/10";
 
 /**
- * Khi nhảy tới tin: chỉ **một** viền xanh ở lớp ngoài (giống web), nền thẻ nằm trong — tránh “hai viền” do thiếu nền + viền xám nội dung.
+ * Viền nhảy tới tin (task / poll / cập nhật CV) — một lớp `border-2 border-blue-500` trên shell,
+ * không overlay absolute (tránh vỡ flex hàng «Xem»).
  */
 function SystemCenterCardChrome({
   isJumpHighlighted,
@@ -360,19 +371,33 @@ function SystemCenterCardChrome({
   innerClassName: string;
   children: ReactNode;
 }) {
-  if (isJumpHighlighted) {
+  const { borderColor, shadowOpacity } = useChatJumpHighlightPulse(isJumpHighlighted);
+  const inner = <View className={innerClassName.trim()}>{children}</View>;
+
+  if (!isJumpHighlighted) {
     return (
-      <View className="w-full max-w-[92%] overflow-hidden rounded-2xl border-2 border-blue-500">
-        <View className={`${SYSTEM_CENTER_SURFACE} ${innerClassName}`.trim()}>{children}</View>
+      <View
+        className={`${SYSTEM_CENTER_SHELL_CLASS} ${SYSTEM_CENTER_BORDER_IDLE} ${SYSTEM_CENTER_SURFACE}`}
+      >
+        {inner}
       </View>
     );
   }
+
   return (
-    <View
-      className={`w-full max-w-[92%] overflow-hidden rounded-2xl border border-black/[0.06] shadow-sm dark:border-white/10 ${SYSTEM_CENTER_SURFACE} ${innerClassName}`.trim()}
+    <Animated.View
+      className={`${SYSTEM_CENTER_SHELL_CLASS} ${SYSTEM_CENTER_SURFACE}`}
+      style={{
+        borderColor,
+        shadowColor: CHAT_JUMP_HIGHLIGHT_BORDER,
+        shadowOffset: { width: 0, height: 0 },
+        shadowRadius: 14,
+        shadowOpacity,
+        elevation: 4,
+      }}
     >
-      {children}
-    </View>
+      {inner}
+    </Animated.View>
   );
 }
 
@@ -512,7 +537,7 @@ function SystemCenterBlock({
         />
         <SystemCenterCardChrome
           isJumpHighlighted={isJumpHighlighted}
-          innerClassName="flex-row items-center justify-between gap-2 rounded-2xl px-3 py-2.5"
+          innerClassName="w-full min-w-0 flex-row flex-wrap items-center gap-x-2 gap-y-1.5 px-3 py-2.5"
         >
           <View className="min-w-0 flex-1 flex-row items-center gap-2">
             <Pencil size={16} color="#60a5fa" strokeWidth={2} />
@@ -527,7 +552,7 @@ function SystemCenterBlock({
           {showXem ? (
             <Pressable
               onPress={() => groupExtras!.onJumpToTaskCard!(tid)}
-              className="ml-1 h-7 shrink-0 items-center justify-center rounded-full border-2 border-blue-500 px-3"
+              className="h-7 shrink-0 items-center justify-center rounded-full border-2 border-blue-500 px-3"
               android_ripple={{ color: "rgba(59,130,246,0.22)", foreground: true }}
             >
               <Text className="text-[11px] font-bold text-blue-600 dark:text-blue-400">Xem</Text>
@@ -552,7 +577,7 @@ function SystemCenterBlock({
         />
         <SystemCenterCardChrome
           isJumpHighlighted={isJumpHighlighted}
-          innerClassName="flex-row items-center justify-between gap-2 rounded-2xl px-3 py-2.5"
+          innerClassName="w-full min-w-0 flex-row flex-wrap items-center gap-x-2 gap-y-1.5 px-3 py-2.5"
         >
           <View className="min-w-0 flex-1 flex-row items-center gap-2">
             <AlarmClock size={16} color="#f97316" strokeWidth={2} />
@@ -566,7 +591,7 @@ function SystemCenterBlock({
           {showOpen ? (
             <Pressable
               onPress={() => groupExtras!.onOpenGroupTaskSheet!(tid)}
-              className="ml-1 h-7 shrink-0 items-center justify-center rounded-full border border-black/10 bg-black/[0.03] px-3 dark:border-white/10 dark:bg-white/[0.06]"
+              className="h-7 shrink-0 items-center justify-center rounded-full border border-black/10 bg-black/[0.03] px-3 dark:border-white/10 dark:bg-white/[0.06]"
               android_ripple={{ color: "rgba(0,0,0,0.06)" }}
             >
               <Text className="text-[11px] font-bold text-foreground/80 dark:text-white/80">
@@ -581,6 +606,10 @@ function SystemCenterBlock({
 
   const t = (groupExtras?.groupTasks ?? []).find((x) => String(x.taskId ?? "") === view.taskId);
   const tx = t as Record<string, unknown> | undefined;
+  const cardTitle =
+    tx?.title != null && String(tx.title).trim() !== ""
+      ? String(tx.title)
+      : String(view.title ?? "");
   const byId = new Map<string, string>();
   for (const row of groupExtras?.groupMembers ?? []) {
     byId.set(String(row.userId), String(row.displayName ?? row.userId).trim());
@@ -679,10 +708,7 @@ function SystemCenterBlock({
         calendarNow={calendarNow}
         isGroup={Boolean(groupExtras)}
       />
-      <SystemCenterCardChrome
-        isJumpHighlighted={isJumpHighlighted}
-        innerClassName="min-w-0 w-full overflow-hidden rounded-2xl"
-      >
+      <SystemCenterCardChrome isJumpHighlighted={isJumpHighlighted} innerClassName="w-full min-w-0">
         <View className="px-3 py-3">
           <View className="mb-2 flex-row flex-wrap items-center gap-1.5">
             <ClipboardList size={14} color="#4F46E5" strokeWidth={2} />
@@ -693,7 +719,7 @@ function SystemCenterBlock({
 
           {(() => {
             const expanded = expandedTaskIds.has(String(view.taskId ?? ""));
-            const long = (view.title?.length ?? 0) > 60;
+            const long = cardTitle.length > 60;
             return (
               <>
                 <Pressable onPress={() => long && toggleExpanded(view.taskId)}>
@@ -701,7 +727,7 @@ function SystemCenterBlock({
                     className="mb-3 pr-1 text-center text-[16px] font-black leading-snug text-foreground"
                     numberOfLines={expanded || !long ? undefined : 3}
                   >
-                    {view.title}
+                    {cardTitle}
                   </Text>
                 </Pressable>
                 {long ? (
@@ -793,7 +819,7 @@ function SystemCenterBlock({
         </View>
 
         {groupExtras ? (
-          <View className="flex-row flex-wrap items-center justify-between gap-3 border-t border-black/5 px-3 py-3 dark:border-white/10">
+          <View className="min-w-0 flex-row flex-wrap items-center justify-between gap-3 border-t border-black/5 px-3 py-3 dark:border-white/10">
             <View className="min-w-0 flex-1 flex-row flex-wrap items-center gap-2">
               <View className="flex-row items-center gap-1.5 rounded-full border border-black/5 bg-white px-2.5 py-1.5 dark:border-white/10 dark:bg-zinc-800">
                 <Text className="text-[11px] font-bold text-muted-foreground">
@@ -877,72 +903,74 @@ function PollMessageInlineCard({
 }) {
   const pollBlue = "#2563eb";
   const total = poll.options.reduce((sum, o) => sum + (o.voters?.length ?? 0), 0);
-  const cardShell = isJumpHighlighted
-    ? `overflow-hidden rounded-2xl border-2 border-blue-500 ${isOwn ? "bg-blue-500/15" : "bg-blue-500/12"}`
-    : isOwn
-      ? "overflow-hidden rounded-2xl border border-white/25 bg-white/12"
-      : "overflow-hidden rounded-2xl border border-border bg-card";
+  const cardShell = isOwn
+    ? "overflow-hidden rounded-2xl border border-white/25 bg-white/12"
+    : "overflow-hidden rounded-2xl border border-border bg-card";
   return (
-    <Pressable onPress={onOpen} className={cardShell}>
-      <View className="flex-row items-center gap-2 border-b border-black/[0.06] px-3 py-2.5 dark:border-white/10">
-        <View className="h-8 w-8 items-center justify-center rounded-xl bg-orange-500/15 dark:bg-orange-900/30">
-          <BarChart2 size={16} color="#ea580c" strokeWidth={2} />
+    <ChatJumpHighlightWrap active={isJumpHighlighted} borderRadius={16}>
+      <Pressable onPress={onOpen} className={cardShell}>
+        <View className="flex-row items-center gap-2 border-b border-black/[0.06] px-3 py-2.5 dark:border-white/10">
+          <View className="h-8 w-8 items-center justify-center rounded-xl bg-orange-500/15 dark:bg-orange-900/30">
+            <BarChart2 size={16} color="#ea580c" strokeWidth={2} />
+          </View>
+          <Text className={`text-[12px] font-bold ${isOwn ? "text-white" : "text-foreground"}`}>
+            Bình chọn
+          </Text>
+          {poll.isClosed ? (
+            <Text className="text-[10px] font-semibold text-muted-foreground">Đã đóng</Text>
+          ) : null}
         </View>
-        <Text className={`text-[12px] font-bold ${isOwn ? "text-white" : "text-foreground"}`}>
-          Bình chọn
-        </Text>
-        {poll.isClosed ? (
-          <Text className="text-[10px] font-semibold text-muted-foreground">Đã đóng</Text>
-        ) : null}
-      </View>
-      <View className="px-3 py-2.5">
-        <View
-          className={`rounded-xl p-3 ${isOwn ? "bg-white/10" : "bg-black/[0.05] dark:bg-white/[0.06]"}`}
-        >
-          <Text
-            className={`text-[14px] font-extrabold ${isOwn ? "text-white" : "text-foreground"}`}
+        <View className="px-3 py-2.5">
+          <View
+            className={`rounded-xl p-3 ${isOwn ? "bg-white/10" : "bg-black/[0.05] dark:bg-white/[0.06]"}`}
           >
-            {poll.question}
-          </Text>
-          <Text className={`mt-1 text-[12px] ${isOwn ? "text-white/75" : "text-muted-foreground"}`}>
-            {poll.isMultipleChoice ? "Chọn nhiều đáp án" : "Chọn một đáp án"} • {total} lượt bình
-            chọn
-          </Text>
-        </View>
-        {poll.options.map((opt, idx) => {
-          const votes = opt.voters?.length ?? 0;
-          const pct = total > 0 ? Math.round((votes / total) * 100) : 0;
-          return (
-            <View key={`${poll.pollId}-opt-${idx}`} className="mt-2.5">
-              <Text
-                className={`text-[13px] font-semibold ${isOwn ? "text-white" : "text-foreground"}`}
-                numberOfLines={3}
-              >
-                {opt.text}
-              </Text>
-              <Text
-                className={`mt-1 text-[11px] ${isOwn ? "text-white/70" : "text-muted-foreground"}`}
-              >
-                {votes} lượt ({pct}%)
-              </Text>
-              <View
-                className={`mt-2 h-2 overflow-hidden rounded-full ${isOwn ? "bg-white/15" : "bg-black/5 dark:bg-white/10"}`}
-              >
+            <Text
+              className={`text-[14px] font-extrabold ${isOwn ? "text-white" : "text-foreground"}`}
+            >
+              {poll.question}
+            </Text>
+            <Text
+              className={`mt-1 text-[12px] ${isOwn ? "text-white/75" : "text-muted-foreground"}`}
+            >
+              {poll.isMultipleChoice ? "Chọn nhiều đáp án" : "Chọn một đáp án"} • {total} lượt bình
+              chọn
+            </Text>
+          </View>
+          {poll.options.map((opt, idx) => {
+            const votes = opt.voters?.length ?? 0;
+            const pct = total > 0 ? Math.round((votes / total) * 100) : 0;
+            return (
+              <View key={`${poll.pollId}-opt-${idx}`} className="mt-2.5">
+                <Text
+                  className={`text-[13px] font-semibold ${isOwn ? "text-white" : "text-foreground"}`}
+                  numberOfLines={3}
+                >
+                  {opt.text}
+                </Text>
+                <Text
+                  className={`mt-1 text-[11px] ${isOwn ? "text-white/70" : "text-muted-foreground"}`}
+                >
+                  {votes} lượt ({pct}%)
+                </Text>
                 <View
-                  className="h-full rounded-full"
-                  style={{ width: `${pct}%`, backgroundColor: pollBlue }}
-                />
+                  className={`mt-2 h-2 overflow-hidden rounded-full ${isOwn ? "bg-white/15" : "bg-black/5 dark:bg-white/10"}`}
+                >
+                  <View
+                    className="h-full rounded-full"
+                    style={{ width: `${pct}%`, backgroundColor: pollBlue }}
+                  />
+                </View>
               </View>
+            );
+          })}
+          <View className="mt-3 items-end">
+            <View className="rounded-full bg-orange-500 px-3 py-1.5">
+              <Text className="text-[11px] font-bold text-white">Mở bình chọn</Text>
             </View>
-          );
-        })}
-        <View className="mt-3 items-end">
-          <View className="rounded-full bg-orange-500 px-3 py-1.5">
-            <Text className="text-[11px] font-bold text-white">Mở bình chọn</Text>
           </View>
         </View>
-      </View>
-    </Pressable>
+      </Pressable>
+    </ChatJumpHighlightWrap>
   );
 }
 
@@ -1128,15 +1156,17 @@ export const ChatBubble = ({
     return (
       <>
         {showDateSeparator && <DateSeparator date={message.createdAt} now={calendarNow} />}
-        <View
-          className={`w-full ${isJumpHighlighted ? "bg-blue-500/12 rounded-2xl border-2 border-blue-500 py-1" : ""}`}
+        <ChatJumpHighlightWrap
+          active={isJumpHighlighted}
+          borderRadius={16}
+          style={{ width: "100%" }}
         >
           <CallLogMessage
             message={message}
             isOwn={isOwn}
             showTimestampFooter={showCallTimestampFooter}
           />
-        </View>
+        </ChatJumpHighlightWrap>
       </>
     );
   }
@@ -1204,6 +1234,14 @@ export const ChatBubble = ({
 
   const jumpHighlightOnPollInline =
     Boolean(isJumpHighlighted) && message.type === "poll" && mergedThreadPoll != null;
+  const jumpHighlightOnMedia =
+    Boolean(isJumpHighlighted) && (hasImage || hasVideo || hasFile || hasSticker);
+  const jumpHighlightOnTextBubble =
+    Boolean(isJumpHighlighted) &&
+    !jumpHighlightOnPollInline &&
+    !jumpHighlightOnMedia &&
+    !isSystemCenter &&
+    message.type !== "call";
 
   const hasPollScheduleBlock =
     (message.type === "poll" || message.type === "schedule") &&
@@ -1297,7 +1335,7 @@ export const ChatBubble = ({
       {showDateSeparator && <DateSeparator date={message.createdAt} now={calendarNow} />}
 
       <View
-        className={`w-full ${isSameSenderAsPrev ? "mt-0.5" : "mt-2"} ${isOwn ? "items-end" : "items-start"} ${isJumpHighlighted && !jumpHighlightOnPollInline ? "bg-blue-500/12 rounded-[22px] border-2 border-blue-500 p-1" : ""}`}
+        className={`w-full ${isSameSenderAsPrev ? "mt-0.5" : "mt-2"} ${isOwn ? "items-end" : "items-start"}`}
       >
         {showSenderName && message.senderDisplayName ? (
           <Text className="mb-1 ml-2 text-[11px] font-semibold text-primary">
@@ -1316,7 +1354,7 @@ export const ChatBubble = ({
             mediaSavedOnDevice={mediaSavedOnDevice}
             isOwn={isOwn}
             isDark={isDark}
-            isPinned={Boolean(message.isPinned)}
+            isJumpHighlighted={isJumpHighlighted}
             header={
               message.replyToDetails ? (
                 <ReplyToPreview
@@ -1366,205 +1404,219 @@ export const ChatBubble = ({
               </View>
             ) : (
               <View className="max-w-full">
-                <View
-                  className={[
-                    "max-w-full",
-                    hasMediaCard || isVisualMedia
-                      ? ""
-                      : isJoinLinkMsg
-                        ? ""
-                        : `px-4 py-2.5 ${isOwn ? "rounded-[20px] rounded-br-[5px] bg-primary" : "rounded-[20px] rounded-bl-[5px] bg-card"}`,
-                    !hasMediaCard && isVisualMedia ? "overflow-hidden rounded-2xl" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
+                <ChatJumpHighlightWrap
+                  active={jumpHighlightOnTextBubble}
+                  borderRadius={20}
+                  style={{ maxWidth: "100%", alignSelf: isOwn ? "flex-end" : "flex-start" }}
                 >
-                  <ReplyToPreview
-                    message={message}
-                    isOwn={isOwn && !isVisualMedia}
-                    viewerUserId={viewerUserId}
-                    onPress={() => onPressReplyTo?.(message.replyToDetails!.messageId)}
-                  />
-
-                  {hasImage && imageUri ? (
-                    <ChatImageMessageCard
-                      uri={imageUri}
-                      layout={mediaLayout}
-                      isDark={isDark}
-                      hasCaptionBelow={hasCaption}
-                      onPress={openActionSheet}
+                  <View
+                    className={[
+                      "max-w-full",
+                      hasMediaCard || isVisualMedia
+                        ? ""
+                        : isJoinLinkMsg
+                          ? ""
+                          : `px-4 py-2.5 ${isOwn ? "rounded-[20px] rounded-br-[5px] bg-primary" : "rounded-[20px] rounded-bl-[5px] bg-card"}`,
+                      !hasMediaCard && isVisualMedia ? "overflow-hidden rounded-2xl" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                  >
+                    <ReplyToPreview
+                      message={message}
+                      isOwn={isOwn && !isVisualMedia}
+                      viewerUserId={viewerUserId}
+                      onPress={() => onPressReplyTo?.(message.replyToDetails!.messageId)}
                     />
-                  ) : null}
 
-                  {hasSticker && stickerUri ? (
-                    <Pressable
-                      onPress={openActionSheet}
-                      onLongPress={openActionSheet}
-                      delayLongPress={300}
-                      accessibilityLabel="Tùy chọn tin nhắn sticker"
-                      className="self-center rounded-2xl active:opacity-90"
-                    >
-                      <Image
-                        source={{ uri: stickerUri }}
-                        className="h-[168px] w-[168px] rounded-2xl"
-                        resizeMode="contain"
-                      />
-                    </Pressable>
-                  ) : null}
-
-                  {hasVideo && videoUri ? (
-                    <ChatVideoMessageCard
-                      layout={mediaLayout}
-                      isDark={isDark}
-                      hasCaptionBelow={hasCaption}
-                      title={videoTitle}
-                      metaLine={fileSizeLabel}
-                      mediaSavedOnDevice={mediaSavedOnDevice}
-                      videoPlayer={
-                        <ChatBubbleVideo
-                          key={`${message.messageId}-${videoUri}`}
-                          playUri={videoUri}
-                        />
-                      }
-                      onPress={openActionSheet}
-                      onFullscreen={handleOpenVideo}
-                      onFolderHint={openDownloadsFolderHint}
-                      onDownload={() => void handleDownloadVideo()}
-                    />
-                  ) : null}
-
-                  {(hasImage || hasVideo) && hasCaption ? (
-                    <View style={chatMediaCaptionStyle(isOwn, isDark, mediaLayout.visualMaxWidth)}>
-                      <Text
-                        style={{
-                          color: isDark ? "#E4E6EB" : "#1C1E21",
-                          fontSize: 13,
-                          lineHeight: 18,
-                        }}
-                      >
-                        {captionPlainText}
-                      </Text>
-                    </View>
-                  ) : null}
-
-                  {message.type === "location" && parsedLocation ? (
-                    <Pressable
-                      onPress={() =>
-                        void Linking.openURL(
-                          mapsUrlForLatLng(parsedLocation.lat, parsedLocation.lng),
-                        )
-                      }
-                      className={`flex-row items-center gap-2 rounded-xl px-3 py-2 ${isOwn ? "bg-white/15" : "bg-muted/50"}`}
-                    >
-                      <MapPin
-                        size={20}
-                        color={isOwn ? "rgba(255,255,255,0.85)" : primary}
-                        strokeWidth={2}
-                      />
-                      <View className="min-w-0 flex-1">
-                        <Text
-                          className={`text-[13px] font-semibold ${isOwn ? "text-white" : "text-foreground"}`}
-                          numberOfLines={2}
-                        >
-                          {parsedLocation.title}
-                        </Text>
-                        <Text
-                          className={`mt-0.5 text-[11px] ${isOwn ? "text-white/70" : "text-primary"}`}
-                        >
-                          Mở bản đồ
-                        </Text>
-                      </View>
-                    </Pressable>
-                  ) : null}
-
-                  {message.type === "poll" && mergedThreadPoll && groupExtras ? (
-                    <View className="mt-1 w-full min-w-[260px] max-w-full self-stretch">
-                      <PollMessageInlineCard
-                        poll={mergedThreadPoll}
-                        isOwn={isOwn}
+                    {hasImage && imageUri ? (
+                      <ChatImageMessageWithJoinQr
+                        messageId={message.messageId}
+                        scanEnabled={!isDeleted && !isRecalled}
+                        uri={imageUri}
+                        layout={mediaLayout}
+                        isDark={isDark}
+                        hasCaptionBelow={hasCaption}
                         isJumpHighlighted={isJumpHighlighted}
-                        onOpen={() => groupExtras.onOpenPollVote(mergedThreadPoll.pollId)}
+                        onPress={openActionSheet}
                       />
-                    </View>
-                  ) : (message.type === "poll" || message.type === "schedule") &&
-                    structuredPollSchedule ? (
-                    <View
-                      className={
-                        isOwn
-                          ? "rounded-lg bg-white/10 px-2 py-1"
-                          : "rounded-lg bg-muted/40 px-2 py-1"
-                      }
-                    >
-                      <Text
-                        className={`text-[13px] font-bold ${isOwn ? "text-white" : "text-foreground"}`}
+                    ) : null}
+
+                    {hasSticker && stickerUri ? (
+                      <Pressable
+                        onPress={openActionSheet}
+                        onLongPress={openActionSheet}
+                        delayLongPress={300}
+                        accessibilityLabel="Tùy chọn tin nhắn sticker"
+                        className="self-center rounded-2xl active:opacity-90"
                       >
-                        {structuredPollSchedule.title}
-                      </Text>
-                      {structuredPollSchedule.body ? (
+                        <Image
+                          source={{ uri: stickerUri }}
+                          className="h-[168px] w-[168px] rounded-2xl"
+                          resizeMode="contain"
+                        />
+                      </Pressable>
+                    ) : null}
+
+                    {hasVideo && videoUri ? (
+                      <ChatVideoMessageCard
+                        layout={mediaLayout}
+                        isDark={isDark}
+                        hasCaptionBelow={hasCaption}
+                        isJumpHighlighted={isJumpHighlighted}
+                        title={videoTitle}
+                        metaLine={fileSizeLabel}
+                        mediaSavedOnDevice={mediaSavedOnDevice}
+                        videoPlayer={
+                          <ChatBubbleVideo
+                            key={`${message.messageId}-${videoUri}`}
+                            playUri={videoUri}
+                          />
+                        }
+                        onPress={openActionSheet}
+                        onFullscreen={handleOpenVideo}
+                        onFolderHint={openDownloadsFolderHint}
+                        onDownload={() => void handleDownloadVideo()}
+                      />
+                    ) : null}
+
+                    {(hasImage || hasVideo) && hasCaption ? (
+                      <View
+                        style={chatMediaCaptionStyle(isOwn, isDark, mediaLayout.visualMaxWidth)}
+                      >
                         <Text
-                          className={`mt-1 text-[12px] ${isOwn ? "text-white/80" : "text-muted-foreground"}`}
+                          style={{
+                            color: isDark ? "#E4E6EB" : "#1C1E21",
+                            fontSize: 13,
+                            lineHeight: 18,
+                          }}
                         >
-                          {structuredPollSchedule.body}
+                          {captionPlainText}
                         </Text>
-                      ) : null}
-                    </View>
-                  ) : null}
+                      </View>
+                    ) : null}
 
-                  {isEmojiMessage && hasCaption ? (
-                    <View className={isVisualMedia ? "px-3 py-2" : ""}>
-                      <Text
-                        className={`text-[34px] leading-[42px] ${isOwn ? "text-white" : "text-foreground"}`}
+                    {message.type === "location" && parsedLocation ? (
+                      <Pressable
+                        onPress={() =>
+                          void Linking.openURL(
+                            mapsUrlForLatLng(parsedLocation.lat, parsedLocation.lng),
+                          )
+                        }
+                        className={`flex-row items-center gap-2 rounded-xl px-3 py-2 ${isOwn ? "bg-white/15" : "bg-muted/50"}`}
                       >
-                        {captionPlainText}
-                      </Text>
-                    </View>
-                  ) : null}
+                        <MapPin
+                          size={20}
+                          color={isOwn ? "rgba(255,255,255,0.85)" : primary}
+                          strokeWidth={2}
+                        />
+                        <View className="min-w-0 flex-1">
+                          <Text
+                            className={`text-[13px] font-semibold ${isOwn ? "text-white" : "text-foreground"}`}
+                            numberOfLines={2}
+                          >
+                            {parsedLocation.title}
+                          </Text>
+                          <Text
+                            className={`mt-0.5 text-[11px] ${isOwn ? "text-white/70" : "text-primary"}`}
+                          >
+                            Mở bản đồ
+                          </Text>
+                        </View>
+                      </Pressable>
+                    ) : null}
 
-                  {joinLinkPayload ? (
-                    <View className="py-0.5">
-                      <GroupJoinLinkCard payload={joinLinkPayload} />
-                    </View>
-                  ) : null}
-
-                  {!isEmojiMessage &&
-                    hasCaption &&
-                    !joinLinkPayload &&
-                    !hasImage &&
-                    !hasVideo &&
-                    !hasFile && (
-                      <View className={isVisualMedia || hasFile ? "px-3 py-2" : ""}>
-                        <LinkifiedChatText
-                          text={captionPlainText}
-                          className={`text-[15px] leading-[22px] ${isOwn && !isVisualMedia ? "text-white" : "text-foreground"}`}
-                          linkClassName={`font-bold underline ${isOwn && !isVisualMedia ? "text-white" : "text-primary"}`}
+                    {message.type === "poll" && mergedThreadPoll && groupExtras ? (
+                      <View className="mt-1 w-full min-w-[260px] max-w-full self-stretch">
+                        <PollMessageInlineCard
+                          poll={mergedThreadPoll}
+                          isOwn={isOwn}
+                          isJumpHighlighted={isJumpHighlighted}
+                          onOpen={() => groupExtras.onOpenPollVote(mergedThreadPoll.pollId)}
                         />
                       </View>
+                    ) : (message.type === "poll" || message.type === "schedule") &&
+                      structuredPollSchedule ? (
+                      <ChatJumpHighlightWrap active={isJumpHighlighted} borderRadius={16}>
+                        <View
+                          className={
+                            isOwn
+                              ? "rounded-lg bg-white/10 px-2 py-1"
+                              : "rounded-lg bg-muted/40 px-2 py-1"
+                          }
+                        >
+                          <Text
+                            className={`text-[13px] font-bold ${isOwn ? "text-white" : "text-foreground"}`}
+                          >
+                            {structuredPollSchedule.title}
+                          </Text>
+                          {structuredPollSchedule.body ? (
+                            <Text
+                              className={`mt-1 text-[12px] ${isOwn ? "text-white/80" : "text-muted-foreground"}`}
+                            >
+                              {structuredPollSchedule.body}
+                            </Text>
+                          ) : null}
+                        </View>
+                      </ChatJumpHighlightWrap>
+                    ) : null}
+
+                    {isEmojiMessage && hasCaption ? (
+                      <View className={isVisualMedia ? "px-3 py-2" : ""}>
+                        <Text
+                          className={`text-[34px] leading-[42px] ${isOwn ? "text-white" : "text-foreground"}`}
+                        >
+                          {captionPlainText}
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    {joinLinkPayload ? (
+                      <View className="py-0.5">
+                        <GroupJoinLinkCard payload={joinLinkPayload} />
+                      </View>
+                    ) : null}
+
+                    {!isEmojiMessage &&
+                      hasCaption &&
+                      !joinLinkPayload &&
+                      !hasImage &&
+                      !hasVideo &&
+                      !hasFile && (
+                        <View className={isVisualMedia || hasFile ? "px-3 py-2" : ""}>
+                          <LinkifiedChatText
+                            text={captionPlainText}
+                            className={`text-[15px] leading-[22px] ${isOwn && !isVisualMedia ? "text-white" : "text-foreground"}`}
+                            linkClassName={`font-bold underline ${isOwn && !isVisualMedia ? "text-white" : "text-primary"}`}
+                          />
+                        </View>
+                      )}
+
+                    {plainTextFallback ? (
+                      <Text
+                        className={`text-[14px] ${isOwn ? "text-white/90" : "text-muted-foreground"}`}
+                      >
+                        {plainTextFallback}
+                      </Text>
+                    ) : null}
+
+                    {isEmojiMessage && !hasCaption && fallbackLabel ? (
+                      <Text
+                        className={`text-[15px] ${isOwn ? "text-white/80" : "text-muted-foreground"}`}
+                      >
+                        {fallbackLabel}
+                      </Text>
+                    ) : null}
+
+                    {message.isEdited && (
+                      <Text
+                        className={`mt-0.5 text-[10px] ${isOwn && !isVisualMedia && !hasFile ? "text-white/50" : "text-muted-foreground/60"}`}
+                      >
+                        (đã sửa)
+                      </Text>
                     )}
-
-                  {plainTextFallback ? (
-                    <Text
-                      className={`text-[14px] ${isOwn ? "text-white/90" : "text-muted-foreground"}`}
-                    >
-                      {plainTextFallback}
-                    </Text>
-                  ) : null}
-
-                  {isEmojiMessage && !hasCaption && fallbackLabel ? (
-                    <Text
-                      className={`text-[15px] ${isOwn ? "text-white/80" : "text-muted-foreground"}`}
-                    >
-                      {fallbackLabel}
-                    </Text>
-                  ) : null}
-
-                  {message.isEdited && (
-                    <Text
-                      className={`mt-0.5 text-[10px] ${isOwn && !isVisualMedia && !hasFile ? "text-white/50" : "text-muted-foreground/60"}`}
-                    >
-                      (đã sửa)
-                    </Text>
-                  )}
-                </View>
+                  </View>
+                </ChatJumpHighlightWrap>
 
                 {hasReactions && <ReactionsRow reactions={message.reactions} isOwn={isOwn} />}
               </View>

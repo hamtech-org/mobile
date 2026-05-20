@@ -108,6 +108,13 @@ export interface IMessage {
   createdAt: string;
 }
 
+/** Cursor-based paginated message response (oldest → newest). */
+export interface IMessagePage {
+  items: IMessage[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
 export interface IGroupMember {
   userId: string;
   displayName: string;

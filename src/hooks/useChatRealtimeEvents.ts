@@ -352,6 +352,24 @@ export function useChatRealtimeEvents({
         }),
       );
 
+      if (
+        msg.type !== "system" &&
+        viewerId &&
+        msg.senderId !== viewerId &&
+        msg.conversationId !== activeConvRef.current
+      ) {
+        const convList = conversationApi.endpoints.getConversations.select(undefined)(
+          store.getState(),
+        )?.data as IConversation[] | undefined;
+        const conv = convList?.find((c) => c.conversationId === msg.conversationId);
+        const muted = Boolean(conv?.isMuted);
+        if (!muted) {
+          const sender = msg.senderDisplayName?.trim() || "Tin nhắn mới";
+          const preview = listPreview.length > 80 ? `${listPreview.slice(0, 77)}…` : listPreview;
+          toast.info(`${sender}: ${preview}`, 4000);
+        }
+      }
+
       if (msg.type === "system") {
         const banner = bannerFromSystemMessage(msg);
         if (banner && msg.conversationId === activeConvRef.current) {
@@ -697,7 +715,7 @@ export function useChatRealtimeEvents({
         applyRejoinedGroupMemberRealtime(dispatch, gid, joinedAt);
       }
       patchConversationMemberCount(gid, payload);
-      invalidateGroupData(gid, ["members", "requests"]);
+      invalidateGroupData(gid, ["members", "requests", "tasks"]);
       prefetchGroupMembers(gid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
       emitFrameBanner(
@@ -717,7 +735,7 @@ export function useChatRealtimeEvents({
         dispatch(markGroupMemberRemovedRealtime({ conversationId: gid, userId: leftUserId }));
       }
       patchConversationMemberCount(gid, payload);
-      invalidateGroupData(gid, ["members"]);
+      invalidateGroupData(gid, ["members", "tasks"]);
       prefetchGroupMembers(gid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
       const leftAt = typeof payload.leftAt === "string" ? payload.leftAt : undefined;
@@ -742,7 +760,7 @@ export function useChatRealtimeEvents({
         applyKickedFromGroupRealtime(dispatch, gid);
       }
       patchConversationMemberCount(gid, payload);
-      invalidateGroupData(gid, ["members"]);
+      invalidateGroupData(gid, ["members", "tasks"]);
       prefetchGroupMembers(gid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
       emitFrameBanner(

@@ -10,6 +10,7 @@ import {
 } from "lucide-react-native";
 
 import { ChatFileTypeBadge } from "@/components/chat/ChatFileTypeBadge";
+import { chatListCardStyles } from "@/components/chat/chatListCardStyles";
 import type { IMessage } from "@/types/chat.types";
 import { resolveChatFileBubbleMeta } from "@/utils/chatMediaDisplay";
 import {
@@ -26,10 +27,6 @@ import {
 
 const Z = {
   primary: "#0068FF",
-  text: "#111827",
-  sub: "#6B7280",
-  bg: "#FFFFFF",
-  border: "rgba(0,0,0,0.06)",
 };
 
 const KIND_ICONS: Record<PinnedMessageKind, typeof MessageSquare> = {
@@ -72,38 +69,38 @@ export function BulletinPinnedMessageCard({
       onPress={onPress}
       disabled={disabled}
       style={({ pressed }) => [
-        styles.card,
-        pressed && !disabled ? styles.cardPressed : null,
+        chatListCardStyles.pressable,
+        pressed && !disabled ? chatListCardStyles.pressablePressed : null,
         disabled ? styles.cardDisabled : null,
       ]}
     >
-      <View style={styles.row}>
-        <View style={[styles.iconWrap, kind === "file" ? styles.iconWrapFile : null]}>
+      <View style={[chatListCardStyles.card, styles.row]}>
+        <View style={styles.iconWrap}>
           {kind === "file" && fileMeta ? (
             <ChatFileTypeBadge
               fileName={fileMeta.fileName}
               mimeType={fileMeta.mimeType}
-              size="sm"
+              size="list"
             />
           ) : (
             <View style={[styles.kindCircle, { backgroundColor: accent }]}>
-              <Icon size={18} color="#fff" strokeWidth={2} />
+              <Icon size={16} color="#fff" strokeWidth={2.25} />
             </View>
           )}
           <View style={styles.pinBadge}>
-            <Pin size={10} color={Z.primary} strokeWidth={2.5} />
+            <Pin size={9} color={Z.primary} strokeWidth={2.5} />
           </View>
         </View>
 
         <View style={styles.body}>
-          <Text style={styles.title} numberOfLines={2}>
+          <Text style={chatListCardStyles.title} numberOfLines={2}>
             {title || "…"}
           </Text>
-          <Text style={styles.meta} numberOfLines={1}>
+          <Text style={chatListCardStyles.meta} numberOfLines={1}>
             {meta}
           </Text>
           {showPreview ? (
-            <Text style={styles.preview} numberOfLines={2}>
+            <Text style={chatListCardStyles.preview} numberOfLines={2}>
               {preview}
             </Text>
           ) : null}
@@ -125,83 +122,51 @@ export function BulletinPinnedMessageCard({
 }
 
 const styles = StyleSheet.create({
-  card: {
-    borderWidth: 1,
-    borderColor: Z.border,
-    borderRadius: 16,
-    backgroundColor: Z.bg,
-    padding: 12,
-    marginBottom: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 3,
-    elevation: 1,
+  cardDisabled: {
+    opacity: 0.85,
   },
-  cardPressed: { opacity: 0.92 },
-  cardDisabled: { opacity: 0.85 },
   row: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: 10,
   },
   iconWrap: {
-    width: 36,
-    height: 36,
-  },
-  iconWrapFile: {
+    width: 40,
     height: 40,
+    marginRight: 12,
+    flexShrink: 0,
   },
   kindCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
   },
   pinBadge: {
     position: "absolute",
-    top: -2,
-    left: -2,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: "#fff",
+    top: -4,
+    left: -4,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: Z.border,
+    borderColor: "#D1D5DB",
   },
   body: {
     flex: 1,
     minWidth: 0,
-    gap: 3,
-  },
-  title: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: Z.text,
-    lineHeight: 20,
-  },
-  meta: {
-    fontSize: 12,
-    fontWeight: "500",
-    color: Z.sub,
-  },
-  preview: {
-    marginTop: 2,
-    fontSize: 13,
-    fontWeight: "500",
-    color: "#374151",
-    lineHeight: 18,
   },
   thumbWrap: {
-    width: 48,
-    height: 48,
+    width: 44,
+    height: 44,
     borderRadius: 8,
     overflow: "hidden",
-    backgroundColor: "#e2e8f0",
+    backgroundColor: "#E5E7EB",
     flexShrink: 0,
+    marginLeft: 10,
   },
   thumb: { width: "100%", height: "100%" },
   videoOverlay: {

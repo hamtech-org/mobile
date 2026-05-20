@@ -16,6 +16,9 @@ export {
 
 export {
   useGetMessagesQuery,
+  useGetMessagesPaginatedQuery,
+  useLazyGetMessagesPaginatedQuery,
+  useGetMessageGalleryQuery,
   useSendMessageMutation,
   useEditMessageMutation,
   useDeleteMessageMutation,
@@ -78,7 +81,7 @@ export type {
   PinMessageRequest,
   ReactMessageRequest,
 } from "./endpoints/messageApi";
-export { CHAT_MESSAGES_QUERY_LIMIT } from "./endpoints/messageApi";
+export { CHAT_MESSAGES_QUERY_LIMIT, MOBILE_PAGINATED_LIMIT } from "./endpoints/messageApi";
 export type {
   UpdateGroupRequest,
   AddMembersRequest,

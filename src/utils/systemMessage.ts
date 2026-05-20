@@ -92,6 +92,7 @@ export function preprocessSystemPlainText(
     senderId: message.senderId,
     currentUserId: ctx.currentUserId,
     senderDisplayName: message.senderDisplayName,
+    isOwn: ctx.isOwn,
   });
   if (legacyProfile) return legacyProfile;
 
@@ -133,6 +134,7 @@ export function buildSystemBubbleView(
       senderId: message.senderId,
       currentUserId: ctx.currentUserId,
       senderDisplayName: message.senderDisplayName,
+      isOwn: ctx.isOwn,
     });
   if (groupLine) {
     return { variant: "text", text: groupLine, rowIcon: systemRowIconForPlainText(groupLine) };
