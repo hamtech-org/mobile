@@ -9,6 +9,7 @@ const POST_TYPES: NotificationType[] = [
   "reel_new",
   "reel_comment",
   "comment_reply",
+  "live_started",
 ];
 
 export function filterNotifications(

@@ -51,6 +51,11 @@ export function useSocialSocketEvents(): void {
       toast.info("Có reel mới từ người bạn theo dõi", 4000);
     };
 
+    const onLiveStarted = (data: { title?: string }) => {
+      const label = data.title?.trim() ? `Live: ${data.title}` : "Bạn bè đang phát live";
+      toast.info(label, 4000);
+    };
+
     const onNewDeviceLogin = (data: { ipAddress?: string }) => {
       if (newDeviceOpen) return;
       setNewDeviceOpen(true);
@@ -68,6 +73,7 @@ export function useSocialSocketEvents(): void {
     socket.on("friendRequest:new", onFriendRequestNew);
     socket.on("friendRequest:accepted", onFriendAccepted);
     socket.on("newsfeed:reel_new", onReelNew);
+    socket.on("live:started", onLiveStarted);
     socket.on("auth:new_device_login", onNewDeviceLogin);
 
     return () => {
@@ -76,6 +82,7 @@ export function useSocialSocketEvents(): void {
       socket.off("friendRequest:new", onFriendRequestNew);
       socket.off("friendRequest:accepted", onFriendAccepted);
       socket.off("newsfeed:reel_new", onReelNew);
+      socket.off("live:started", onLiveStarted);
       socket.off("auth:new_device_login", onNewDeviceLogin);
     };
   }, [dispatch, newDeviceOpen, socket]);
