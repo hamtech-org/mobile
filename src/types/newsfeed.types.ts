@@ -24,6 +24,8 @@ export interface ISharedPostInfo {
 export interface IPost {
   postId: string;
   authorId: string;
+  groupId?: string;
+  communityId?: string;
   content: string;
   mediaUrls: string[];
   type: PostType;
