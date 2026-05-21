@@ -59,7 +59,7 @@ function CategoryChip({
   active,
   onPress,
 }: {
-  category: CommunityCategory;
+  category: CommunityCategory | "all";
   active: boolean;
   onPress: () => void;
 }) {
@@ -75,7 +75,7 @@ function CategoryChip({
           active ? "font-semibold text-primary-foreground" : "font-semibold text-foreground"
         }
       >
-        {CATEGORY_LABEL[category]}
+        {category === "all" ? "Tất cả" : CATEGORY_LABEL[category] || category}
       </Text>
     </Pressable>
   );
@@ -128,14 +128,6 @@ function CommunityCard({ item }: { item: ICommunity }) {
             </Text>
             <Text className="text-xs text-muted-foreground">bài viết</Text>
           </View>
-          <View className="flex-1 rounded-xl bg-muted/60 px-3 py-2">
-            <Text className="font-bold text-foreground">
-              {item.type === "private" ? "Riêng" : "Mở"}
-            </Text>
-            <Text className="text-xs text-muted-foreground">
-              {item.joinPolicy === "approval" ? "cần duyệt" : "tham gia"}
-            </Text>
-          </View>
         </View>
       </View>
     </Pressable>
@@ -180,7 +172,6 @@ function CommunitySkeleton() {
         <View className="flex-row gap-2">
           <View className="h-12 flex-1 rounded-xl bg-muted/60" />
           <View className="h-12 flex-1 rounded-xl bg-muted/60" />
-          <View className="h-12 flex-1 rounded-xl bg-muted/60" />
         </View>
       </View>
     </Animated.View>
@@ -189,7 +180,7 @@ function CommunitySkeleton() {
 
 export default function CommunitiesScreen() {
   const { primary, foreground, muted } = useIconColors();
-  const [category, setCategory] = useState<CommunityCategory>("general");
+  const [category, setCategory] = useState<CommunityCategory | undefined>(undefined);
   const [modalOpen, setModalOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -385,15 +376,15 @@ export default function CommunitiesScreen() {
 
               <FlatList
                 horizontal
-                data={COMMUNITY_CATEGORIES}
+                data={["all", ...COMMUNITY_CATEGORIES]}
                 keyExtractor={(item) => item}
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={{ gap: 8 }}
                 renderItem={({ item }) => (
                   <CategoryChip
                     category={item}
-                    active={category === item}
-                    onPress={() => setCategory(item)}
+                    active={(item === "all" ? undefined : item) === category}
+                    onPress={() => setCategory(item === "all" ? undefined : item)}
                   />
                 )}
               />
@@ -433,7 +424,9 @@ export default function CommunitiesScreen() {
                 </View>
               )}
 
-              <Text className="font-bold text-foreground">{CATEGORY_LABEL[category]}</Text>
+              <Text className="font-bold text-foreground">
+                {category ? CATEGORY_LABEL[category] || category : "Tất cả chủ đề"}
+              </Text>
             </View>
           ) : (
             <View className="mb-2">
