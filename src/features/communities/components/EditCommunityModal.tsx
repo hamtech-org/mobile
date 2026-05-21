@@ -48,6 +48,9 @@ export function EditCommunityModal({ community, open, onClose }: EditCommunityMo
   const [type, setType] = useState<CommunityType>(community.type);
   const [joinPolicy, setJoinPolicy] = useState<CommunityJoinPolicy>(community.joinPolicy);
   const [rules, setRules] = useState<ICommunityRule[]>(community.rules ?? []);
+  const [isPostApprovalRequired, setIsPostApprovalRequired] = useState(
+    community.isPostApprovalRequired ?? false,
+  );
 
   const [avatar, setAvatar] = useState(community.avatar ?? "");
   const [coverUrl, setCoverUrl] = useState(community.coverUrl ?? "");
@@ -64,6 +67,7 @@ export function EditCommunityModal({ community, open, onClose }: EditCommunityMo
       setType(community.type);
       setJoinPolicy(community.joinPolicy);
       setRules(community.rules ?? []);
+      setIsPostApprovalRequired(community.isPostApprovalRequired ?? false);
     }
   }, [community, open]);
 
@@ -128,6 +132,7 @@ export function EditCommunityModal({ community, open, onClose }: EditCommunityMo
           category,
           type,
           joinPolicy,
+          isPostApprovalRequired,
           rules: validRules.length ? validRules : undefined,
         },
       }).unwrap();
@@ -385,6 +390,59 @@ export function EditCommunityModal({ community, open, onClose }: EditCommunityMo
                     </Text>
                     <Text className="text-xs leading-normal text-muted-foreground">
                       Người dùng gửi yêu cầu tham gia và cần quản trị viên duyệt để vào nhóm.
+                    </Text>
+                  </View>
+                </Pressable>
+              </View>
+
+              <Text className="font-semibold text-foreground">Kiểm duyệt bài viết</Text>
+              <View className="gap-3">
+                <Pressable
+                  onPress={() => setIsPostApprovalRequired(false)}
+                  className={`flex-row items-start gap-3 rounded-2xl border p-4 active:opacity-90 ${
+                    !isPostApprovalRequired
+                      ? "border-primary bg-primary/5"
+                      : "border-border bg-card"
+                  }`}
+                >
+                  <View
+                    className={`rounded-lg p-2 ${!isPostApprovalRequired ? "bg-primary/10" : "bg-muted"}`}
+                  >
+                    <Users size={18} color={!isPostApprovalRequired ? primary : muted} />
+                  </View>
+                  <View className="flex-1 gap-1">
+                    <Text
+                      className={`text-sm font-bold ${!isPostApprovalRequired ? "text-primary" : "text-foreground"}`}
+                    >
+                      Đăng trực tiếp
+                    </Text>
+                    <Text className="text-xs leading-normal text-muted-foreground">
+                      Thành viên có thể đăng bài viết thảo luận ngay lập tức mà không cần kiểm
+                      duyệt.
+                    </Text>
+                  </View>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => setIsPostApprovalRequired(true)}
+                  className={`flex-row items-start gap-3 rounded-2xl border p-4 active:opacity-90 ${
+                    isPostApprovalRequired ? "border-primary bg-primary/5" : "border-border bg-card"
+                  }`}
+                >
+                  <View
+                    className={`rounded-lg p-2 ${isPostApprovalRequired ? "bg-primary/10" : "bg-muted"}`}
+                  >
+                    <ShieldCheck size={18} color={isPostApprovalRequired ? primary : muted} />
+                  </View>
+                  <View className="flex-1 gap-1">
+                    <Text
+                      className={`text-sm font-bold ${isPostApprovalRequired ? "text-primary" : "text-foreground"}`}
+                    >
+                      Duyệt trước khi đăng
+                    </Text>
+                    <Text className="text-xs leading-normal text-muted-foreground">
+                      Bài viết từ thành viên cần được quản trị viên duyệt trước khi hiển thị cho mọi
+                      người.
                     </Text>
                   </View>
                 </Pressable>

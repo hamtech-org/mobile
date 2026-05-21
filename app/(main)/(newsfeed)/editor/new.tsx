@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   Alert,
   Image,
@@ -36,6 +36,7 @@ import {
   Pencil,
 } from "lucide-react-native";
 import { extractHashtags } from "@/utils/extractHashtags";
+import { useGetCommunityQuery } from "@/store/api/communityApi";
 
 const MAX_MEDIA = 10;
 
@@ -82,6 +83,14 @@ export default function NewPostEditorScreen() {
   const [mediaItems, setMediaItems] = useState<MobileMediaItem[]>([]);
   const [isMoreOpen, setIsMoreOpen] = useState(false);
   const [isMediaManagerOpen, setIsMediaManagerOpen] = useState(false);
+
+  const { data: community } = useGetCommunityQuery(groupId || "", { skip: !groupId });
+
+  useEffect(() => {
+    if (groupId && community) {
+      setVisibility(community.type === "public" ? "public" : "friends");
+    }
+  }, [groupId, community]);
 
   const postType: "text" | "image" = mediaItems.length > 0 ? "image" : "text";
   const previewUris = mediaItems.map((item) => (item.kind === "local" ? item.localUri : item.url));
@@ -202,7 +211,7 @@ export default function NewPostEditorScreen() {
 
   const PrivacyIcon = visibility === "public" ? Globe : visibility === "friends" ? Users : Lock;
   const privacyText =
-    visibility === "public" ? "Công khai" : visibility === "friends" ? "Bạn bè" : "Chỉ mình tôi";
+    visibility === "public" ? "Công khai" : groupId ? "Thành viên nhóm" : "Bạn bè";
 
   const handleRemoveMedia = (index: number) => {
     setMediaItems((prev) => prev.filter((_, i) => i !== index));
@@ -211,8 +220,9 @@ export default function NewPostEditorScreen() {
   return (
     <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
         className="flex-1"
+        keyboardVerticalOffset={Platform.OS === "ios" ? 64 : 0}
       >
         {/* Header */}
         <View className="flex-row items-center justify-between border-b border-border/40 px-4 py-3">
@@ -250,15 +260,31 @@ export default function NewPostEditorScreen() {
             </View>
             <View>
               <Text className="text-[15px] font-bold">{currentUser?.displayName}</Text>
+              {groupId && (
+                <Text className="mt-0.5 text-[13px] font-medium text-slate-500">
+                  Đăng vào:{" "}
+                  <Text className="font-bold text-blue-600">{community?.name || "Cộng đồng"}</Text>
+                </Text>
+              )}
               <View className="mt-1 flex-row items-center gap-2">
                 <Pressable
-                  onPress={() => setIsMoreOpen(true)}
+                  onPress={() => {
+                    if (groupId) {
+                      Alert.alert(
+                        "Quyền riêng tư cố định",
+                        "Quyền riêng tư được đặt theo cấu hình của nhóm và không thể thay đổi.",
+                      );
+                      return;
+                    }
+                    setIsMoreOpen(true);
+                  }}
                   className="flex-row items-center gap-1.5 rounded-md bg-blue-100 px-2.5 py-1 dark:bg-blue-900/40"
                 >
                   <PrivacyIcon size={12} color="#3b82f6" />
                   <Text className="text-xs font-semibold text-blue-700 dark:text-blue-300">
                     {privacyText}
                   </Text>
+                  {groupId && <Lock size={10} color="#3b82f6" />}
                 </Pressable>
               </View>
             </View>
@@ -395,9 +421,11 @@ export default function NewPostEditorScreen() {
             <Pressable className="p-2" disabled={busy}>
               <MapPin size={24} color="#ef4444" />
             </Pressable>
-            <Pressable className="p-2" onPress={() => setIsMoreOpen(true)} disabled={busy}>
-              <MoreHorizontal size={24} color="#9ca3af" />
-            </Pressable>
+            {!groupId && (
+              <Pressable className="p-2" onPress={() => setIsMoreOpen(true)} disabled={busy}>
+                <MoreHorizontal size={24} color="#9ca3af" />
+              </Pressable>
+            )}
           </View>
         </View>
       </KeyboardAvoidingView>

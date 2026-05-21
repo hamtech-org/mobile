@@ -43,7 +43,9 @@ import {
   useResolveCommunityRequestMutation,
   useTransferCommunityOwnerMutation,
   useUpdateCommunityMemberRoleMutation,
+  useGetPendingPostsQuery,
 } from "@/store/api/communityApi";
+import { PendingPostsModal } from "./PendingPostsModal";
 import {
   type CommunityCategory,
   type CommunityMemberRole,
@@ -73,6 +75,7 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
   const [selectedMember, setSelectedMember] = useState<ICommunityMember | null>(null);
   const [membersModalOpen, setMembersModalOpen] = useState(false);
   const [requestsModalOpen, setRequestsModalOpen] = useState(false);
+  const [pendingPostsModalOpen, setPendingPostsModalOpen] = useState(false);
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
   const [reportVisible, setReportVisible] = useState(false);
 
@@ -91,6 +94,9 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
   const manager = canManage(community?.viewerRole);
   const owner = community?.viewerRole === "owner";
   const { data: requests } = useGetCommunityRequestsQuery(groupId, { skip: !groupId || !manager });
+  const { data: pendingPosts } = useGetPendingPostsQuery(groupId, {
+    skip: !groupId || !manager || !community?.isPostApprovalRequired,
+  });
 
   const [joinCommunity, { isLoading: joining }] = useJoinCommunityMutation();
   const [leaveCommunity] = useLeaveCommunityMutation();
@@ -102,17 +108,21 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
 
   const [profilesMap, setProfilesMap] = useState<Record<string, FriendListItem>>({});
   const [postMultipleUsers] = usePostMultipleUsersMutation();
-
-  const memberUserIds = members?.map((m) => m.userId) ?? [];
-  const requestUserIds = requests?.map((r) => r.userId) ?? [];
-  const allUserIds = useMemo(
-    () => Array.from(new Set([...memberUserIds, ...requestUserIds])),
-    [memberUserIds, requestUserIds],
-  );
+  const fetchedIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    const missingIds = allUserIds.filter((id) => !profilesMap[id]);
+    const ids: string[] = [];
+    if (members) {
+      members.forEach((m) => ids.push(m.userId));
+    }
+    if (requests) {
+      requests.forEach((r) => ids.push(r.userId));
+    }
+    const uniqueIds = Array.from(new Set(ids));
+    const missingIds = uniqueIds.filter((id) => !fetchedIdsRef.current.has(id));
+
     if (missingIds.length > 0) {
+      missingIds.forEach((id) => fetchedIdsRef.current.add(id));
       postMultipleUsers({ userIds: missingIds })
         .unwrap()
         .then((users) => {
@@ -128,9 +138,10 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
         })
         .catch((err) => {
           console.error("Batch fetch members error:", err);
+          missingIds.forEach((id) => fetchedIdsRef.current.delete(id));
         });
     }
-  }, [allUserIds, postMultipleUsers]);
+  }, [members, requests, postMultipleUsers]);
 
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
@@ -340,6 +351,19 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
                   <Text className="text-destructive-foreground text-[9px] font-bold">
                     {requests.length}
                   </Text>
+                </View>
+              )}
+            </Pressable>
+          )}
+          {manager && community.isPostApprovalRequired && (
+            <Pressable
+              onPress={() => setPendingPostsModalOpen(true)}
+              className="relative h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/25 backdrop-blur-md active:scale-90"
+            >
+              <FileText size={18} color="#fff" />
+              {!!pendingPosts?.length && (
+                <View className="absolute -right-1 -top-1 h-4 min-w-4 items-center justify-center rounded-full bg-emerald-500 px-1">
+                  <Text className="text-[9px] font-bold text-white">{pendingPosts.length}</Text>
                 </View>
               )}
             </Pressable>
@@ -707,6 +731,15 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
         community={community}
         open={editOpen}
         onClose={() => setEditOpen(false)}
+      />
+
+      {/* Pending Posts Modal */}
+      <PendingPostsModal
+        open={pendingPostsModalOpen}
+        onClose={() => setPendingPostsModalOpen(false)}
+        groupId={groupId}
+        mutedColor={muted}
+        foregroundColor={foreground}
       />
     </SafeAreaView>
   );
