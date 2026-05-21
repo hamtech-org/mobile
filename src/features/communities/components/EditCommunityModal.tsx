@@ -1,9 +1,10 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -12,7 +13,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
-import { Camera, BookOpen, Globe2, Lock, Users, ShieldCheck } from "lucide-react-native";
+import { Camera, Plus, BookOpen, Globe2, Lock, Users, ShieldCheck, X } from "lucide-react-native";
 
 import { useIconColors } from "@/hooks/useIconColors";
 import { useUpdateCommunityMutation } from "@/store/api/communityApi";
@@ -26,6 +27,7 @@ import {
   type CommunityType,
   type CommunityJoinPolicy,
   type ICommunity,
+  type ICommunityRule,
 } from "@/types/community.types";
 import { CATEGORY_LABEL } from "../constants";
 
@@ -45,8 +47,7 @@ export function EditCommunityModal({ community, open, onClose }: EditCommunityMo
   const [category, setCategory] = useState<CommunityCategory>(community.category);
   const [type, setType] = useState<CommunityType>(community.type);
   const [joinPolicy, setJoinPolicy] = useState<CommunityJoinPolicy>(community.joinPolicy);
-  const [ruleTitle, setRuleTitle] = useState(community.rules?.[0]?.title ?? "");
-  const [ruleDescription, setRuleDescription] = useState(community.rules?.[0]?.description ?? "");
+  const [rules, setRules] = useState<ICommunityRule[]>(community.rules ?? []);
 
   const [avatar, setAvatar] = useState(community.avatar ?? "");
   const [coverUrl, setCoverUrl] = useState(community.coverUrl ?? "");
@@ -62,21 +63,9 @@ export function EditCommunityModal({ community, open, onClose }: EditCommunityMo
       setCoverUrl(community.coverUrl ?? "");
       setType(community.type);
       setJoinPolicy(community.joinPolicy);
-      setRuleTitle(community.rules?.[0]?.title ?? "");
-      setRuleDescription(community.rules?.[0]?.description ?? "");
+      setRules(community.rules ?? []);
     }
   }, [community, open]);
-
-  const rules = useMemo(() => {
-    if (!ruleTitle.trim() || !ruleDescription.trim()) return undefined;
-    return [
-      {
-        id: community.rules?.[0]?.id ?? "rule-1",
-        title: ruleTitle.trim(),
-        description: ruleDescription.trim(),
-      },
-    ];
-  }, [community.rules, ruleDescription, ruleTitle]);
 
   const pickImage = async (target: "avatar" | "cover") => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -124,6 +113,10 @@ export function EditCommunityModal({ community, open, onClose }: EditCommunityMo
 
   const submit = async (): Promise<void> => {
     if (!name.trim()) return;
+    const validRules = rules
+      .map((r) => ({ id: r.id, title: r.title.trim(), description: r.description.trim() }))
+      .filter((r) => r.title && r.description);
+
     try {
       await updateCommunity({
         groupId: community.groupId,
@@ -135,7 +128,7 @@ export function EditCommunityModal({ community, open, onClose }: EditCommunityMo
           category,
           type,
           joinPolicy,
-          rules,
+          rules: validRules.length ? validRules : undefined,
         },
       }).unwrap();
       toast.success("Đã cập nhật cộng đồng");
@@ -147,7 +140,7 @@ export function EditCommunityModal({ community, open, onClose }: EditCommunityMo
 
   return (
     <Modal visible={open} animationType="slide">
-      <SafeAreaView className="flex-1 bg-background" edges={["top", "bottom"]}>
+      <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
         <View className="flex-row items-center justify-between border-b border-border/40 px-4 py-3">
           <Pressable onPress={onClose} className="rounded-xl px-3 py-2 active:opacity-70">
             <Text className="font-semibold text-foreground">Hủy</Text>
@@ -161,11 +154,16 @@ export function EditCommunityModal({ community, open, onClose }: EditCommunityMo
             <Text className="font-semibold text-primary-foreground">Lưu</Text>
           </Pressable>
         </View>
-        <FlatList
-          data={[0]}
-          keyExtractor={(item) => String(item)}
-          contentContainerStyle={{ padding: 16, gap: 16 }}
-          renderItem={() => (
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior="padding"
+          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 24}
+        >
+          <ScrollView
+            contentContainerStyle={{ padding: 16, gap: 16 }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
             <View className="gap-4">
               <TextInput
                 value={name}
@@ -393,40 +391,88 @@ export function EditCommunityModal({ community, open, onClose }: EditCommunityMo
               </View>
 
               <View className="gap-3 rounded-2xl border border-l-4 border-border/60 border-l-primary bg-muted/20 p-4">
-                <View className="flex-row items-center gap-1.5">
-                  <BookOpen size={16} color={primary} />
-                  <Text className="text-xs font-bold uppercase tracking-wider text-foreground">
-                    Nội quy đầu tiên của nhóm
-                  </Text>
+                <View className="flex-row items-center justify-between">
+                  <View className="flex-row items-center gap-1.5">
+                    <BookOpen size={16} color={primary} />
+                    <Text className="text-xs font-bold uppercase tracking-wider text-foreground">
+                      Nội quy cộng đồng ({rules.length})
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={() =>
+                      setRules([...rules, { id: `rule-${Date.now()}`, title: "", description: "" }])
+                    }
+                    className="flex-row items-center gap-1 rounded-xl bg-primary/10 px-2.5 py-1.5 active:opacity-75"
+                  >
+                    <Plus size={14} color={primary} />
+                    <Text className="text-xs font-semibold text-primary">Thêm nội quy</Text>
+                  </Pressable>
                 </View>
-                <View className="mt-1 gap-2">
-                  <Text className="text-[11px] font-semibold text-muted-foreground">
-                    Tiêu đề nội quy
+
+                {rules.length === 0 ? (
+                  <Text className="py-2 text-center text-xs italic text-muted-foreground">
+                    Chưa có nội quy nào. Hãy thêm nội quy để thành viên tuân thủ.
                   </Text>
-                  <TextInput
-                    value={ruleTitle}
-                    onChangeText={setRuleTitle}
-                    placeholder="Ví dụ: Tôn trọng lẫn nhau"
-                    placeholderTextColor={muted}
-                    className="rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground"
-                  />
-                </View>
-                <View className="gap-2">
-                  <Text className="text-[11px] font-semibold text-muted-foreground">
-                    Mô tả nội quy
-                  </Text>
-                  <TextInput
-                    value={ruleDescription}
-                    onChangeText={setRuleDescription}
-                    placeholder="Ví dụ: Không dùng từ ngữ xúc phạm..."
-                    placeholderTextColor={muted}
-                    className="rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground"
-                  />
-                </View>
+                ) : (
+                  <View className="gap-3">
+                    {rules.map((rule, index) => (
+                      <View
+                        key={rule.id}
+                        className="gap-3 rounded-xl border border-border/40 bg-background p-3"
+                      >
+                        <View className="flex-row items-center justify-between">
+                          <Text className="text-[11px] font-bold uppercase text-primary">
+                            Nội quy #{index + 1}
+                          </Text>
+                          <Pressable
+                            onPress={() => setRules(rules.filter((r) => r.id !== rule.id))}
+                            className="rounded-lg p-1 active:bg-destructive/10"
+                          >
+                            <X size={16} color="#ef4444" />
+                          </Pressable>
+                        </View>
+
+                        <View className="gap-1.5">
+                          <Text className="text-[11px] font-semibold text-muted-foreground">
+                            Tiêu đề nội quy
+                          </Text>
+                          <TextInput
+                            value={rule.title}
+                            onChangeText={(text) => {
+                              const newRules = [...rules];
+                              newRules[index] = { ...newRules[index], title: text };
+                              setRules(newRules);
+                            }}
+                            placeholder="Ví dụ: Tôn trọng lẫn nhau"
+                            placeholderTextColor={muted}
+                            className="rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground"
+                          />
+                        </View>
+
+                        <View className="gap-1.5">
+                          <Text className="text-[11px] font-semibold text-muted-foreground">
+                            Mô tả nội quy
+                          </Text>
+                          <TextInput
+                            value={rule.description}
+                            onChangeText={(text) => {
+                              const newRules = [...rules];
+                              newRules[index] = { ...newRules[index], description: text };
+                              setRules(newRules);
+                            }}
+                            placeholder="Ví dụ: Không dùng từ ngữ xúc phạm..."
+                            placeholderTextColor={muted}
+                            className="rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground"
+                          />
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
               </View>
             </View>
-          )}
-        />
+          </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </Modal>
   );
