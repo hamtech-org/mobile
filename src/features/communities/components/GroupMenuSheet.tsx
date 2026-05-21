@@ -6,7 +6,7 @@ import { type ICommunity } from "@/types/community.types";
 import { ActionRow } from "./ActionRow";
 
 export interface GroupMenuSheetProps {
-  sheetRef: React.RefObject<BottomSheet>;
+  sheetRef: React.RefObject<any>;
   community: ICommunity;
   isMember: boolean;
   owner: boolean;
@@ -30,7 +30,13 @@ export function GroupMenuSheet({
   onReportPress,
   renderBackdrop,
 }: GroupMenuSheetProps) {
-  const menuSnapPoints = useMemo(() => ["35%"], []);
+  // Dynamically compute snap points based on the number of action rows.
+  // 1 row -> 25% (very compact)
+  // 2 rows -> 32%
+  const menuSnapPoints = useMemo(() => {
+    const itemCount = (isMember && !owner ? 1 : 0) + (!owner ? 1 : 0) + (owner ? 1 : 0);
+    return itemCount > 1 ? ["32%"] : ["25%"];
+  }, [isMember, owner]);
 
   return (
     <BottomSheet
@@ -53,42 +59,47 @@ export function GroupMenuSheet({
         </View>
 
         <View className="mt-2 gap-1">
-          {isMember && !owner && (
-            <ActionRow
-              icon={<UserMinus size={20} color={destructiveColor} />}
-              label="Rời cộng đồng"
-              hint="Bạn sẽ không thể đăng bài và xem nội dung riêng tư"
-              destructive
-              onPress={() => {
-                sheetRef.current?.close();
-                confirmLeave();
-              }}
-            />
-          )}
-          {!owner && (
-            <ActionRow
-              icon={<Flag size={20} color={destructiveColor} />}
-              label="Báo cáo cộng đồng"
-              hint="Báo cáo nội dung hoặc hoạt động vi phạm chính sách"
-              destructive
-              onPress={() => {
-                sheetRef.current?.close();
-                onReportPress();
-              }}
-            />
-          )}
-          {owner && (
-            <ActionRow
-              icon={<Trash2 size={20} color={destructiveColor} />}
-              label="Lưu trữ cộng đồng"
-              hint="Cộng đồng sẽ bị ẩn khỏi công cộng và không hiển thị nữa"
-              destructive
-              onPress={() => {
-                sheetRef.current?.close();
-                confirmArchive();
-              }}
-            />
-          )}
+          {[
+            isMember && !owner && (
+              <ActionRow
+                key="leave"
+                icon={<UserMinus size={20} color={destructiveColor} />}
+                label="Rời cộng đồng"
+                hint="Bạn sẽ không thể đăng bài và xem nội dung riêng tư"
+                destructive
+                onPress={() => {
+                  sheetRef.current?.close();
+                  confirmLeave();
+                }}
+              />
+            ),
+            !owner && (
+              <ActionRow
+                key="report"
+                icon={<Flag size={20} color={destructiveColor} />}
+                label="Báo cáo cộng đồng"
+                hint="Báo cáo nội dung hoặc hoạt động vi phạm chính sách"
+                destructive
+                onPress={() => {
+                  sheetRef.current?.close();
+                  onReportPress();
+                }}
+              />
+            ),
+            owner && (
+              <ActionRow
+                key="archive"
+                icon={<Trash2 size={20} color={destructiveColor} />}
+                label="Lưu trữ cộng đồng"
+                hint="Cộng đồng sẽ bị ẩn khỏi công cộng và không hiển thị nữa"
+                destructive
+                onPress={() => {
+                  sheetRef.current?.close();
+                  confirmArchive();
+                }}
+              />
+            ),
+          ].filter(Boolean)}
         </View>
 
         <Pressable

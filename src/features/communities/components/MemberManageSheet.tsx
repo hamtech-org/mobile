@@ -8,7 +8,7 @@ import { type FriendListItem } from "@/store/api/userApi";
 import { ActionRow } from "./ActionRow";
 
 export interface MemberManageSheetProps {
-  sheetRef: React.RefObject<BottomSheet>;
+  sheetRef: React.RefObject<any>;
   selectedMember: ICommunityMember | null;
   profilesMap: Record<string, FriendListItem>;
   owner: boolean;

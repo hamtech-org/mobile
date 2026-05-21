@@ -63,6 +63,7 @@ import { MembersModal } from "./MembersModal";
 import { RequestsModal } from "./RequestsModal";
 import { InfoRow } from "./InfoRow";
 import { CommunityReportSheet } from "./CommunityReportSheet";
+import { TransferOwnerModal } from "./TransferOwnerModal";
 
 export interface CommunityDetailProps {
   groupId: string;
@@ -78,9 +79,11 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
   const [pendingPostsModalOpen, setPendingPostsModalOpen] = useState(false);
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
   const [reportVisible, setReportVisible] = useState(false);
+  const [transferModalOpen, setTransferModalOpen] = useState(false);
 
   const groupMenuSheetRef = useRef<BottomSheet>(null);
   const memberManageSheetRef = useRef<BottomSheet>(null);
+  const isTransitioningRef = useRef(false);
 
   const {
     data: community,
@@ -271,28 +274,25 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
     }
   };
 
-  const handleTransferOwner = async () => {
+  const handleTransferOwner = () => {
     if (!selectedMember) return;
-    Alert.alert(
-      "Chuyển quyền sở hữu?",
-      `Bạn có chắc chắn muốn chuyển quyền chủ sở hữu cho ${profilesMap[selectedMember.userId]?.displayName || selectedMember.userId}? Bạn sẽ bị hạ cấp xuống thành viên thường.`,
-      [
-        { text: "Hủy", style: "cancel" },
-        {
-          text: "Chuyển",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              memberManageSheetRef.current?.close();
-              await transferOwner({ groupId, targetUserId: selectedMember.userId }).unwrap();
-              toast.success("Đã chuyển quyền chủ sở hữu thành công");
-            } catch {
-              toast.error("Không thể chuyển quyền chủ sở hữu");
-            }
-          },
-        },
-      ],
-    );
+    isTransitioningRef.current = true;
+    memberManageSheetRef.current?.close();
+    setTransferModalOpen(true);
+  };
+
+  const handleConfirmTransferOwner = async () => {
+    if (!selectedMember) return;
+    try {
+      setTransferModalOpen(false);
+      await transferOwner({ groupId, targetUserId: selectedMember.userId }).unwrap();
+      toast.success("Đã chuyển quyền chủ sở hữu thành công");
+      setMembersModalOpen(false);
+    } catch {
+      toast.error("Không thể chuyển quyền chủ sở hữu");
+    } finally {
+      setSelectedMember(null);
+    }
   };
 
   const handleKickMember = () => {
@@ -676,7 +676,13 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
         mutedColor={muted}
         foregroundColor={foreground}
         destructiveColor={destructive}
-        onClose={() => setSelectedMember(null)}
+        onClose={() => {
+          if (isTransitioningRef.current) {
+            isTransitioningRef.current = false;
+          } else {
+            setSelectedMember(null);
+          }
+        }}
         handleUpdateRole={handleUpdateRole}
         handleTransferOwner={handleTransferOwner}
         handleKickMember={handleKickMember}
@@ -702,7 +708,7 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
 
       {/* Members Modal */}
       <MembersModal
-        open={membersModalOpen}
+        open={membersModalOpen && selectedMember === null}
         onClose={() => setMembersModalOpen(false)}
         members={members ?? []}
         profilesMap={profilesMap}
@@ -740,6 +746,20 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
         groupId={groupId}
         mutedColor={muted}
         foregroundColor={foreground}
+      />
+
+      {/* Transfer Owner Confirmation Modal */}
+      <TransferOwnerModal
+        open={transferModalOpen}
+        onClose={() => {
+          setTransferModalOpen(false);
+          setSelectedMember(null);
+        }}
+        communityName={community.name}
+        targetDisplayName={
+          profilesMap[selectedMember?.userId ?? ""]?.displayName || selectedMember?.userId || ""
+        }
+        onConfirm={handleConfirmTransferOwner}
       />
     </SafeAreaView>
   );
