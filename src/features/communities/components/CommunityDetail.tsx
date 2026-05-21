@@ -3,6 +3,8 @@ import { Alert, FlatList, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import {
+  AlertCircle,
+  ArrowLeft,
   BookOpen,
   Calendar,
   ChevronDown,
@@ -14,6 +16,7 @@ import {
   Lock,
   MoreVertical,
   Pencil,
+  RefreshCw,
   Sparkles,
   Trash2,
   UserCheck,
@@ -74,7 +77,13 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
   const groupMenuSheetRef = useRef<BottomSheet>(null);
   const memberManageSheetRef = useRef<BottomSheet>(null);
 
-  const { data: community, isLoading } = useGetCommunityQuery(groupId, { skip: !groupId });
+  const {
+    data: community,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useGetCommunityQuery(groupId, { skip: !groupId });
   const { data: members } = useGetCommunityMembersQuery(groupId, { skip: !groupId });
   const { data: posts } = useGetCommunityPostsQuery({ groupId, limit: 20 }, { skip: !groupId });
   const manager = canManage(community?.viewerRole);
@@ -134,10 +143,56 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
     [],
   );
 
-  if (isLoading || !community) {
+  if (isLoading) {
     return (
       <SafeAreaView className="flex-1 items-center justify-center bg-background">
         <Text className="text-muted-foreground">Đang tải cộng đồng...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (isError || !community) {
+    const status = (error as any)?.status;
+    const message = (error as any)?.data?.message || "";
+
+    let title = "Không thể truy cập";
+    let description = "Đã xảy ra lỗi không xác định khi tải dữ liệu cộng đồng.";
+
+    if (status === 404) {
+      title = "Cộng đồng không tồn tại";
+      description = "Cộng đồng này không tồn tại, đã bị xóa hoặc lưu trữ bởi ban quản trị.";
+    } else if (status === 403) {
+      title = "Truy cập bị từ chối";
+      description = message.includes("chặn")
+        ? "Bạn đã bị chặn khỏi cộng đồng này bởi ban quản trị."
+        : "Cộng đồng này là riêng tư. Bạn cần là thành viên để xem nội dung.";
+    }
+
+    return (
+      <SafeAreaView className="flex-1 items-center justify-center bg-background px-6">
+        <View className="mb-6 h-20 w-20 items-center justify-center rounded-full bg-destructive/10">
+          <AlertCircle size={40} color={destructive} />
+        </View>
+        <Text className="mb-2 text-center text-2xl font-bold text-foreground">{title}</Text>
+        <Text className="mb-8 max-w-xs text-center text-base text-muted-foreground">
+          {description}
+        </Text>
+        <View className="flex-row gap-4">
+          <Pressable
+            className="flex-row items-center gap-2 rounded-full border border-border bg-card px-5 py-3 active:opacity-70"
+            onPress={() => router.back()}
+          >
+            <ArrowLeft size={16} color={foreground} />
+            <Text className="font-semibold text-foreground">Quay lại</Text>
+          </Pressable>
+          <Pressable
+            className="flex-row items-center gap-2 rounded-full bg-primary px-5 py-3 active:opacity-70"
+            onPress={() => void refetch()}
+          >
+            <RefreshCw size={16} color="#ffffff" />
+            <Text className="font-semibold text-primary-foreground">Tải lại</Text>
+          </Pressable>
+        </View>
       </SafeAreaView>
     );
   }
