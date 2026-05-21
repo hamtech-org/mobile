@@ -9,6 +9,8 @@ import {
   ChevronUp,
   FileText,
   Globe2,
+  Info,
+  Link2,
   Lock,
   MoreVertical,
   Pencil,
@@ -369,6 +371,44 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
           }
           renderItem={() => (
             <View className="mt-2 gap-5 px-4">
+              {/* Mô tả cộng đồng */}
+              <View className="gap-4 rounded-2xl border border-border bg-card p-4">
+                <View className="flex-row items-center gap-2 border-b border-border/40 pb-3">
+                  <Info size={18} color={primary} />
+                  <Text className="text-[16px] font-bold text-foreground">Mô tả cộng đồng</Text>
+                </View>
+                <Text className="text-sm font-medium leading-relaxed text-muted-foreground">
+                  {community.description || "Cộng đồng chưa có mô tả."}
+                </Text>
+              </View>
+
+              {/* Thống kê hoạt động */}
+              <View className="gap-4 rounded-2xl border border-border bg-card p-4">
+                <View className="flex-row items-center gap-2 border-b border-border/40 pb-3">
+                  <Users size={18} color={primary} />
+                  <Text className="text-[16px] font-bold text-foreground">Thống kê hoạt động</Text>
+                </View>
+                <View className="flex-row items-center justify-around py-2">
+                  <View className="items-center">
+                    <Text className="text-2xl font-extrabold text-foreground">
+                      {community.memberCount.toLocaleString("vi-VN")}
+                    </Text>
+                    <Text className="mt-1 text-xs font-semibold text-muted-foreground">
+                      Thành viên
+                    </Text>
+                  </View>
+                  <View className="h-8 w-[1px] bg-border/40" />
+                  <View className="items-center">
+                    <Text className="text-2xl font-extrabold text-foreground">
+                      {community.postCount.toLocaleString("vi-VN")}
+                    </Text>
+                    <Text className="mt-1 text-xs font-semibold text-muted-foreground">
+                      Bài viết
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
               {/* Accordion Rules */}
               <View className="gap-4 rounded-2xl border border-border bg-card p-4">
                 <View className="flex-row items-center gap-2 border-b border-border/40 pb-3">
@@ -406,7 +446,7 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
 
                           {isExpanded && (
                             <View className="mt-2.5 rounded-2xl border border-border/20 bg-muted/40 p-3.5">
-                              <Text className="text-sm leading-relaxed text-muted-foreground">
+                              <Text className="text-sm font-medium leading-relaxed text-muted-foreground">
                                 {rule.description}
                               </Text>
                             </View>
@@ -416,7 +456,7 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
                     })}
                   </View>
                 ) : (
-                  <Text className="py-2 text-sm text-muted-foreground">
+                  <Text className="py-2 text-sm font-medium text-muted-foreground">
                     Cộng đồng chưa thiết lập nội quy riêng.
                   </Text>
                 )}
@@ -424,7 +464,10 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
 
               {/* Information Row List */}
               <View className="gap-4 rounded-2xl border border-border bg-card p-4">
-                <Text className="text-[16px] font-bold text-foreground">Thông tin chi tiết</Text>
+                <View className="flex-row items-center gap-2 border-b border-border/40 pb-3">
+                  <Globe2 size={18} color={primary} />
+                  <Text className="text-[16px] font-bold text-foreground">Thông tin chi tiết</Text>
+                </View>
                 <View className="gap-3">
                   <InfoRow
                     icon={<Sparkles size={16} color={primary} />}
@@ -446,6 +489,27 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
                     icon={<Calendar size={16} color={primary} />}
                     label="Ngày thành lập"
                     value={new Date(community.createdAt).toLocaleDateString("vi-VN")}
+                  />
+                  <InfoRow
+                    icon={<Link2 size={16} color={primary} />}
+                    label="Slug nhóm"
+                    value={community.slug}
+                  />
+                  <InfoRow
+                    icon={<Users size={16} color={primary} />}
+                    label="Chế độ tham gia"
+                    value={
+                      community.joinPolicy === "open"
+                        ? "Tham gia trực tiếp"
+                        : "Cần quản trị viên duyệt"
+                    }
+                  />
+                  <InfoRow
+                    icon={<Sparkles size={16} color={primary} />}
+                    label="Tìm kiếm nhóm"
+                    value={
+                      community.type === "public" ? "Hiển thị công khai" : "Chỉ thành viên qua link"
+                    }
                   />
                 </View>
               </View>
