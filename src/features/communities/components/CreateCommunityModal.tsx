@@ -5,6 +5,7 @@ import {
   Image,
   Modal,
   Pressable,
+  ScrollView,
   Text,
   TextInput,
   View,
@@ -12,7 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
-import { Camera, Plus, BookOpen, Globe2, Lock } from "lucide-react-native";
+import { Camera, Plus, BookOpen, Globe2, Lock, Users, ShieldCheck } from "lucide-react-native";
 
 import { useIconColors } from "@/hooks/useIconColors";
 import { useCreateCommunityMutation } from "@/store/api/communityApi";
@@ -248,7 +249,11 @@ export function CreateCommunityModal({ open, onClose }: { open: boolean; onClose
               </View>
 
               <Text className="font-semibold text-foreground">Chủ đề</Text>
-              <View className="flex-row flex-wrap gap-2">
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8, paddingVertical: 4 }}
+              >
                 {COMMUNITY_CATEGORIES.map((item) => {
                   const active = category === item;
                   return (
@@ -271,87 +276,139 @@ export function CreateCommunityModal({ open, onClose }: { open: boolean; onClose
                     </Pressable>
                   );
                 })}
-              </View>
+              </ScrollView>
 
               <Text className="font-semibold text-foreground">Chế độ hiển thị</Text>
-              <View className="flex-row gap-3">
+              <View className="gap-3">
                 <Pressable
                   onPress={() => setType("public")}
-                  className={`flex-1 flex-row items-center justify-center gap-2 rounded-2xl border p-3.5 active:opacity-80 ${
+                  className={`flex-row items-start gap-3 rounded-2xl border p-4 active:opacity-90 ${
                     type === "public" ? "border-primary bg-primary/5" : "border-border bg-card"
                   }`}
                 >
-                  <Globe2 size={16} color={type === "public" ? primary : muted} />
-                  <Text
-                    className={`font-semibold ${type === "public" ? "text-primary" : "text-foreground"}`}
+                  <View
+                    className={`rounded-lg p-2 ${type === "public" ? "bg-primary/10" : "bg-muted"}`}
                   >
-                    Công khai
-                  </Text>
+                    <Globe2 size={18} color={type === "public" ? primary : muted} />
+                  </View>
+                  <View className="flex-1 gap-1">
+                    <Text
+                      className={`text-sm font-bold ${type === "public" ? "text-primary" : "text-foreground"}`}
+                    >
+                      Công khai
+                    </Text>
+                    <Text className="text-xs leading-normal text-muted-foreground">
+                      Ai cũng có thể tìm thấy và xem các bài viết thảo luận trong nhóm.
+                    </Text>
+                  </View>
                 </Pressable>
+
                 <Pressable
                   onPress={() => setType("private")}
-                  className={`flex-1 flex-row items-center justify-center gap-2 rounded-2xl border p-3.5 active:opacity-80 ${
+                  className={`flex-row items-start gap-3 rounded-2xl border p-4 active:opacity-90 ${
                     type === "private" ? "border-primary bg-primary/5" : "border-border bg-card"
                   }`}
                 >
-                  <Lock size={16} color={type === "private" ? primary : muted} />
-                  <Text
-                    className={`font-semibold ${type === "private" ? "text-primary" : "text-foreground"}`}
+                  <View
+                    className={`rounded-lg p-2 ${type === "private" ? "bg-primary/10" : "bg-muted"}`}
                   >
-                    Riêng tư
-                  </Text>
+                    <Lock size={18} color={type === "private" ? primary : muted} />
+                  </View>
+                  <View className="flex-1 gap-1">
+                    <Text
+                      className={`text-sm font-bold ${type === "private" ? "text-primary" : "text-foreground"}`}
+                    >
+                      Riêng tư
+                    </Text>
+                    <Text className="text-xs leading-normal text-muted-foreground">
+                      Chỉ thành viên được duyệt mới có thể xem nội dung và danh sách thành viên.
+                    </Text>
+                  </View>
                 </Pressable>
               </View>
 
-              <Text className="font-semibold text-foreground">Chính sách phê duyệt</Text>
-              <View className="flex-row gap-3">
+              <Text className="font-semibold text-foreground">Chính sách tham gia</Text>
+              <View className="gap-3">
                 <Pressable
                   onPress={() => setJoinPolicy("open")}
-                  className={`flex-1 rounded-2xl border p-3.5 active:opacity-80 ${
+                  className={`flex-row items-start gap-3 rounded-2xl border p-4 active:opacity-90 ${
                     joinPolicy === "open" ? "border-primary bg-primary/5" : "border-border bg-card"
                   }`}
                 >
-                  <Text
-                    className={`text-center font-semibold ${joinPolicy === "open" ? "text-primary" : "text-foreground"}`}
+                  <View
+                    className={`rounded-lg p-2 ${joinPolicy === "open" ? "bg-primary/10" : "bg-muted"}`}
                   >
-                    Tự do (Mở)
-                  </Text>
+                    <Users size={18} color={joinPolicy === "open" ? primary : muted} />
+                  </View>
+                  <View className="flex-1 gap-1">
+                    <Text
+                      className={`text-sm font-bold ${joinPolicy === "open" ? "text-primary" : "text-foreground"}`}
+                    >
+                      Tự do tham gia
+                    </Text>
+                    <Text className="text-xs leading-normal text-muted-foreground">
+                      Người dùng có thể gia nhập ngay lập tức mà không cần quản trị viên đồng ý.
+                    </Text>
+                  </View>
                 </Pressable>
+
                 <Pressable
                   onPress={() => setJoinPolicy("approval")}
-                  className={`flex-1 rounded-2xl border p-3.5 active:opacity-80 ${
+                  className={`flex-row items-start gap-3 rounded-2xl border p-4 active:opacity-90 ${
                     joinPolicy === "approval"
                       ? "border-primary bg-primary/5"
                       : "border-border bg-card"
                   }`}
                 >
-                  <Text
-                    className={`text-center font-semibold ${joinPolicy === "approval" ? "text-primary" : "text-foreground"}`}
+                  <View
+                    className={`rounded-lg p-2 ${joinPolicy === "approval" ? "bg-primary/10" : "bg-muted"}`}
                   >
-                    Duyệt từ Admin
-                  </Text>
+                    <ShieldCheck size={18} color={joinPolicy === "approval" ? primary : muted} />
+                  </View>
+                  <View className="flex-1 gap-1">
+                    <Text
+                      className={`text-sm font-bold ${joinPolicy === "approval" ? "text-primary" : "text-foreground"}`}
+                    >
+                      Phê duyệt yêu cầu
+                    </Text>
+                    <Text className="text-xs leading-normal text-muted-foreground">
+                      Người dùng gửi yêu cầu tham gia và cần quản trị viên duyệt để vào nhóm.
+                    </Text>
+                  </View>
                 </Pressable>
               </View>
 
-              <View className="gap-3 rounded-2xl border border-border bg-card p-4">
+              <View className="gap-3 rounded-2xl border border-l-4 border-border/60 border-l-primary bg-muted/20 p-4">
                 <View className="flex-row items-center gap-1.5">
                   <BookOpen size={16} color={primary} />
-                  <Text className="text-[14px] font-bold text-foreground">Nội quy đầu tiên</Text>
+                  <Text className="text-xs font-bold uppercase tracking-wider text-foreground">
+                    Nội quy đầu tiên của nhóm
+                  </Text>
                 </View>
-                <TextInput
-                  value={ruleTitle}
-                  onChangeText={setRuleTitle}
-                  placeholder="Tiêu đề nội quy (ví dụ: Tôn trọng lẫn nhau)"
-                  placeholderTextColor={muted}
-                  className="px-4.5 rounded-xl border border-border bg-background py-2.5 text-sm text-foreground"
-                />
-                <TextInput
-                  value={ruleDescription}
-                  onChangeText={setRuleDescription}
-                  placeholder="Mô tả nội quy (ví dụ: Không dùng từ ngữ xúc phạm...)"
-                  placeholderTextColor={muted}
-                  className="px-4.5 rounded-xl border border-border bg-background py-2.5 text-sm text-foreground"
-                />
+                <View className="mt-1 gap-2">
+                  <Text className="text-[11px] font-semibold text-muted-foreground">
+                    Tiêu đề nội quy
+                  </Text>
+                  <TextInput
+                    value={ruleTitle}
+                    onChangeText={setRuleTitle}
+                    placeholder="Ví dụ: Tôn trọng lẫn nhau"
+                    placeholderTextColor={muted}
+                    className="rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground"
+                  />
+                </View>
+                <View className="gap-2">
+                  <Text className="text-[11px] font-semibold text-muted-foreground">
+                    Mô tả nội quy
+                  </Text>
+                  <TextInput
+                    value={ruleDescription}
+                    onChangeText={setRuleDescription}
+                    placeholder="Ví dụ: Không dùng từ ngữ xúc phạm..."
+                    placeholderTextColor={muted}
+                    className="rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground"
+                  />
+                </View>
               </View>
             </View>
           )}

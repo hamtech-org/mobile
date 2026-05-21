@@ -1,17 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
   ActivityIndicator,
   FlatList,
   Image,
   Modal,
   Pressable,
+  ScrollView,
   Text,
   TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
-import { Camera } from "lucide-react-native";
+import { Camera, BookOpen, Globe2, Lock, Users, ShieldCheck } from "lucide-react-native";
 
 import { useIconColors } from "@/hooks/useIconColors";
 import { useUpdateCommunityMutation } from "@/store/api/communityApi";
@@ -22,6 +23,8 @@ import { toast } from "@/utils/appToast";
 import {
   COMMUNITY_CATEGORIES,
   type CommunityCategory,
+  type CommunityType,
+  type CommunityJoinPolicy,
   type ICommunity,
 } from "@/types/community.types";
 import { CATEGORY_LABEL } from "../constants";
@@ -40,6 +43,10 @@ export function EditCommunityModal({ community, open, onClose }: EditCommunityMo
   const [name, setName] = useState(community.name);
   const [description, setDescription] = useState(community.description ?? "");
   const [category, setCategory] = useState<CommunityCategory>(community.category);
+  const [type, setType] = useState<CommunityType>(community.type);
+  const [joinPolicy, setJoinPolicy] = useState<CommunityJoinPolicy>(community.joinPolicy);
+  const [ruleTitle, setRuleTitle] = useState(community.rules?.[0]?.title ?? "");
+  const [ruleDescription, setRuleDescription] = useState(community.rules?.[0]?.description ?? "");
 
   const [avatar, setAvatar] = useState(community.avatar ?? "");
   const [coverUrl, setCoverUrl] = useState(community.coverUrl ?? "");
@@ -53,8 +60,23 @@ export function EditCommunityModal({ community, open, onClose }: EditCommunityMo
       setCategory(community.category);
       setAvatar(community.avatar ?? "");
       setCoverUrl(community.coverUrl ?? "");
+      setType(community.type);
+      setJoinPolicy(community.joinPolicy);
+      setRuleTitle(community.rules?.[0]?.title ?? "");
+      setRuleDescription(community.rules?.[0]?.description ?? "");
     }
   }, [community, open]);
+
+  const rules = useMemo(() => {
+    if (!ruleTitle.trim() || !ruleDescription.trim()) return undefined;
+    return [
+      {
+        id: community.rules?.[0]?.id ?? "rule-1",
+        title: ruleTitle.trim(),
+        description: ruleDescription.trim(),
+      },
+    ];
+  }, [community.rules, ruleDescription, ruleTitle]);
 
   const pickImage = async (target: "avatar" | "cover") => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -111,9 +133,9 @@ export function EditCommunityModal({ community, open, onClose }: EditCommunityMo
           avatar: avatar.trim() || null,
           coverUrl: coverUrl.trim() || null,
           category,
-          type: community.type,
-          joinPolicy: community.joinPolicy,
-          rules: community.rules,
+          type,
+          joinPolicy,
+          rules,
         },
       }).unwrap();
       toast.success("Đã cập nhật cộng đồng");
@@ -241,7 +263,11 @@ export function EditCommunityModal({ community, open, onClose }: EditCommunityMo
               </View>
 
               <Text className="font-semibold text-foreground">Chủ đề</Text>
-              <View className="flex-row flex-wrap gap-2">
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8, paddingVertical: 4 }}
+              >
                 {COMMUNITY_CATEGORIES.map((item) => {
                   const active = category === item;
                   return (
@@ -264,6 +290,139 @@ export function EditCommunityModal({ community, open, onClose }: EditCommunityMo
                     </Pressable>
                   );
                 })}
+              </ScrollView>
+
+              <Text className="font-semibold text-foreground">Chế độ hiển thị</Text>
+              <View className="gap-3">
+                <Pressable
+                  onPress={() => setType("public")}
+                  className={`flex-row items-start gap-3 rounded-2xl border p-4 active:opacity-90 ${
+                    type === "public" ? "border-primary bg-primary/5" : "border-border bg-card"
+                  }`}
+                >
+                  <View
+                    className={`rounded-lg p-2 ${type === "public" ? "bg-primary/10" : "bg-muted"}`}
+                  >
+                    <Globe2 size={18} color={type === "public" ? primary : muted} />
+                  </View>
+                  <View className="flex-1 gap-1">
+                    <Text
+                      className={`text-sm font-bold ${type === "public" ? "text-primary" : "text-foreground"}`}
+                    >
+                      Công khai
+                    </Text>
+                    <Text className="text-xs leading-normal text-muted-foreground">
+                      Ai cũng có thể tìm thấy và xem các bài viết thảo luận trong nhóm.
+                    </Text>
+                  </View>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => setType("private")}
+                  className={`flex-row items-start gap-3 rounded-2xl border p-4 active:opacity-90 ${
+                    type === "private" ? "border-primary bg-primary/5" : "border-border bg-card"
+                  }`}
+                >
+                  <View
+                    className={`rounded-lg p-2 ${type === "private" ? "bg-primary/10" : "bg-muted"}`}
+                  >
+                    <Lock size={18} color={type === "private" ? primary : muted} />
+                  </View>
+                  <View className="flex-1 gap-1">
+                    <Text
+                      className={`text-sm font-bold ${type === "private" ? "text-primary" : "text-foreground"}`}
+                    >
+                      Riêng tư
+                    </Text>
+                    <Text className="text-xs leading-normal text-muted-foreground">
+                      Chỉ thành viên được duyệt mới có thể xem nội dung và danh sách thành viên.
+                    </Text>
+                  </View>
+                </Pressable>
+              </View>
+
+              <Text className="font-semibold text-foreground">Chính sách tham gia</Text>
+              <View className="gap-3">
+                <Pressable
+                  onPress={() => setJoinPolicy("open")}
+                  className={`flex-row items-start gap-3 rounded-2xl border p-4 active:opacity-90 ${
+                    joinPolicy === "open" ? "border-primary bg-primary/5" : "border-border bg-card"
+                  }`}
+                >
+                  <View
+                    className={`rounded-lg p-2 ${joinPolicy === "open" ? "bg-primary/10" : "bg-muted"}`}
+                  >
+                    <Users size={18} color={joinPolicy === "open" ? primary : muted} />
+                  </View>
+                  <View className="flex-1 gap-1">
+                    <Text
+                      className={`text-sm font-bold ${joinPolicy === "open" ? "text-primary" : "text-foreground"}`}
+                    >
+                      Tự do tham gia
+                    </Text>
+                    <Text className="text-xs leading-normal text-muted-foreground">
+                      Người dùng có thể gia nhập ngay lập tức mà không cần quản trị viên đồng ý.
+                    </Text>
+                  </View>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => setJoinPolicy("approval")}
+                  className={`flex-row items-start gap-3 rounded-2xl border p-4 active:opacity-90 ${
+                    joinPolicy === "approval"
+                      ? "border-primary bg-primary/5"
+                      : "border-border bg-card"
+                  }`}
+                >
+                  <View
+                    className={`rounded-lg p-2 ${joinPolicy === "approval" ? "bg-primary/10" : "bg-muted"}`}
+                  >
+                    <ShieldCheck size={18} color={joinPolicy === "approval" ? primary : muted} />
+                  </View>
+                  <View className="flex-1 gap-1">
+                    <Text
+                      className={`text-sm font-bold ${joinPolicy === "approval" ? "text-primary" : "text-foreground"}`}
+                    >
+                      Phê duyệt yêu cầu
+                    </Text>
+                    <Text className="text-xs leading-normal text-muted-foreground">
+                      Người dùng gửi yêu cầu tham gia và cần quản trị viên duyệt để vào nhóm.
+                    </Text>
+                  </View>
+                </Pressable>
+              </View>
+
+              <View className="gap-3 rounded-2xl border border-l-4 border-border/60 border-l-primary bg-muted/20 p-4">
+                <View className="flex-row items-center gap-1.5">
+                  <BookOpen size={16} color={primary} />
+                  <Text className="text-xs font-bold uppercase tracking-wider text-foreground">
+                    Nội quy đầu tiên của nhóm
+                  </Text>
+                </View>
+                <View className="mt-1 gap-2">
+                  <Text className="text-[11px] font-semibold text-muted-foreground">
+                    Tiêu đề nội quy
+                  </Text>
+                  <TextInput
+                    value={ruleTitle}
+                    onChangeText={setRuleTitle}
+                    placeholder="Ví dụ: Tôn trọng lẫn nhau"
+                    placeholderTextColor={muted}
+                    className="rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground"
+                  />
+                </View>
+                <View className="gap-2">
+                  <Text className="text-[11px] font-semibold text-muted-foreground">
+                    Mô tả nội quy
+                  </Text>
+                  <TextInput
+                    value={ruleDescription}
+                    onChangeText={setRuleDescription}
+                    placeholder="Ví dụ: Không dùng từ ngữ xúc phạm..."
+                    placeholderTextColor={muted}
+                    className="rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground"
+                  />
+                </View>
               </View>
             </View>
           )}
