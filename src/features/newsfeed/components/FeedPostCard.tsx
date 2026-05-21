@@ -15,6 +15,10 @@ import {
   useDeletePostMutation,
   useToggleSavePostMutation,
 } from "@/store/api/newsfeedApi";
+import {
+  usePinCommunityPostMutation,
+  useUnpinCommunityPostMutation,
+} from "@/store/api/communityApi";
 import { CommentItem } from "./CommentItem";
 import { CommentInput } from "./CommentInput";
 import { SharedPostPreview } from "./SharedPostPreview";
@@ -25,9 +29,10 @@ import { ReactionSummary } from "@/components/common/ReactionButton/ReactionSumm
 
 interface Props {
   post: IPost;
+  communityRole?: "owner" | "admin" | "moderator" | "member" | null;
 }
 
-export const FeedPostCard = ({ post }: Props) => {
+export const FeedPostCard = ({ post, communityRole }: Props) => {
   const extractedText = extractTextFromTiptapJson(post.content);
   const displayName = post.author?.displayName ?? post.authorId;
   const avatar = post.author?.avatar ?? "";
@@ -69,6 +74,28 @@ export const FeedPostCard = ({ post }: Props) => {
   const [reactToPost] = useReactToPostMutation();
   const [deletePost, { isLoading: isDeleting }] = useDeletePostMutation();
   const [toggleSavePost] = useToggleSavePostMutation();
+  const [pinPost] = usePinCommunityPostMutation();
+  const [unpinPost] = useUnpinCommunityPostMutation();
+
+  const isModeratorOrAbove =
+    communityRole === "owner" || communityRole === "admin" || communityRole === "moderator";
+
+  const handlePinToggle = async () => {
+    setIsMenuOpen(false);
+    if (!post.groupId) return;
+    try {
+      if (post.isPinned) {
+        await unpinPost({ groupId: post.groupId, postId: post.postId }).unwrap();
+        Alert.alert("Thành công", "Đã bỏ ghim bài viết");
+      } else {
+        await pinPost({ groupId: post.groupId, postId: post.postId }).unwrap();
+        Alert.alert("Thành công", "Đã ghim bài viết");
+      }
+    } catch (err: any) {
+      Alert.alert("Thất bại", err?.data?.message || "Có lỗi xảy ra");
+    }
+  };
+
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const router = useRouter();
 
@@ -156,6 +183,14 @@ export const FeedPostCard = ({ post }: Props) => {
 
   return (
     <View className="mb-4 rounded-3xl border border-border/40 bg-card p-4">
+      {post.isPinned && (
+        <View className="mb-2 flex-row items-center gap-1.5 px-1">
+          <Ionicons name="pin" size={14} color="#3b82f6" />
+          <Text allowFontScaling={false} className="text-xs font-semibold text-blue-500">
+            Được ghim bởi Quản trị viên
+          </Text>
+        </View>
+      )}
       {/* Header */}
       <View className="flex-row items-start justify-between gap-3">
         <View className="flex-1 flex-row items-center gap-3">
@@ -417,6 +452,17 @@ export const FeedPostCard = ({ post }: Props) => {
                   <Text className="text-base font-medium text-muted-foreground">Ẩn bài viết</Text>
                 </Pressable>
               </>
+            )}
+            {isModeratorOrAbove && post.groupId && (
+              <Pressable
+                className="flex-row items-center gap-3 border-t border-border/40 px-5 py-4 active:bg-muted"
+                onPress={handlePinToggle}
+              >
+                <Ionicons name="pin" size={20} color="#3b82f6" />
+                <Text className="text-base font-medium text-blue-500">
+                  {post.isPinned ? "Bỏ ghim bài viết" : "Ghim bài viết"}
+                </Text>
+              </Pressable>
             )}
           </Pressable>
         </Pressable>

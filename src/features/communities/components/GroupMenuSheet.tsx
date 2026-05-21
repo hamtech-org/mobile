@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { Pressable, Text, View } from "react-native";
 import BottomSheet, { BottomSheetView, type BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
-import { UserMinus, Trash2 } from "lucide-react-native";
+import { UserMinus, Trash2, Flag } from "lucide-react-native";
 import { type ICommunity } from "@/types/community.types";
 import { ActionRow } from "./ActionRow";
 
@@ -14,6 +14,7 @@ export interface GroupMenuSheetProps {
   destructiveColor: string;
   confirmLeave: () => void;
   confirmArchive: () => void;
+  onReportPress: () => void;
   renderBackdrop: (props: BottomSheetBackdropProps) => React.ReactElement;
 }
 
@@ -26,6 +27,7 @@ export function GroupMenuSheet({
   destructiveColor,
   confirmLeave,
   confirmArchive,
+  onReportPress,
   renderBackdrop,
 }: GroupMenuSheetProps) {
   const menuSnapPoints = useMemo(() => ["35%"], []);
@@ -60,6 +62,18 @@ export function GroupMenuSheet({
               onPress={() => {
                 sheetRef.current?.close();
                 confirmLeave();
+              }}
+            />
+          )}
+          {!owner && (
+            <ActionRow
+              icon={<Flag size={20} color={destructiveColor} />}
+              label="Báo cáo cộng đồng"
+              hint="Báo cáo nội dung hoặc hoạt động vi phạm chính sách"
+              destructive
+              onPress={() => {
+                sheetRef.current?.close();
+                onReportPress();
               }}
             />
           )}

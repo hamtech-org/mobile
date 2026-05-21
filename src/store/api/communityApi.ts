@@ -197,6 +197,30 @@ export const communityApi = createApi({
         total: response?.data?.total ?? 0,
       }),
     }),
+    pinCommunityPost: builder.mutation<null, { groupId: string; postId: string }>({
+      query: ({ groupId, postId }) => ({
+        url: `/communities/${groupId}/posts/${postId}/pin`,
+        method: "PUT",
+      }),
+      transformResponse: () => null,
+      invalidatesTags: (_res, _err, { groupId }) => [{ type: "CommunityPosts", id: groupId }],
+    }),
+    unpinCommunityPost: builder.mutation<null, { groupId: string; postId: string }>({
+      query: ({ groupId, postId }) => ({
+        url: `/communities/${groupId}/posts/${postId}/unpin`,
+        method: "PUT",
+      }),
+      transformResponse: () => null,
+      invalidatesTags: (_res, _err, { groupId }) => [{ type: "CommunityPosts", id: groupId }],
+    }),
+    reportCommunity: builder.mutation<null, { groupId: string; reason: string; details?: string }>({
+      query: ({ groupId, ...body }) => ({
+        url: `/communities/${groupId}/reports`,
+        method: "POST",
+        body,
+      }),
+      transformResponse: () => null,
+    }),
   }),
 });
 
@@ -217,4 +241,7 @@ export const {
   useUpdateCommunityMutation,
   useSearchGroupsQuery,
   useLazySearchGroupsQuery,
+  usePinCommunityPostMutation,
+  useUnpinCommunityPostMutation,
+  useReportCommunityMutation,
 } = communityApi;

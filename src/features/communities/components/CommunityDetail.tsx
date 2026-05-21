@@ -60,6 +60,7 @@ import { MemberManageSheet } from "./MemberManageSheet";
 import { MembersModal } from "./MembersModal";
 import { RequestsModal } from "./RequestsModal";
 import { InfoRow } from "./InfoRow";
+import { CommunityReportSheet } from "./CommunityReportSheet";
 
 export interface CommunityDetailProps {
   groupId: string;
@@ -73,6 +74,7 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
   const [membersModalOpen, setMembersModalOpen] = useState(false);
   const [requestsModalOpen, setRequestsModalOpen] = useState(false);
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
+  const [reportVisible, setReportVisible] = useState(false);
 
   const groupMenuSheetRef = useRef<BottomSheet>(null);
   const memberManageSheetRef = useRef<BottomSheet>(null);
@@ -402,7 +404,7 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
           }
           renderItem={({ item }) => (
             <View className="mx-4">
-              <FeedPostCard post={item} />
+              <FeedPostCard post={item} communityRole={community?.viewerRole} />
             </View>
           )}
         />
@@ -630,7 +632,15 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
         destructiveColor={destructive}
         confirmLeave={confirmLeave}
         confirmArchive={confirmArchive}
+        onReportPress={() => setReportVisible(true)}
         renderBackdrop={renderBackdrop}
+      />
+
+      {/* Community Report Sheet */}
+      <CommunityReportSheet
+        groupId={groupId}
+        visible={reportVisible}
+        onClose={() => setReportVisible(false)}
       />
 
       {/* Member Management Bottom Sheet */}
