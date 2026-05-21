@@ -21,6 +21,7 @@ import {
   Lock,
   MoreVertical,
   Pencil,
+  Search,
   Shield,
   ShieldAlert,
   ShieldCheck,
@@ -28,6 +29,7 @@ import {
   UserCheck,
   UserMinus,
   UserX,
+  Users,
 } from "lucide-react-native";
 import BottomSheet, {
   BottomSheetBackdrop,
@@ -86,7 +88,7 @@ const ROLE_LABEL: Record<CommunityMemberRole, string> = {
   member: "Member",
 };
 
-const TABS = ["posts", "members", "about"] as const;
+const TABS = ["posts", "about"] as const;
 type TabKey = (typeof TABS)[number];
 
 function getInitials(name: string): string {
@@ -414,6 +416,9 @@ export default function CommunityDetailScreen() {
   const [tab, setTab] = useState<TabKey>("posts");
   const [editOpen, setEditOpen] = useState(false);
   const [selectedMember, setSelectedMember] = useState<ICommunityMember | null>(null);
+  const [membersModalOpen, setMembersModalOpen] = useState(false);
+  const [requestsModalOpen, setRequestsModalOpen] = useState(false);
+  const [memberSearchQuery, setMemberSearchQuery] = useState("");
 
   const groupMenuSheetRef = useRef<BottomSheet>(null);
   const memberManageSheetRef = useRef<BottomSheet>(null);
@@ -442,6 +447,17 @@ export default function CommunityDetailScreen() {
     () => Array.from(new Set([...memberUserIds, ...requestUserIds])),
     [memberUserIds, requestUserIds],
   );
+
+  const filteredMembers = useMemo(() => {
+    if (!members) return [];
+    if (!memberSearchQuery.trim()) return members;
+    const query = memberSearchQuery.toLowerCase().trim();
+    return members.filter((m) => {
+      const profile = profilesMap[m.userId];
+      const name = (profile?.displayName || m.userId).toLowerCase();
+      return name.includes(query) || m.userId.toLowerCase().includes(query);
+    });
+  }, [members, memberSearchQuery, profilesMap]);
 
   useEffect(() => {
     const missingIds = allUserIds.filter((id) => !profilesMap[id]);
@@ -685,13 +701,34 @@ export default function CommunityDetailScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
-      <View className="flex-row items-center gap-3 border-b border-border/40 px-4 py-3">
-        <Pressable onPress={() => router.back()} className="rounded-full p-2 active:opacity-70">
+      <View className="flex-row items-center gap-2 border-b border-border/40 px-4 py-3">
+        <Pressable onPress={() => router.back()} className="rounded-full p-1 active:opacity-70">
           <ArrowLeft size={22} color={foreground} />
         </Pressable>
         <Text className="flex-1 text-lg font-bold text-foreground" numberOfLines={1}>
           {community.name}
         </Text>
+        <Pressable
+          onPress={() => setMembersModalOpen(true)}
+          className="rounded-full p-2 active:opacity-70"
+        >
+          <Users size={20} color={foreground} />
+        </Pressable>
+        {manager && (
+          <Pressable
+            onPress={() => setRequestsModalOpen(true)}
+            className="relative rounded-full p-2 active:opacity-70"
+          >
+            <UserCheck size={20} color={foreground} />
+            {!!requests?.length && (
+              <View className="absolute right-1 top-1 size-4 items-center justify-center rounded-full bg-destructive">
+                <Text className="text-destructive-foreground text-[9px] font-bold">
+                  {requests.length}
+                </Text>
+              </View>
+            )}
+          </Pressable>
+        )}
         {(owner || community.viewerRole === "admin") && (
           <Pressable
             onPress={() => setEditOpen(true)}
@@ -753,40 +790,6 @@ export default function CommunityDetailScreen() {
         />
       )}
 
-      {tab === "members" && (
-        <FlatList
-          data={members ?? []}
-          keyExtractor={(item) => item.userId}
-          contentContainerStyle={{ padding: 16, gap: 12 }}
-          ListHeaderComponent={
-            <View className="gap-4">
-              <CommunityHeader
-                community={community}
-                isMember={isMember}
-                joining={joining}
-                tab={tab}
-                setTab={setTab}
-                onJoin={() => void handleJoin()}
-                onPost={() => router.push(`/(main)/(newsfeed)/editor/new?groupId=${groupId}`)}
-              />
-              {manager && !!requests?.length && (
-                <View className="gap-3">
-                  <Text className="font-bold text-foreground">Yêu cầu đang chờ</Text>
-                  {requests.map((request) => (
-                    <View key={request.userId}>{renderRequest({ item: request })}</View>
-                  ))}
-                </View>
-              )}
-              <Text className="font-bold text-foreground">Thành viên</Text>
-            </View>
-          }
-          renderItem={renderMember}
-          ListEmptyComponent={
-            <Text className="text-center text-muted-foreground">Chưa có thành viên.</Text>
-          }
-        />
-      )}
-
       {tab === "about" && (
         <FlatList
           data={[0]}
@@ -841,6 +844,43 @@ export default function CommunityDetailScreen() {
                     value={new Date(community.createdAt).toLocaleDateString("vi-VN")}
                   />
                 </View>
+              </View>
+
+              {/* Hành động Nhóm */}
+              <View className="gap-3 rounded-2xl border border-border bg-card p-4">
+                <Text className="font-bold text-card-foreground">Hành động nhóm</Text>
+                {isMember && !owner && (
+                  <Pressable
+                    onPress={confirmLeave}
+                    className="flex-row items-center justify-center gap-2 rounded-2xl border border-destructive/20 bg-destructive/10 py-3 active:opacity-85"
+                  >
+                    <UserMinus size={18} color={destructive} />
+                    <Text className="font-semibold text-destructive">Rời cộng đồng</Text>
+                  </Pressable>
+                )}
+                {owner && (
+                  <Pressable
+                    onPress={confirmArchive}
+                    className="flex-row items-center justify-center gap-2 rounded-2xl border border-destructive/20 bg-destructive/10 py-3 active:opacity-85"
+                  >
+                    <Trash2 size={18} color={destructive} />
+                    <Text className="font-semibold text-destructive">Giải tán cộng đồng</Text>
+                  </Pressable>
+                )}
+                {!isMember && community.joinRequestStatus !== "pending" && (
+                  <Pressable
+                    disabled={joining}
+                    onPress={handleJoin}
+                    className="flex-row items-center justify-center gap-2 rounded-2xl bg-primary py-3 active:opacity-85"
+                  >
+                    <Text className="font-semibold text-primary-foreground">Gia nhập nhóm</Text>
+                  </Pressable>
+                )}
+                {!isMember && community.joinRequestStatus === "pending" && (
+                  <View className="flex-row items-center justify-center gap-2 rounded-2xl bg-muted py-3">
+                    <Text className="font-semibold text-muted-foreground">Đang chờ phê duyệt</Text>
+                  </View>
+                )}
               </View>
             </View>
           )}
@@ -992,6 +1032,114 @@ export default function CommunityDetailScreen() {
         </BottomSheetView>
       </BottomSheet>
 
+      {/* FAB Đăng Bài viết */}
+      {tab === "posts" && isMember && (
+        <Pressable
+          onPress={() => router.push(`/(main)/(newsfeed)/editor/new?groupId=${groupId}`)}
+          className="absolute bottom-6 right-6 z-50 size-14 items-center justify-center rounded-full bg-primary shadow-lg shadow-primary/30 active:scale-95"
+          style={{
+            elevation: 6,
+            shadowColor: primary,
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.35,
+            shadowRadius: 6,
+          }}
+        >
+          <Pencil size={22} color="#fff" strokeWidth={2.5} />
+        </Pressable>
+      )}
+
+      {/* Modal Danh sách Thành viên */}
+      <Modal visible={membersModalOpen} animationType="slide">
+        <SafeAreaView className="flex-1 bg-background" edges={["top", "bottom"]}>
+          <View className="flex-row items-center gap-3 border-b border-border/40 px-4 py-3">
+            <Pressable
+              onPress={() => {
+                setMembersModalOpen(false);
+                setMemberSearchQuery("");
+              }}
+              className="rounded-xl px-3 py-2 active:opacity-70"
+            >
+              <Text className="text-[15px] font-semibold text-foreground">Đóng</Text>
+            </Pressable>
+            <Text className="flex-1 text-center text-lg font-bold text-foreground">
+              Thành viên ({members?.length ?? 0})
+            </Text>
+            <View style={{ width: 50 }} />
+          </View>
+
+          {/* Search bar */}
+          <View className="px-4 py-2">
+            <View className="flex-row items-center gap-2 rounded-2xl border border-border bg-card px-3 py-1">
+              <Search size={18} color={muted} />
+              <TextInput
+                value={memberSearchQuery}
+                onChangeText={setMemberSearchQuery}
+                placeholder="Tìm kiếm thành viên..."
+                placeholderTextColor={muted}
+                className="flex-1 py-2 text-sm text-foreground"
+              />
+              {memberSearchQuery.length > 0 && (
+                <Pressable
+                  onPress={() => setMemberSearchQuery("")}
+                  className="px-2 py-1 active:opacity-75"
+                >
+                  <Text className="text-xs font-semibold text-primary">Xóa</Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
+
+          <FlatList
+            data={filteredMembers}
+            keyExtractor={(item) => item.userId}
+            contentContainerStyle={{ padding: 16, gap: 12 }}
+            renderItem={renderMember}
+            ListEmptyComponent={
+              <Text className="mt-8 text-center text-muted-foreground">
+                {memberSearchQuery ? "Không tìm thấy thành viên nào." : "Chưa có thành viên."}
+              </Text>
+            }
+          />
+        </SafeAreaView>
+      </Modal>
+
+      {/* Modal Yêu cầu Gia nhập */}
+      <Modal visible={requestsModalOpen} animationType="slide">
+        <SafeAreaView className="flex-1 bg-background" edges={["top", "bottom"]}>
+          <View className="flex-row items-center gap-3 border-b border-border/40 px-4 py-3">
+            <Pressable
+              onPress={() => setRequestsModalOpen(false)}
+              className="rounded-xl px-3 py-2 active:opacity-70"
+            >
+              <Text className="text-[15px] font-semibold text-foreground">Đóng</Text>
+            </Pressable>
+            <Text className="flex-1 text-center text-lg font-bold text-foreground">
+              Yêu cầu duyệt ({requests?.length ?? 0})
+            </Text>
+            <View style={{ width: 50 }} />
+          </View>
+
+          <FlatList
+            data={requests ?? []}
+            keyExtractor={(item) => item.userId}
+            contentContainerStyle={{ padding: 16, gap: 12 }}
+            renderItem={renderRequest}
+            ListEmptyComponent={
+              <View className="mt-12 items-center gap-3 p-8">
+                <UserCheck size={32} color={muted} />
+                <Text className="text-center font-semibold text-foreground">
+                  Không có yêu cầu nào
+                </Text>
+                <Text className="text-center text-sm text-muted-foreground">
+                  Tất cả các yêu cầu gia nhập đã được xử lý.
+                </Text>
+              </View>
+            }
+          />
+        </SafeAreaView>
+      </Modal>
+
       <EditCommunityModal
         community={community}
         open={editOpen}
@@ -1093,12 +1241,7 @@ function CommunityHeader({
 
       <View className="flex-row rounded-full bg-muted p-1">
         <TabButton active={tab === "posts"} label="Bài viết" onPress={() => setTab("posts")} />
-        <TabButton
-          active={tab === "members"}
-          label="Thành viên"
-          onPress={() => setTab("members")}
-        />
-        <TabButton active={tab === "about"} label="About" onPress={() => setTab("about")} />
+        <TabButton active={tab === "about"} label="Giới thiệu" onPress={() => setTab("about")} />
       </View>
     </View>
   );
