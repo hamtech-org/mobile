@@ -22,6 +22,7 @@ import {
   UserCheck,
   UserMinus,
   Users,
+  History,
 } from "lucide-react-native";
 import BottomSheet, {
   BottomSheetBackdrop,
@@ -64,6 +65,7 @@ import { RequestsModal } from "./RequestsModal";
 import { InfoRow } from "./InfoRow";
 import { CommunityReportSheet } from "./CommunityReportSheet";
 import { TransferOwnerModal } from "./TransferOwnerModal";
+import { ModerationLogsModal } from "./ModerationLogsModal";
 
 export interface CommunityDetailProps {
   groupId: string;
@@ -77,6 +79,7 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
   const [membersModalOpen, setMembersModalOpen] = useState(false);
   const [requestsModalOpen, setRequestsModalOpen] = useState(false);
   const [pendingPostsModalOpen, setPendingPostsModalOpen] = useState(false);
+  const [moderationLogsModalOpen, setModerationLogsModalOpen] = useState(false);
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
   const [reportVisible, setReportVisible] = useState(false);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
@@ -366,6 +369,14 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
                   <Text className="text-[9px] font-bold text-white">{pendingPosts.length}</Text>
                 </View>
               )}
+            </Pressable>
+          )}
+          {manager && (
+            <Pressable
+              onPress={() => setModerationLogsModalOpen(true)}
+              className="h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/25 backdrop-blur-md active:scale-90"
+            >
+              <History size={18} color="#fff" />
             </Pressable>
           )}
           {(owner || community.viewerRole === "admin") && (
@@ -760,6 +771,15 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
           profilesMap[selectedMember?.userId ?? ""]?.displayName || selectedMember?.userId || ""
         }
         onConfirm={handleConfirmTransferOwner}
+      />
+
+      {/* Moderation Logs Modal */}
+      <ModerationLogsModal
+        open={moderationLogsModalOpen}
+        onClose={() => setModerationLogsModalOpen(false)}
+        groupId={groupId}
+        mutedColor={muted}
+        foregroundColor={foreground}
       />
     </SafeAreaView>
   );

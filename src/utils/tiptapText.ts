@@ -29,8 +29,28 @@ export const extractTextFromTiptapJson = (content: string): string => {
       .join("")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
-    return extracted;
+    return extracted || content;
   } catch {
-    return content;
+    // If JSON parsing fails (e.g. because it was truncated), try regex extraction
   }
+
+  try {
+    const textRegex = /"text"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+    let match;
+    const texts: string[] = [];
+    while ((match = textRegex.exec(content)) !== null) {
+      try {
+        texts.push(JSON.parse(`"${match[1]}"`));
+      } catch {
+        texts.push(match[1]);
+      }
+    }
+    if (texts.length > 0) {
+      return texts.join(" ").trim();
+    }
+  } catch {
+    // Fall back to returning the original string
+  }
+
+  return content;
 };
