@@ -1,0 +1,164 @@
+import { Image, Pressable, Text, View } from "react-native";
+import { Globe2, Lock, Plus, ShieldCheck } from "lucide-react-native";
+import { type ICommunity } from "@/types/community.types";
+import { useIconColors } from "@/hooks/useIconColors";
+import { normalizeMediaUrl } from "@/utils/url";
+import { CATEGORY_LABEL, type TabKey } from "../constants";
+import { canManage } from "../utils/helpers";
+import { TabButton } from "./TabButton";
+
+const defaultAvatarGroup = require("../../../../assets/images/avatar-group-default.jpg");
+const defaultCoverGroup = require("../../../../assets/images/cover-group-default.jpg");
+
+export interface CommunityHeaderProps {
+  community: ICommunity;
+  isMember: boolean;
+  joining: boolean;
+  tab: TabKey;
+  setTab: (tab: TabKey) => void;
+  onJoin: () => void;
+  onPost: () => void;
+}
+
+export function CommunityHeader({
+  community,
+  isMember,
+  joining,
+  tab,
+  setTab,
+  onJoin,
+  onPost,
+}: CommunityHeaderProps) {
+  const { primary } = useIconColors();
+
+  const normalizedCover = normalizeMediaUrl(community.coverUrl);
+  const normalizedAvatar = normalizeMediaUrl(community.avatar);
+
+  return (
+    <View className="gap-5">
+      {/* Cover Image Container */}
+      <View
+        className="relative w-full overflow-hidden rounded-b-[32px] bg-muted/20"
+        style={{ height: 210 }}
+      >
+        <Image
+          source={normalizedCover ? { uri: normalizedCover } : defaultCoverGroup}
+          className="size-full"
+          resizeMode="cover"
+        />
+        {/* Top gradient overlay to ensure white icons are visible */}
+        <View className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/40 to-transparent" />
+      </View>
+
+      {/* Community Main Info */}
+      <View className="gap-4 px-4">
+        {/* Avatar & Title Row */}
+        <View className="flex-row items-end gap-4">
+          <View
+            className="-mt-16 size-24 items-center justify-center border-4 border-background bg-card shadow-2xl"
+            style={{
+              width: 96,
+              height: 96,
+              borderRadius: 48,
+              overflow: "hidden",
+              elevation: 8,
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 6 },
+              shadowOpacity: 0.15,
+              shadowRadius: 10,
+            }}
+          >
+            <Image
+              source={normalizedAvatar ? { uri: normalizedAvatar } : defaultAvatarGroup}
+              className="size-full"
+              style={{ width: "100%", height: "100%", borderRadius: 48 }}
+              resizeMode="cover"
+            />
+          </View>
+
+          <View className="min-w-0 flex-1 pb-1">
+            <View className="flex-row items-center gap-1.5">
+              <Text
+                className="flex-1 text-2xl font-extrabold tracking-tight text-foreground"
+                numberOfLines={1}
+              >
+                {community.name}
+              </Text>
+              {canManage(community.viewerRole) && (
+                <ShieldCheck size={20} color={primary} className="mt-1" />
+              )}
+            </View>
+
+            <View className="mt-1 flex-row items-center gap-2">
+              <View className="rounded-full bg-primary/10 px-2.5 py-0.5">
+                <Text className="text-[11px] font-bold text-primary">
+                  {CATEGORY_LABEL[community.category]}
+                </Text>
+              </View>
+              <View className="flex-row items-center gap-1">
+                {community.type === "private" ? (
+                  <Lock size={12} color="#71717a" />
+                ) : (
+                  <Globe2 size={12} color="#71717a" />
+                )}
+                <Text className="text-xs text-muted-foreground">
+                  {community.type === "public" ? "Công khai" : "Riêng tư"}
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* Description */}
+        <Text className="text-[14px] leading-relaxed text-muted-foreground">
+          {community.description ||
+            "Cộng đồng chưa có mô tả. Chào mừng bạn tham gia không gian thảo luận này!"}
+        </Text>
+
+        {/* Stats Row (Premium horizontal redesign) */}
+        <View className="flex-row items-center justify-around rounded-2xl border border-border/30 bg-muted/40 py-3.5">
+          <View className="flex-1 items-center">
+            <Text className="text-lg font-extrabold text-foreground">{community.memberCount}</Text>
+            <Text className="mt-0.5 text-[11px] font-medium text-muted-foreground">thành viên</Text>
+          </View>
+          <View className="h-6 w-[1px] bg-border/40" />
+          <View className="flex-1 items-center">
+            <Text className="text-lg font-extrabold text-foreground">{community.postCount}</Text>
+            <Text className="mt-0.5 text-[11px] font-medium text-muted-foreground">bài viết</Text>
+          </View>
+        </View>
+
+        {/* Action Button */}
+        {isMember ? (
+          <Pressable
+            onPress={onPost}
+            className="flex-row items-center justify-center gap-2 rounded-2xl bg-primary py-3.5 shadow-lg shadow-primary/20 transition-all active:scale-95"
+          >
+            <Plus size={18} color="#fff" strokeWidth={2.5} />
+            <Text className="text-[15px] font-bold text-primary-foreground">Đăng bài viết mới</Text>
+          </Pressable>
+        ) : (
+          <Pressable
+            disabled={joining || community.joinRequestStatus === "pending"}
+            onPress={onJoin}
+            className="rounded-2xl bg-primary py-3.5 shadow-lg shadow-primary/25 transition-all active:scale-95 disabled:opacity-60"
+          >
+            <Text className="text-center text-[15px] font-bold text-primary-foreground">
+              {community.joinRequestStatus === "pending"
+                ? "Đang chờ duyệt yêu cầu..."
+                : "Tham gia cộng đồng"}
+            </Text>
+          </Pressable>
+        )}
+      </View>
+
+      {/* Tab Control */}
+      <View className="px-4">
+        <View className="flex-row rounded-full bg-muted/60 p-1">
+          <TabButton active={tab === "posts"} label="Bài viết" onPress={() => setTab("posts")} />
+          <TabButton active={tab === "about"} label="Giới thiệu" onPress={() => setTab("about")} />
+        </View>
+      </View>
+    </View>
+  );
+}

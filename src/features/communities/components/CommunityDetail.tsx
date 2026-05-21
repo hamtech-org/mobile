@@ -1,0 +1,584 @@
+import { useEffect, useRef, useCallback, useMemo, useState } from "react";
+import { Alert, FlatList, Pressable, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { router } from "expo-router";
+import {
+  BookOpen,
+  Calendar,
+  ChevronDown,
+  ChevronUp,
+  FileText,
+  Globe2,
+  Lock,
+  MoreVertical,
+  Pencil,
+  Sparkles,
+  Trash2,
+  UserCheck,
+  UserMinus,
+  Users,
+} from "lucide-react-native";
+import BottomSheet, {
+  BottomSheetBackdrop,
+  type BottomSheetBackdropProps,
+} from "@gorhom/bottom-sheet";
+
+import { FeedPostCard } from "@/features/newsfeed/components/FeedPostCard";
+import { useIconColors } from "@/hooks/useIconColors";
+import { usePostMultipleUsersMutation, type FriendListItem } from "@/store/api/userApi";
+import {
+  useArchiveCommunityMutation,
+  useGetCommunityMembersQuery,
+  useGetCommunityPostsQuery,
+  useGetCommunityQuery,
+  useGetCommunityRequestsQuery,
+  useJoinCommunityMutation,
+  useLeaveCommunityMutation,
+  useRemoveCommunityMemberMutation,
+  useResolveCommunityRequestMutation,
+  useTransferCommunityOwnerMutation,
+  useUpdateCommunityMemberRoleMutation,
+} from "@/store/api/communityApi";
+import {
+  type CommunityCategory,
+  type CommunityMemberRole,
+  type ICommunityMember,
+} from "@/types/community.types";
+import type { IPost } from "@/types/newsfeed.types";
+import { toast } from "@/utils/appToast";
+import { CATEGORY_LABEL, ROLE_LABEL, type TabKey } from "../constants";
+import { canManage } from "../utils/helpers";
+import { CommunityHeader } from "./CommunityHeader";
+import { EditCommunityModal } from "./EditCommunityModal";
+import { GroupMenuSheet } from "./GroupMenuSheet";
+import { MemberManageSheet } from "./MemberManageSheet";
+import { MembersModal } from "./MembersModal";
+import { RequestsModal } from "./RequestsModal";
+import { InfoRow } from "./InfoRow";
+
+export interface CommunityDetailProps {
+  groupId: string;
+}
+
+export function CommunityDetail({ groupId }: CommunityDetailProps) {
+  const { primary, foreground, muted, destructive } = useIconColors();
+  const [tab, setTab] = useState<TabKey>("posts");
+  const [editOpen, setEditOpen] = useState(false);
+  const [selectedMember, setSelectedMember] = useState<ICommunityMember | null>(null);
+  const [membersModalOpen, setMembersModalOpen] = useState(false);
+  const [requestsModalOpen, setRequestsModalOpen] = useState(false);
+  const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
+
+  const groupMenuSheetRef = useRef<BottomSheet>(null);
+  const memberManageSheetRef = useRef<BottomSheet>(null);
+
+  const { data: community, isLoading } = useGetCommunityQuery(groupId, { skip: !groupId });
+  const { data: members } = useGetCommunityMembersQuery(groupId, { skip: !groupId });
+  const { data: posts } = useGetCommunityPostsQuery({ groupId, limit: 20 }, { skip: !groupId });
+  const manager = canManage(community?.viewerRole);
+  const owner = community?.viewerRole === "owner";
+  const { data: requests } = useGetCommunityRequestsQuery(groupId, { skip: !groupId || !manager });
+
+  const [joinCommunity, { isLoading: joining }] = useJoinCommunityMutation();
+  const [leaveCommunity] = useLeaveCommunityMutation();
+  const [archiveCommunity] = useArchiveCommunityMutation();
+  const [resolveRequest] = useResolveCommunityRequestMutation();
+  const [removeMember] = useRemoveCommunityMemberMutation();
+  const [updateRole] = useUpdateCommunityMemberRoleMutation();
+  const [transferOwner] = useTransferCommunityOwnerMutation();
+
+  const [profilesMap, setProfilesMap] = useState<Record<string, FriendListItem>>({});
+  const [postMultipleUsers] = usePostMultipleUsersMutation();
+
+  const memberUserIds = members?.map((m) => m.userId) ?? [];
+  const requestUserIds = requests?.map((r) => r.userId) ?? [];
+  const allUserIds = useMemo(
+    () => Array.from(new Set([...memberUserIds, ...requestUserIds])),
+    [memberUserIds, requestUserIds],
+  );
+
+  useEffect(() => {
+    const missingIds = allUserIds.filter((id) => !profilesMap[id]);
+    if (missingIds.length > 0) {
+      postMultipleUsers({ userIds: missingIds })
+        .unwrap()
+        .then((users) => {
+          if (users && users.length > 0) {
+            setProfilesMap((prev) => {
+              const next = { ...prev };
+              users.forEach((u) => {
+                next[u.userId] = u;
+              });
+              return next;
+            });
+          }
+        })
+        .catch((err) => {
+          console.error("Batch fetch members error:", err);
+        });
+    }
+  }, [allUserIds, postMultipleUsers]);
+
+  const renderBackdrop = useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop
+        {...props}
+        disappearsOnIndex={-1}
+        appearsOnIndex={0}
+        opacity={0.45}
+        pressBehavior="close"
+      />
+    ),
+    [],
+  );
+
+  if (isLoading || !community) {
+    return (
+      <SafeAreaView className="flex-1 items-center justify-center bg-background">
+        <Text className="text-muted-foreground">Đang tải cộng đồng...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  const isMember = community.viewerStatus === "active";
+
+  const handleJoin = async (): Promise<void> => {
+    try {
+      const result = await joinCommunity({ groupId }).unwrap();
+      toast.success(
+        result.status === "requested" ? "Đã gửi yêu cầu tham gia" : "Đã tham gia cộng đồng",
+      );
+    } catch {
+      toast.error("Không thể tham gia cộng đồng");
+    }
+  };
+
+  const confirmLeave = (): void => {
+    Alert.alert("Rời cộng đồng?", "Bạn sẽ mất quyền đăng bài trong cộng đồng này.", [
+      { text: "Hủy", style: "cancel" },
+      {
+        text: "Rời",
+        style: "destructive",
+        onPress: () => {
+          void leaveCommunity(groupId)
+            .unwrap()
+            .then(() => toast.success("Đã rời cộng đồng"))
+            .catch(() => toast.error("Không thể rời cộng đồng"));
+        },
+      },
+    ]);
+  };
+
+  const confirmArchive = (): void => {
+    Alert.alert("Lưu trữ cộng đồng?", "Cộng đồng sẽ không còn xuất hiện trong discovery.", [
+      { text: "Hủy", style: "cancel" },
+      {
+        text: "Lưu trữ",
+        style: "destructive",
+        onPress: () => {
+          void archiveCommunity(groupId)
+            .unwrap()
+            .then(() => {
+              toast.success("Đã lưu trữ cộng đồng");
+              router.back();
+            })
+            .catch(() => toast.error("Không thể lưu trữ cộng đồng"));
+        },
+      },
+    ]);
+  };
+
+  const handleUpdateRole = async (role: CommunityMemberRole) => {
+    if (!selectedMember) return;
+    try {
+      memberManageSheetRef.current?.close();
+      await updateRole({ groupId, userId: selectedMember.userId, role }).unwrap();
+      toast.success(
+        `Đã cập nhật quyền của ${profilesMap[selectedMember.userId]?.displayName || selectedMember.userId} thành ${ROLE_LABEL[role]}`,
+      );
+    } catch {
+      toast.error("Không thể cập nhật quyền");
+    }
+  };
+
+  const handleTransferOwner = async () => {
+    if (!selectedMember) return;
+    Alert.alert(
+      "Chuyển quyền sở hữu?",
+      `Bạn có chắc chắn muốn chuyển quyền chủ sở hữu cho ${profilesMap[selectedMember.userId]?.displayName || selectedMember.userId}? Bạn sẽ bị hạ cấp xuống thành viên thường.`,
+      [
+        { text: "Hủy", style: "cancel" },
+        {
+          text: "Chuyển",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              memberManageSheetRef.current?.close();
+              await transferOwner({ groupId, targetUserId: selectedMember.userId }).unwrap();
+              toast.success("Đã chuyển quyền chủ sở hữu thành công");
+            } catch {
+              toast.error("Không thể chuyển quyền chủ sở hữu");
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleKickMember = () => {
+    if (!selectedMember) return;
+    const memberName = profilesMap[selectedMember.userId]?.displayName || selectedMember.userId;
+    Alert.alert(
+      "Trục xuất thành viên?",
+      `Bạn có chắc chắn muốn xóa ${memberName} khỏi cộng đồng này?`,
+      [
+        { text: "Hủy", style: "cancel" },
+        {
+          text: "Trục xuất",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              memberManageSheetRef.current?.close();
+              await removeMember({ groupId, userId: selectedMember.userId }).unwrap();
+              toast.success(`Đã trục xuất ${memberName} khỏi cộng đồng`);
+            } catch {
+              toast.error("Không thể trục xuất thành viên");
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleResolveRequest = async (userId: string, action: "approve" | "reject") => {
+    try {
+      await resolveRequest({ groupId, userId, action }).unwrap();
+      toast.success(action === "approve" ? "Đã duyệt yêu cầu" : "Đã từ chối yêu cầu");
+    } catch {
+      toast.error("Không thể xử lý yêu cầu");
+    }
+  };
+
+  return (
+    <SafeAreaView className="flex-1 bg-background" edges={["bottom"]}>
+      {/* Floating Navigation Header */}
+      <View className="absolute left-0 right-0 top-0 z-50 flex-row items-center justify-end px-4 pb-3 pt-12">
+        <View className="flex-row items-center gap-2">
+          <Pressable
+            onPress={() => setMembersModalOpen(true)}
+            className="h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/25 backdrop-blur-md active:scale-90"
+          >
+            <Users size={18} color="#fff" />
+          </Pressable>
+          {manager && (
+            <Pressable
+              onPress={() => setRequestsModalOpen(true)}
+              className="relative h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/25 backdrop-blur-md active:scale-90"
+            >
+              <UserCheck size={18} color="#fff" />
+              {!!requests?.length && (
+                <View className="absolute -right-1 -top-1 h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1">
+                  <Text className="text-destructive-foreground text-[9px] font-bold">
+                    {requests.length}
+                  </Text>
+                </View>
+              )}
+            </Pressable>
+          )}
+          {(owner || community.viewerRole === "admin") && (
+            <Pressable
+              onPress={() => setEditOpen(true)}
+              className="h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/25 backdrop-blur-md active:scale-90"
+            >
+              <Pencil size={18} color="#fff" />
+            </Pressable>
+          )}
+          <Pressable
+            onPress={() => groupMenuSheetRef.current?.expand()}
+            className="h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/25 backdrop-blur-md active:scale-90"
+          >
+            <MoreVertical size={18} color="#fff" />
+          </Pressable>
+        </View>
+      </View>
+
+      {tab === "posts" && (
+        <FlatList
+          data={posts?.items ?? []}
+          keyExtractor={(item: IPost) => item.postId}
+          contentContainerStyle={{ paddingBottom: 100, gap: 16 }}
+          ListHeaderComponent={
+            <CommunityHeader
+              community={community}
+              isMember={isMember}
+              joining={joining}
+              tab={tab}
+              setTab={setTab}
+              onJoin={() => void handleJoin()}
+              onPost={() => router.push(`/(main)/(newsfeed)/editor/new?groupId=${groupId}`)}
+            />
+          }
+          ListEmptyComponent={
+            <View className="mx-4 mt-4 items-center gap-3 rounded-2xl border border-dashed border-border bg-card p-8">
+              {community.type === "private" && !isMember ? (
+                <>
+                  <Lock size={28} color={muted} />
+                  <Text className="text-center font-semibold text-foreground">
+                    Cộng đồng riêng tư
+                  </Text>
+                  <Text className="text-center text-sm text-muted-foreground">
+                    Bạn cần là thành viên để xem bài viết.
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <FileText size={28} color={muted} />
+                  <Text className="text-center font-semibold text-foreground">
+                    Chưa có bài viết
+                  </Text>
+                  <Text className="text-center text-sm text-muted-foreground">
+                    Hãy mở đầu cuộc thảo luận.
+                  </Text>
+                </>
+              )}
+            </View>
+          }
+          renderItem={({ item }) => (
+            <View className="mx-4">
+              <FeedPostCard post={item} />
+            </View>
+          )}
+        />
+      )}
+
+      {tab === "about" && (
+        <FlatList
+          data={[0]}
+          keyExtractor={(item) => String(item)}
+          contentContainerStyle={{ paddingBottom: 100, gap: 16 }}
+          ListHeaderComponent={
+            <CommunityHeader
+              community={community}
+              isMember={isMember}
+              joining={joining}
+              tab={tab}
+              setTab={setTab}
+              onJoin={() => void handleJoin()}
+              onPost={() => router.push(`/(main)/(newsfeed)/editor/new?groupId=${groupId}`)}
+            />
+          }
+          renderItem={() => (
+            <View className="mt-2 gap-5 px-4">
+              {/* Accordion Rules */}
+              <View className="gap-4 rounded-2xl border border-border bg-card p-4">
+                <View className="flex-row items-center gap-2 border-b border-border/40 pb-3">
+                  <BookOpen size={18} color={primary} />
+                  <Text className="text-[16px] font-bold text-foreground">Nội quy cộng đồng</Text>
+                </View>
+                {community.rules?.length ? (
+                  <View className="gap-1">
+                    {community.rules.map((rule, index) => {
+                      const isExpanded = expandedRuleId === rule.id;
+                      const formattedIndex = String(index + 1).padStart(2, "0");
+                      return (
+                        <View
+                          key={rule.id}
+                          className="mt-3 border-b border-border/20 pb-3 last:border-0"
+                        >
+                          <Pressable
+                            onPress={() => setExpandedRuleId(isExpanded ? null : rule.id)}
+                            className="flex-row items-center justify-between gap-3 active:opacity-70"
+                          >
+                            <View className="flex-1 flex-row items-center gap-3.5">
+                              <Text className="text-xl font-extrabold text-primary/80">
+                                {formattedIndex}
+                              </Text>
+                              <Text className="flex-1 text-[15px] font-semibold text-foreground">
+                                {rule.title}
+                              </Text>
+                            </View>
+                            {isExpanded ? (
+                              <ChevronUp size={18} color={muted} />
+                            ) : (
+                              <ChevronDown size={18} color={muted} />
+                            )}
+                          </Pressable>
+
+                          {isExpanded && (
+                            <View className="mt-2.5 rounded-2xl border border-border/20 bg-muted/40 p-3.5">
+                              <Text className="text-sm leading-relaxed text-muted-foreground">
+                                {rule.description}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })}
+                  </View>
+                ) : (
+                  <Text className="py-2 text-sm text-muted-foreground">
+                    Cộng đồng chưa thiết lập nội quy riêng.
+                  </Text>
+                )}
+              </View>
+
+              {/* Information Row List */}
+              <View className="gap-4 rounded-2xl border border-border bg-card p-4">
+                <Text className="text-[16px] font-bold text-foreground">Thông tin chi tiết</Text>
+                <View className="gap-3">
+                  <InfoRow
+                    icon={<Sparkles size={16} color={primary} />}
+                    label="Chủ đề"
+                    value={CATEGORY_LABEL[community.category]}
+                  />
+                  <InfoRow
+                    icon={
+                      community.type === "public" ? (
+                        <Globe2 size={16} color={primary} />
+                      ) : (
+                        <Lock size={16} color={primary} />
+                      )
+                    }
+                    label="Loại cộng đồng"
+                    value={community.type === "public" ? "Công khai" : "Riêng tư"}
+                  />
+                  <InfoRow
+                    icon={<Calendar size={16} color={primary} />}
+                    label="Ngày thành lập"
+                    value={new Date(community.createdAt).toLocaleDateString("vi-VN")}
+                  />
+                </View>
+              </View>
+
+              {/* Danger Zone / Admin Actions */}
+              <View className="gap-3 rounded-2xl border border-destructive/20 bg-destructive/5 p-4">
+                <Text className="text-[15px] font-bold text-destructive">
+                  Vùng quản trị nguy hiểm
+                </Text>
+                {isMember && !owner && (
+                  <Pressable
+                    onPress={confirmLeave}
+                    className="flex-row items-center justify-center gap-2 rounded-2xl border border-destructive/20 bg-destructive/10 py-3.5 transition-all active:scale-95"
+                  >
+                    <UserMinus size={18} color={destructive} />
+                    <Text className="text-[14px] font-bold text-destructive">
+                      Rời khỏi cộng đồng
+                    </Text>
+                  </Pressable>
+                )}
+                {owner && (
+                  <Pressable
+                    onPress={confirmArchive}
+                    className="flex-row items-center justify-center gap-2 rounded-2xl border border-destructive/20 bg-destructive/10 py-3.5 transition-all active:scale-95"
+                  >
+                    <Trash2 size={18} color={destructive} />
+                    <Text className="text-[14px] font-bold text-destructive">
+                      Giải tán cộng đồng này
+                    </Text>
+                  </Pressable>
+                )}
+                {!isMember && community.joinRequestStatus !== "pending" && (
+                  <Pressable
+                    disabled={joining}
+                    onPress={handleJoin}
+                    className="flex-row items-center justify-center gap-2 rounded-2xl bg-primary py-3.5 shadow-md shadow-primary/20 transition-all active:scale-95"
+                  >
+                    <Text className="text-[14px] font-bold text-primary-foreground">
+                      Gia nhập cộng đồng
+                    </Text>
+                  </Pressable>
+                )}
+                {!isMember && community.joinRequestStatus === "pending" && (
+                  <View className="flex-row items-center justify-center gap-2 rounded-2xl bg-muted py-3.5">
+                    <Text className="text-[14px] font-bold text-muted-foreground">
+                      Đang chờ phê duyệt gia nhập
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
+        />
+      )}
+
+      {/* Group Menu Bottom Sheet */}
+      <GroupMenuSheet
+        sheetRef={groupMenuSheetRef}
+        community={community}
+        isMember={isMember}
+        owner={owner}
+        mutedColor={muted}
+        destructiveColor={destructive}
+        confirmLeave={confirmLeave}
+        confirmArchive={confirmArchive}
+        renderBackdrop={renderBackdrop}
+      />
+
+      {/* Member Management Bottom Sheet */}
+      <MemberManageSheet
+        sheetRef={memberManageSheetRef}
+        selectedMember={selectedMember}
+        profilesMap={profilesMap}
+        owner={owner}
+        mutedColor={muted}
+        foregroundColor={foreground}
+        destructiveColor={destructive}
+        onClose={() => setSelectedMember(null)}
+        handleUpdateRole={handleUpdateRole}
+        handleTransferOwner={handleTransferOwner}
+        handleKickMember={handleKickMember}
+        renderBackdrop={renderBackdrop}
+      />
+
+      {/* FAB Create Post */}
+      {tab === "posts" && isMember && (
+        <Pressable
+          onPress={() => router.push(`/(main)/(newsfeed)/editor/new?groupId=${groupId}`)}
+          className="absolute bottom-6 right-6 z-50 size-14 items-center justify-center rounded-full bg-primary shadow-lg shadow-primary/30 active:scale-95"
+          style={{
+            elevation: 6,
+            shadowColor: primary,
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.35,
+            shadowRadius: 6,
+          }}
+        >
+          <Pencil size={22} color="#fff" strokeWidth={2.5} />
+        </Pressable>
+      )}
+
+      {/* Members Modal */}
+      <MembersModal
+        open={membersModalOpen}
+        onClose={() => setMembersModalOpen(false)}
+        members={members ?? []}
+        profilesMap={profilesMap}
+        community={community}
+        manager={manager}
+        mutedColor={muted}
+        foregroundColor={foreground}
+        onSelectMember={(member) => {
+          setSelectedMember(member);
+          memberManageSheetRef.current?.expand();
+        }}
+      />
+
+      {/* Join Requests Modal */}
+      <RequestsModal
+        open={requestsModalOpen}
+        onClose={() => setRequestsModalOpen(false)}
+        requests={requests ?? []}
+        profilesMap={profilesMap}
+        mutedColor={muted}
+        handleResolveRequest={handleResolveRequest}
+      />
+
+      {/* Edit Community Modal */}
+      <EditCommunityModal
+        community={community}
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+      />
+    </SafeAreaView>
+  );
+}

@@ -9,7 +9,20 @@ import { env } from "@/config/env";
  * @returns URL đã được chuẩn hóa để load trên mobile
  */
 export function normalizeMediaUrl(url: string | null | undefined): string | undefined {
-  if (!url) return undefined;
+  if (
+    !url ||
+    url === "null" ||
+    url === "undefined" ||
+    url === "default" ||
+    url.trim() === "" ||
+    url.endsWith("/null") ||
+    url.endsWith("/undefined") ||
+    url.endsWith("/default") ||
+    url.includes("avatar-group-default") ||
+    url.includes("cover-group-default")
+  ) {
+    return undefined;
+  }
 
   // 1. Phục hồi relative path (nếu backend trả về dạng /media/...)
   if (url.startsWith("/")) {
