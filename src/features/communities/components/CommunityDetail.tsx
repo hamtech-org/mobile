@@ -398,7 +398,7 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
               tab={tab}
               setTab={setTab}
               onJoin={() => void handleJoin()}
-              onPost={() => router.push(`/(main)/(newsfeed)/editor/new?groupId=${groupId}`)}
+              onPost={() => router.push(`/(main)/(communities)/editor/new?groupId=${groupId}`)}
             />
           }
           ListEmptyComponent={
@@ -447,7 +447,7 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
               tab={tab}
               setTab={setTab}
               onJoin={() => void handleJoin()}
-              onPost={() => router.push(`/(main)/(newsfeed)/editor/new?groupId=${groupId}`)}
+              onPost={() => router.push(`/(main)/(communities)/editor/new?groupId=${groupId}`)}
             />
           }
           renderItem={() => (
@@ -686,7 +686,7 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
       {/* FAB Create Post */}
       {tab === "posts" && isMember && (
         <Pressable
-          onPress={() => router.push(`/(main)/(newsfeed)/editor/new?groupId=${groupId}`)}
+          onPress={() => router.push(`/(main)/(communities)/editor/new?groupId=${groupId}`)}
           className="absolute bottom-6 right-6 z-50 size-14 items-center justify-center rounded-full bg-primary shadow-lg shadow-primary/30 active:scale-95"
           style={{
             elevation: 6,

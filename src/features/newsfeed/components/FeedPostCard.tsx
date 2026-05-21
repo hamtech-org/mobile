@@ -1,6 +1,6 @@
 import { Image, Pressable, Text, TextInput, View, Modal, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, usePathname } from "expo-router";
 import { useState, useEffect, useRef } from "react";
 import { useSelector } from "react-redux";
 import type { IPost, IComment } from "@/types/newsfeed.types";
@@ -33,6 +33,7 @@ interface Props {
 }
 
 export const FeedPostCard = ({ post, communityRole }: Props) => {
+  const pathname = usePathname();
   const extractedText = extractTextFromTiptapJson(post.content);
   const displayName = post.author?.displayName ?? post.authorId;
   const avatar = post.author?.avatar ?? "";
@@ -396,7 +397,12 @@ export const FeedPostCard = ({ post, communityRole }: Props) => {
                   className="flex-row items-center gap-3 border-b border-border/40 px-5 py-4 active:bg-muted"
                   onPress={() => {
                     setIsMenuOpen(false);
-                    router.push(`/(main)/(newsfeed)/editor/${post.postId}`);
+                    const isInCommunityTab =
+                      pathname.includes("(communities)") || pathname.includes("/communities");
+                    const editRoute = isInCommunityTab
+                      ? `/(main)/(communities)/editor/${post.postId}`
+                      : `/(main)/(newsfeed)/editor/${post.postId}`;
+                    router.push(editRoute);
                   }}
                 >
                   <Ionicons name="pencil" size={20} color="hsl(var(--foreground))" />

@@ -12,7 +12,9 @@ import {
   DeviceEventEmitter,
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter, usePathname } from "expo-router";
+import { toast } from "@/utils/appToast";
+import type { Href } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useCreatePostMutation } from "@/store/api/newsfeedApi";
@@ -68,8 +70,11 @@ const VideoPreviewPlayer = ({ url }: { url: string }) => {
   );
 };
 
-export default function NewPostEditorScreen() {
+export default function NewPostEditorScreen({
+  fromTab = "newsfeed",
+}: { fromTab?: "newsfeed" | "communities" } = {}) {
   const router = useRouter();
+  const pathname = usePathname();
   const { groupId } = useLocalSearchParams<{ groupId?: string }>();
   const currentUser = useSelector((state: RootState) => state.auth.user);
 
@@ -177,23 +182,54 @@ export default function NewPostEditorScreen() {
       mediaUrls: finalMediaUrls,
     };
 
+    const isInCommunityTab = fromTab === "communities";
+    const redirectTarget: Href =
+      isInCommunityTab && groupId
+        ? `/(main)/(communities)/${groupId}`
+        : isInCommunityTab
+          ? `/(main)/(communities)`
+          : "/(main)/(newsfeed)";
+
     const res = await createPost(payload).unwrap();
     if (res && status === "published") {
       DeviceEventEmitter.emit("post:created", res);
+      if (res.moderationStatus === "pending") {
+        toast.success("Bài viết đã gửi & đang chờ kiểm duyệt.");
+      } else {
+        toast.success("Đăng bài viết thành công!");
+      }
+    } else if (res && status === "draft") {
+      toast.success("Đã lưu bản nháp.");
     }
-    router.replace(groupId ? `/(main)/(communities)/${groupId}` : "/(main)/(newsfeed)");
+    router.replace(redirectTarget);
   };
 
   const handleCancel = () => {
+    const isInCommunityTab = fromTab === "communities";
+    const fallback: Href =
+      isInCommunityTab && groupId
+        ? `/(main)/(communities)/${groupId}`
+        : isInCommunityTab
+          ? `/(main)/(communities)`
+          : "/(main)/(newsfeed)";
+
+    const goBack = () => {
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace(fallback);
+      }
+    };
+
     if (!hasContent) {
-      router.back();
+      goBack();
       return;
     }
     Alert.alert("Lưu bản nháp?", "Bạn có muốn lưu bài viết này vào mục nháp không?", [
       {
         text: "Bỏ qua",
         style: "destructive",
-        onPress: () => router.back(),
+        onPress: goBack,
       },
       {
         text: "Lưu nháp",
