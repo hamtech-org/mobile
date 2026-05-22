@@ -1,5 +1,5 @@
 import { Image, Pressable, Text, View } from "react-native";
-import { Globe2, Lock, Plus, ShieldCheck } from "lucide-react-native";
+import { Globe2, Lock, Plus, ShieldCheck, MessageSquare } from "lucide-react-native";
 import { type ICommunity } from "@/types/community.types";
 import { useIconColors } from "@/hooks/useIconColors";
 import { normalizeMediaUrl } from "@/utils/url";
@@ -18,6 +18,9 @@ export interface CommunityHeaderProps {
   setTab: (tab: TabKey) => void;
   onJoin: () => void;
   onPost: () => void;
+  onChatPress?: () => void;
+  chatEnabled?: boolean;
+  joiningChat?: boolean;
 }
 
 export function CommunityHeader({
@@ -28,6 +31,9 @@ export function CommunityHeader({
   setTab,
   onJoin,
   onPost,
+  onChatPress,
+  chatEnabled,
+  joiningChat,
 }: CommunityHeaderProps) {
   const { primary } = useIconColors();
 
@@ -130,13 +136,35 @@ export function CommunityHeader({
 
         {/* Action Button */}
         {isMember ? (
-          <Pressable
-            onPress={onPost}
-            className="flex-row items-center justify-center gap-2 rounded-2xl bg-primary py-3.5 shadow-lg shadow-primary/20 transition-all active:scale-95"
-          >
-            <Plus size={18} color="#fff" strokeWidth={2.5} />
-            <Text className="text-[15px] font-bold text-primary-foreground">Đăng bài viết mới</Text>
-          </Pressable>
+          chatEnabled ? (
+            <View className="flex-row gap-3">
+              <Pressable
+                onPress={onPost}
+                className="flex-1 flex-row items-center justify-center gap-2 rounded-2xl border border-border/25 bg-muted py-3.5 transition-all active:scale-95"
+              >
+                <Plus size={18} color="#71717a" strokeWidth={2.5} />
+                <Text className="text-[15px] font-bold text-foreground">Đăng bài</Text>
+              </Pressable>
+              <Pressable
+                onPress={onChatPress}
+                disabled={joiningChat}
+                className="flex-1 flex-row items-center justify-center gap-2 rounded-2xl bg-primary py-3.5 shadow-lg shadow-primary/20 transition-all active:scale-95 disabled:opacity-60"
+              >
+                <MessageSquare size={18} color="#fff" strokeWidth={2.5} />
+                <Text className="text-[15px] font-bold text-primary-foreground">Trò chuyện</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              onPress={onPost}
+              className="flex-row items-center justify-center gap-2 rounded-2xl bg-primary py-3.5 shadow-lg shadow-primary/20 transition-all active:scale-95"
+            >
+              <Plus size={18} color="#fff" strokeWidth={2.5} />
+              <Text className="text-[15px] font-bold text-primary-foreground">
+                Đăng bài viết mới
+              </Text>
+            </Pressable>
+          )
         ) : (
           <Pressable
             disabled={joining || community.joinRequestStatus === "pending"}

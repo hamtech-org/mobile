@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { Pressable, Text, View } from "react-native";
 import BottomSheet, { BottomSheetView, type BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
-import { UserMinus, Trash2, Flag } from "lucide-react-native";
+import { UserMinus, Trash2, Flag, MessageSquare } from "lucide-react-native";
 import { type ICommunity } from "@/types/community.types";
 import { ActionRow } from "./ActionRow";
 
@@ -16,6 +16,8 @@ export interface GroupMenuSheetProps {
   confirmArchive: () => void;
   onReportPress: () => void;
   renderBackdrop: (props: BottomSheetBackdropProps) => React.ReactElement;
+  onLinkChatPress?: () => void;
+  onUnlinkChatPress?: () => void;
 }
 
 export function GroupMenuSheet({
@@ -29,13 +31,21 @@ export function GroupMenuSheet({
   confirmArchive,
   onReportPress,
   renderBackdrop,
+  onLinkChatPress,
+  onUnlinkChatPress,
 }: GroupMenuSheetProps) {
   // Dynamically compute snap points based on the number of action rows.
   // 1 row -> 25% (very compact)
   // 2 rows -> 32%
   const menuSnapPoints = useMemo(() => {
-    const itemCount = (isMember && !owner ? 1 : 0) + (!owner ? 1 : 0) + (owner ? 1 : 0);
-    return itemCount > 1 ? ["32%"] : ["25%"];
+    let itemCount = 0;
+    if (isMember && !owner) itemCount++;
+    if (!owner) itemCount++;
+    if (owner) {
+      itemCount++; // archive
+      itemCount++; // link/unlink chat
+    }
+    return itemCount > 1 ? ["38%"] : ["25%"];
   }, [isMember, owner]);
 
   return (
@@ -86,6 +96,31 @@ export function GroupMenuSheet({
                 }}
               />
             ),
+            owner &&
+              (community.conversationId ? (
+                <ActionRow
+                  key="unlink-chat"
+                  icon={<MessageSquare size={20} color={destructiveColor} />}
+                  label="Hủy liên kết phòng chat"
+                  hint="Gỡ bỏ phòng chat liên kết hiện tại của cộng đồng"
+                  destructive
+                  onPress={() => {
+                    sheetRef.current?.close();
+                    onUnlinkChatPress?.();
+                  }}
+                />
+              ) : (
+                <ActionRow
+                  key="link-chat"
+                  icon={<MessageSquare size={20} color="#71717a" />}
+                  label="Liên kết phòng chat"
+                  hint="Chọn một phòng chat nhóm để liên kết với cộng đồng"
+                  onPress={() => {
+                    sheetRef.current?.close();
+                    onLinkChatPress?.();
+                  }}
+                />
+              )),
             owner && (
               <ActionRow
                 key="archive"

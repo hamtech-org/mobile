@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, useMemo, useState } from "react";
 import { Alert, FlatList, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import {
   AlertCircle,
   ArrowLeft,
@@ -45,7 +45,13 @@ import {
   useTransferCommunityOwnerMutation,
   useUpdateCommunityMemberRoleMutation,
   useGetPendingPostsQuery,
+  useJoinCommunityChatMutation,
+  useLinkExistingChatMutation,
+  useUnlinkChatMutation,
 } from "@/store/api/communityApi";
+import { useGetConversationsQuery } from "@/store/api/chatApi";
+import { useAppSelector } from "@/hooks/useAppStore";
+import { LinkChatModal } from "./LinkChatModal";
 import { PendingPostsModal } from "./PendingPostsModal";
 import {
   type CommunityCategory,
@@ -73,6 +79,9 @@ export interface CommunityDetailProps {
 
 export function CommunityDetail({ groupId }: CommunityDetailProps) {
   const { primary, foreground, muted, destructive } = useIconColors();
+  const currentUser = useAppSelector((state) => state.auth.user);
+  const { joinChat } = useLocalSearchParams<{ joinChat?: string }>();
+
   const [tab, setTab] = useState<TabKey>("posts");
   const [editOpen, setEditOpen] = useState(false);
   const [selectedMember, setSelectedMember] = useState<ICommunityMember | null>(null);
@@ -83,6 +92,8 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
   const [reportVisible, setReportVisible] = useState(false);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
+
+  const [linkChatModalOpen, setLinkChatModalOpen] = useState(false);
 
   const groupMenuSheetRef = useRef<BottomSheet>(null);
   const memberManageSheetRef = useRef<BottomSheet>(null);
@@ -111,6 +122,14 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
   const [removeMember] = useRemoveCommunityMemberMutation();
   const [updateRole] = useUpdateCommunityMemberRoleMutation();
   const [transferOwner] = useTransferCommunityOwnerMutation();
+
+  const [joinCommunityChat, { isLoading: joiningChat }] = useJoinCommunityChatMutation();
+  const [linkExistingChat, { isLoading: linkingChat }] = useLinkExistingChatMutation();
+  const [unlinkChat] = useUnlinkChatMutation();
+
+  const { data: conversations } = useGetConversationsQuery(undefined, {
+    skip: !isMember || !owner,
+  });
 
   const [profilesMap, setProfilesMap] = useState<Record<string, FriendListItem>>({});
   const [postMultipleUsers] = usePostMultipleUsersMutation();
@@ -148,6 +167,85 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
         });
     }
   }, [members, requests, postMultipleUsers]);
+
+  const eligibleConversations = useMemo(() => {
+    if (!conversations) return [];
+    return conversations.filter(
+      (c) => c.type === "group" && c.leaderId === currentUser?.userId && !c.groupId,
+    );
+  }, [conversations, currentUser]);
+
+  // Auto-join community chat if joinChat=true query param is present
+  useEffect(() => {
+    if (joinChat === "true" && community?.chatEnabled && isMember) {
+      const performAutoJoin = async () => {
+        try {
+          const res = await joinCommunityChat({ groupId }).unwrap();
+          const conversationId = res?.conversationId || community?.conversationId;
+          if (conversationId) {
+            router.replace(`/(main)/(chat)/${conversationId}`);
+          }
+        } catch (err: any) {
+          toast.error(err?.data?.message || "Không thể tự động tham gia phòng chat");
+        }
+      };
+      void performAutoJoin();
+    }
+  }, [
+    joinChat,
+    community?.chatEnabled,
+    community?.conversationId,
+    isMember,
+    groupId,
+    joinCommunityChat,
+  ]);
+
+  const handleJoinChat = async () => {
+    if (!community || !community.chatEnabled) return;
+    try {
+      const res = await joinCommunityChat({ groupId }).unwrap();
+      const conversationId = res?.conversationId || community?.conversationId;
+      if (conversationId) {
+        router.push(`/(main)/(chat)/${conversationId}`);
+      } else {
+        toast.error("Không tìm thấy phòng trò chuyện");
+      }
+    } catch (err: any) {
+      toast.error(err?.data?.message || "Không thể tham gia phòng chat");
+    }
+  };
+
+  const handleLinkChat = async (conversationId: string) => {
+    try {
+      await linkExistingChat({ groupId, conversationId }).unwrap();
+      toast.success("Liên kết phòng trò chuyện thành công");
+      setLinkChatModalOpen(false);
+    } catch (err: any) {
+      toast.error(err?.data?.message || "Không thể liên kết phòng trò chuyện");
+    }
+  };
+
+  const handleConfirmUnlinkChat = () => {
+    Alert.alert(
+      "Hủy liên kết phòng chat?",
+      "Bạn có chắc chắn muốn hủy liên kết phòng chat hiện tại? Thành viên sẽ không thể nhắn tin từ cộng đồng này nữa.",
+      [
+        { text: "Hủy", style: "cancel" },
+        {
+          text: "Hủy liên kết",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await unlinkChat(groupId).unwrap();
+              toast.success("Đã hủy liên kết phòng trò chuyện");
+            } catch (err: any) {
+              toast.error(err?.data?.message || "Không thể hủy liên kết phòng trò chuyện");
+            }
+          },
+        },
+      ],
+    );
+  };
 
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
@@ -410,6 +508,9 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
               setTab={setTab}
               onJoin={() => void handleJoin()}
               onPost={() => router.push(`/(main)/(communities)/editor/new?groupId=${groupId}`)}
+              chatEnabled={community.chatEnabled ?? false}
+              joiningChat={joiningChat}
+              onChatPress={handleJoinChat}
             />
           }
           ListEmptyComponent={
@@ -459,6 +560,9 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
               setTab={setTab}
               onJoin={() => void handleJoin()}
               onPost={() => router.push(`/(main)/(communities)/editor/new?groupId=${groupId}`)}
+              chatEnabled={community.chatEnabled ?? false}
+              joiningChat={joiningChat}
+              onChatPress={handleJoinChat}
             />
           }
           renderItem={() => (
@@ -669,6 +773,8 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
         confirmArchive={confirmArchive}
         onReportPress={() => setReportVisible(true)}
         renderBackdrop={renderBackdrop}
+        onLinkChatPress={() => setLinkChatModalOpen(true)}
+        onUnlinkChatPress={handleConfirmUnlinkChat}
       />
 
       {/* Community Report Sheet */}
@@ -780,6 +886,15 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
         groupId={groupId}
         mutedColor={muted}
         foregroundColor={foreground}
+      />
+
+      {/* Link Chat Modal */}
+      <LinkChatModal
+        open={linkChatModalOpen}
+        onClose={() => setLinkChatModalOpen(false)}
+        conversations={eligibleConversations}
+        onConfirm={handleLinkChat}
+        loading={linkingChat}
       />
     </SafeAreaView>
   );

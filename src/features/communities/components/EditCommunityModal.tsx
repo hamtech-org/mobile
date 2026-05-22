@@ -13,7 +13,18 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
-import { Camera, Plus, BookOpen, Globe2, Lock, Users, ShieldCheck, X } from "lucide-react-native";
+import {
+  Camera,
+  Plus,
+  BookOpen,
+  Globe2,
+  Lock,
+  Users,
+  ShieldCheck,
+  X,
+  MessageSquare,
+  MessageSquareOff,
+} from "lucide-react-native";
 
 import { useIconColors } from "@/hooks/useIconColors";
 import { useUpdateCommunityMutation } from "@/store/api/communityApi";
@@ -51,6 +62,7 @@ export function EditCommunityModal({ community, open, onClose }: EditCommunityMo
   const [isPostApprovalRequired, setIsPostApprovalRequired] = useState(
     community.isPostApprovalRequired ?? false,
   );
+  const [chatEnabled, setChatEnabled] = useState(community.chatEnabled ?? true);
 
   const [avatar, setAvatar] = useState(community.avatar ?? "");
   const [coverUrl, setCoverUrl] = useState(community.coverUrl ?? "");
@@ -68,6 +80,7 @@ export function EditCommunityModal({ community, open, onClose }: EditCommunityMo
       setJoinPolicy(community.joinPolicy);
       setRules(community.rules ?? []);
       setIsPostApprovalRequired(community.isPostApprovalRequired ?? false);
+      setChatEnabled(community.chatEnabled ?? true);
     }
   }, [community, open]);
 
@@ -133,6 +146,7 @@ export function EditCommunityModal({ community, open, onClose }: EditCommunityMo
           type,
           joinPolicy,
           isPostApprovalRequired,
+          chatEnabled,
           rules: validRules.length ? validRules : undefined,
         },
       }).unwrap();
@@ -443,6 +457,51 @@ export function EditCommunityModal({ community, open, onClose }: EditCommunityMo
                     <Text className="text-xs leading-normal text-muted-foreground">
                       Bài viết từ thành viên cần được quản trị viên duyệt trước khi hiển thị cho mọi
                       người.
+                    </Text>
+                  </View>
+                </Pressable>
+              </View>
+
+              <Text className="font-semibold text-foreground">Phòng trò chuyện</Text>
+              <View className="gap-3">
+                <Pressable
+                  onPress={() => setChatEnabled(true)}
+                  className={`flex-row items-start gap-3 rounded-2xl border p-4 active:opacity-90 ${
+                    chatEnabled ? "border-primary bg-primary/5" : "border-border bg-card"
+                  }`}
+                >
+                  <View className={`rounded-lg p-2 ${chatEnabled ? "bg-primary/10" : "bg-muted"}`}>
+                    <MessageSquare size={18} color={chatEnabled ? primary : muted} />
+                  </View>
+                  <View className="flex-1 gap-1">
+                    <Text
+                      className={`text-sm font-bold ${chatEnabled ? "text-primary" : "text-foreground"}`}
+                    >
+                      Bật trò chuyện
+                    </Text>
+                    <Text className="text-xs leading-normal text-muted-foreground">
+                      Thành viên có thể tham gia phòng trò chuyện chung của cộng đồng.
+                    </Text>
+                  </View>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => setChatEnabled(false)}
+                  className={`flex-row items-start gap-3 rounded-2xl border p-4 active:opacity-90 ${
+                    !chatEnabled ? "border-primary bg-primary/5" : "border-border bg-card"
+                  }`}
+                >
+                  <View className={`rounded-lg p-2 ${!chatEnabled ? "bg-primary/10" : "bg-muted"}`}>
+                    <MessageSquareOff size={18} color={!chatEnabled ? primary : muted} />
+                  </View>
+                  <View className="flex-1 gap-1">
+                    <Text
+                      className={`text-sm font-bold ${!chatEnabled ? "text-primary" : "text-foreground"}`}
+                    >
+                      Tắt trò chuyện
+                    </Text>
+                    <Text className="text-xs leading-normal text-muted-foreground">
+                      Vô hiệu hóa và hủy liên kết phòng trò chuyện của cộng đồng.
                     </Text>
                   </View>
                 </Pressable>
