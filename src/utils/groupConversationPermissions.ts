@@ -20,21 +20,12 @@ export function isGroupAdminSlotsFull(members: AdminCountableMember[] | undefine
 
 function mergedMemberPermissions(gs?: IGroupSettings) {
   const mp = gs?.memberPermissions;
-  if (!mp) {
-    return {
-      changeNameAvatar: false,
-      pinMessages: false,
-      createNotesReminders: false,
-      createPolls: false,
-      sendMessages: false,
-    };
-  }
   return {
-    changeNameAvatar: Boolean(mp.changeNameAvatar),
-    pinMessages: Boolean(mp.pinMessages),
-    createNotesReminders: Boolean(mp.createNotesReminders),
-    createPolls: Boolean(mp.createPolls),
-    sendMessages: Boolean(mp.sendMessages),
+    changeNameAvatar: mp?.changeNameAvatar ?? true,
+    pinMessages: mp?.pinMessages ?? true,
+    createNotesReminders: mp?.createNotesReminders ?? true,
+    createPolls: mp?.createPolls ?? true,
+    sendMessages: mp?.sendMessages ?? true,
   };
 }
 
