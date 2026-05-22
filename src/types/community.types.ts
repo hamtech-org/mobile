@@ -43,6 +43,8 @@ export interface ICommunity {
   viewerStatus?: "active" | "banned" | null;
   joinRequestStatus?: CommunityRequestStatus | null;
   isPostApprovalRequired?: boolean;
+  conversationId?: string | null;
+  chatEnabled?: boolean;
   createdAt: string;
   updatedAt: string;
 }
