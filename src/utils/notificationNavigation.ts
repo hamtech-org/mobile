@@ -10,6 +10,11 @@ export function navigateFromNotification(data: INotification["data"]): void {
       router.push(deepLink as Href);
       return;
     }
+    if (deepLink.startsWith("/communities/")) {
+      const pathWithQuery = deepLink.replace(/^\/communities\//, "");
+      router.push(`/(main)/(communities)/${pathWithQuery}` as Href);
+      return;
+    }
     if (deepLink.startsWith("/chat/")) {
       const id = deepLink.replace(/^\/chat\//, "").split("?")[0];
       if (id) router.push(`/(main)/(chat)/${id}` as Href);
@@ -63,6 +68,10 @@ export function navigateFromNotification(data: INotification["data"]): void {
     case "live":
       if (entityId) router.push(`/(main)/(live)/${entityId}/watch` as Href);
       else router.push("/(main)/(live)" as Href);
+      return;
+    case "community":
+      if (entityId) router.push(`/(main)/(communities)/${entityId}?joinChat=true` as Href);
+      else router.push("/(main)/(communities)" as Href);
       return;
     default:
       if (entityId && data.route === "chat") {

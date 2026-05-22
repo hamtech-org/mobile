@@ -12,7 +12,8 @@ export type NotificationType =
   | "live_started"
   | "comment_reply"
   | "ai_job_done"
-  | "stats_milestone";
+  | "stats_milestone"
+  | "community_chat_enabled";
 
 export type NotificationRoute =
   | "chat"
@@ -22,7 +23,8 @@ export type NotificationRoute =
   | "profile"
   | "notifications"
   | "live"
-  | "ai";
+  | "ai"
+  | "community";
 
 export interface INotificationRouteData {
   route: NotificationRoute;
