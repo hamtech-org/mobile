@@ -74,6 +74,8 @@ export interface IConversation {
   leaderId?: string;
   /** Nhóm đã giải tán — ẩn khỏi list khi API trả về. */
   isDeleted?: boolean;
+  /** ID nhóm/cộng đồng liên kết */
+  groupId?: string | null;
 }
 
 export interface IReplyToDetails {
