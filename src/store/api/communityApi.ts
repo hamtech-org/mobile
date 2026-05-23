@@ -11,6 +11,8 @@ import type {
   ICreateCommunityDto,
   CommunityMemberRole,
   ISearchGroupResult,
+  ICommunityReport,
+  ICommunityReportsPage,
 } from "@/types/community.types";
 
 interface ApiEnvelope<T> {
@@ -30,6 +32,7 @@ export const communityApi = createApi({
     "CommunityPosts",
     "CommunityPendingPosts",
     "CommunityModerationLogs",
+    "CommunityReports",
   ],
   endpoints: (builder) => ({
     listCommunities: builder.query<
@@ -226,13 +229,69 @@ export const communityApi = createApi({
         { type: "CommunityModerationLogs", id: groupId },
       ],
     }),
-    reportCommunity: builder.mutation<null, { groupId: string; reason: string; details?: string }>({
+    reportEntity: builder.mutation<
+      null,
+      {
+        groupId: string;
+        entityType: "POST" | "CMT" | "GROUP";
+        entityId: string;
+        reason:
+          | "spam"
+          | "harassment"
+          | "hate_speech"
+          | "inappropriate"
+          | "rules_violation"
+          | "other";
+        details?: string;
+        postId?: string;
+        createdAt?: string;
+      }
+    >({
       query: ({ groupId, ...body }) => ({
         url: `/communities/${groupId}/reports`,
         method: "POST",
         body,
       }),
       transformResponse: () => null,
+      invalidatesTags: (_res, _err, { groupId }) => [{ type: "CommunityReports", id: groupId }],
+    }),
+    getCommunityReports: builder.query<
+      ICommunityReportsPage,
+      { groupId: string; status?: string; limit?: number; cursor?: string }
+    >({
+      query: ({ groupId, status, limit, cursor }) => ({
+        url: `/communities/${groupId}/moderation/reports`,
+        params: { status, limit, cursor },
+      }),
+      transformResponse: (response: ApiEnvelope<ICommunityReportsPage>) =>
+        response.data || { items: [], nextCursor: null, hasMore: false },
+      providesTags: (_res, _err, { groupId }) => [{ type: "CommunityReports", id: groupId }],
+    }),
+    resolveCommunityReport: builder.mutation<
+      null,
+      {
+        groupId: string;
+        entityType: "POST" | "CMT" | "GROUP";
+        entityId: string;
+        createdAt: string;
+        reporterId: string;
+        action: "dismiss" | "delete_content" | "warn_user" | "ban_user";
+        notes?: string;
+      }
+    >({
+      query: ({ groupId, ...body }) => ({
+        url: `/communities/${groupId}/moderation/reports/resolve`,
+        method: "POST",
+        body,
+      }),
+      transformResponse: () => null,
+      invalidatesTags: (_res, _err, { groupId }) => [
+        { type: "CommunityReports", id: groupId },
+        { type: "CommunityPosts", id: groupId },
+        { type: "CommunityPendingPosts", id: groupId },
+        { type: "CommunityMembers", id: groupId },
+        { type: "CommunityDetail", id: groupId },
+      ],
     }),
     getPendingPosts: builder.query<IPost[], string>({
       query: (groupId) => `/communities/${groupId}/moderation/posts`,
@@ -309,7 +368,9 @@ export const {
   useLazySearchGroupsQuery,
   usePinCommunityPostMutation,
   useUnpinCommunityPostMutation,
-  useReportCommunityMutation,
+  useReportEntityMutation,
+  useGetCommunityReportsQuery,
+  useResolveCommunityReportMutation,
   useGetPendingPostsQuery,
   useResolvePendingPostMutation,
   useGetCommunityModerationLogsQuery,

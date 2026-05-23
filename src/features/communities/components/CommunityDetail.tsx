@@ -23,6 +23,7 @@ import {
   UserMinus,
   Users,
   History,
+  ShieldAlert,
 } from "lucide-react-native";
 import BottomSheet, {
   BottomSheetBackdrop,
@@ -47,6 +48,7 @@ import {
   useGetPendingPostsQuery,
   useJoinCommunityChatMutation,
   useUnlinkChatMutation,
+  useGetCommunityReportsQuery,
 } from "@/store/api/communityApi";
 import { useAppSelector } from "@/hooks/useAppStore";
 import { PendingPostsModal } from "./PendingPostsModal";
@@ -69,6 +71,7 @@ import { InfoRow } from "./InfoRow";
 import { CommunityReportSheet } from "./CommunityReportSheet";
 import { TransferOwnerModal } from "./TransferOwnerModal";
 import { ModerationLogsModal } from "./ModerationLogsModal";
+import { ReportsModal } from "./ReportsModal";
 
 export interface CommunityDetailProps {
   groupId: string;
@@ -89,6 +92,7 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
   const [reportVisible, setReportVisible] = useState(false);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
+  const [reportsModalOpen, setReportsModalOpen] = useState(false);
 
   const groupMenuSheetRef = useRef<BottomSheet>(null);
   const memberManageSheetRef = useRef<BottomSheet>(null);
@@ -109,6 +113,11 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
   const { data: pendingPosts } = useGetPendingPostsQuery(groupId, {
     skip: !groupId || !manager || !community?.isPostApprovalRequired,
   });
+  const { data: reportsPage } = useGetCommunityReportsQuery(
+    { groupId, status: "pending" },
+    { skip: !groupId || !manager },
+  );
+  const pendingReportsCount = reportsPage?.items?.length ?? 0;
 
   const [joinCommunity, { isLoading: joining }] = useJoinCommunityMutation();
   const [leaveCommunity] = useLeaveCommunityMutation();
@@ -438,6 +447,19 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
               {!!pendingPosts?.length && (
                 <View className="absolute -right-1 -top-1 h-4 min-w-4 items-center justify-center rounded-full bg-emerald-500 px-1">
                   <Text className="text-[9px] font-bold text-white">{pendingPosts.length}</Text>
+                </View>
+              )}
+            </Pressable>
+          )}
+          {manager && (
+            <Pressable
+              onPress={() => setReportsModalOpen(true)}
+              className="relative h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/25 backdrop-blur-md active:scale-90"
+            >
+              <ShieldAlert size={18} color="#fff" />
+              {!!pendingReportsCount && (
+                <View className="absolute -right-1 -top-1 h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1">
+                  <Text className="text-[9px] font-bold text-white">{pendingReportsCount}</Text>
                 </View>
               )}
             </Pressable>
@@ -855,6 +877,15 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
       <ModerationLogsModal
         open={moderationLogsModalOpen}
         onClose={() => setModerationLogsModalOpen(false)}
+        groupId={groupId}
+        mutedColor={muted}
+        foregroundColor={foreground}
+      />
+
+      {/* Reports Modal */}
+      <ReportsModal
+        open={reportsModalOpen}
+        onClose={() => setReportsModalOpen(false)}
         groupId={groupId}
         mutedColor={muted}
         foregroundColor={foreground}

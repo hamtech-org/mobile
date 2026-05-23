@@ -20,6 +20,7 @@ import {
   useUnpinCommunityPostMutation,
 } from "@/store/api/communityApi";
 import { CommentItem } from "./CommentItem";
+import { CommunityReportSheet } from "@/features/communities/components/CommunityReportSheet";
 import { CommentInput } from "./CommentInput";
 import { SharedPostPreview } from "./SharedPostPreview";
 import { SharePostModal } from "./SharePostModal";
@@ -70,6 +71,7 @@ export const FeedPostCard = ({ post, communityRole }: Props) => {
 
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [isSaved, setIsSaved] = useState(post.isSaved ?? false);
+  const [showReportSheet, setShowReportSheet] = useState(false);
 
   const [getCommentsPage] = useLazyGetCommentsQuery();
   const [reactToPost] = useReactToPostMutation();
@@ -308,6 +310,7 @@ export const FeedPostCard = ({ post, communityRole }: Props) => {
                     postId={post.postId}
                     onReply={handleStartReply}
                     newReply={latestReplies[comment.commentId]}
+                    groupId={post.groupId || undefined}
                   />
                 ))}
                 {isLoadingMoreComments && (
@@ -445,7 +448,10 @@ export const FeedPostCard = ({ post, communityRole }: Props) => {
                 </Pressable>
                 <Pressable
                   className="flex-row items-center gap-3 border-b border-border/40 px-5 py-4 active:bg-muted"
-                  onPress={() => setIsMenuOpen(false)}
+                  onPress={() => {
+                    setIsMenuOpen(false);
+                    setShowReportSheet(true);
+                  }}
                 >
                   <Ionicons name="flag" size={20} color="hsl(var(--muted-foreground))" />
                   <Text className="text-base font-medium text-muted-foreground">Báo cáo</Text>
@@ -473,6 +479,16 @@ export const FeedPostCard = ({ post, communityRole }: Props) => {
           </Pressable>
         </Pressable>
       </Modal>
+      {/* Community Report Sheet */}
+      {post.groupId && (
+        <CommunityReportSheet
+          groupId={post.groupId}
+          entityType="POST"
+          entityId={post.postId}
+          visible={showReportSheet}
+          onClose={() => setShowReportSheet(false)}
+        />
+      )}
     </View>
   );
 };

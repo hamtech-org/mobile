@@ -10,6 +10,7 @@ import { ReactionButton } from "@/components/common/ReactionButton";
 import { ReactionSummary } from "@/components/common/ReactionButton/ReactionSummary";
 import { HashtagText } from "./HashtagText";
 import { formatRelativeTime } from "@/utils/time";
+import { CommunityReportSheet } from "@/features/communities/components/CommunityReportSheet";
 
 const IS_VIDEO = /\.(mp4|webm|ogg|mov)(\?|$)/i;
 
@@ -49,9 +50,17 @@ interface Props {
   isNested?: boolean;
   onReply?: (commentId: string, authorName: string) => void;
   newReply?: IComment;
+  groupId?: string;
 }
 
-export const CommentItem = ({ comment, postId, isNested = false, onReply, newReply }: Props) => {
+export const CommentItem = ({
+  comment,
+  postId,
+  isNested = false,
+  onReply,
+  newReply,
+  groupId,
+}: Props) => {
   const [localReaction, setLocalReaction] = useState<ReactionType | null>(
     comment.currentUserReaction ?? null,
   );
@@ -62,6 +71,7 @@ export const CommentItem = ({ comment, postId, isNested = false, onReply, newRep
   const [hasMoreReplies, setHasMoreReplies] = useState(false);
   const [localRepliesCount, setLocalRepliesCount] = useState(comment.repliesCount ?? 0);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [showReportSheet, setShowReportSheet] = useState(false);
   const addedReplyIds = useRef<Set<string>>(new Set());
 
   const [reactToComment] = useReactToCommentMutation();
@@ -247,6 +257,12 @@ export const CommentItem = ({ comment, postId, isNested = false, onReply, newRep
                 />
               </Pressable>
             )}
+
+            {groupId && (
+              <Pressable onPress={() => setShowReportSheet(true)} className="active:opacity-60">
+                <Ionicons name="flag-outline" size={14} color="hsl(var(--muted-foreground))" />
+              </Pressable>
+            )}
           </View>
 
           {!isNested && localRepliesCount > 0 && (
@@ -264,7 +280,13 @@ export const CommentItem = ({ comment, postId, isNested = false, onReply, newRep
           {!isNested && showReplies && replies.length > 0 && (
             <View className="mt-2 gap-2">
               {replies.map((reply) => (
-                <CommentItem key={reply.commentId} comment={reply} postId={postId} isNested />
+                <CommentItem
+                  key={reply.commentId}
+                  comment={reply}
+                  postId={postId}
+                  isNested
+                  groupId={groupId}
+                />
               ))}
               {hasMoreReplies && (
                 <Pressable
@@ -280,6 +302,18 @@ export const CommentItem = ({ comment, postId, isNested = false, onReply, newRep
           )}
         </View>
       </View>
+      {/* Community Report Sheet */}
+      {groupId && (
+        <CommunityReportSheet
+          groupId={groupId}
+          entityType="CMT"
+          entityId={comment.commentId}
+          postId={postId}
+          createdAt={comment.createdAt}
+          visible={showReportSheet}
+          onClose={() => setShowReportSheet(false)}
+        />
+      )}
     </View>
   );
 };
