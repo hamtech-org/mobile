@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, router } from "expo-router";
 import {
   Alert,
   FlatList,
@@ -216,11 +216,28 @@ export default function ChatDetailScreen() {
 
   const [uploadMediaMulti] = useUploadMediaMultiMutation();
 
-  const { data: convList } = useGetConversationsQuery();
+  const { data: convList, isLoading: isConvListLoading } = useGetConversationsQuery();
   const conversation = useMemo(
     () => convList?.find((c) => c.conversationId === conversationId),
     [convList, conversationId],
   );
+
+  // Tự động quay lại nếu cuộc trò chuyện không còn tồn tại (bị kick hoặc rời đi)
+  useEffect(() => {
+    if (convList && !isConvListLoading && conversationId) {
+      const exists = convList.some((c) => c.conversationId === conversationId);
+      if (!exists) {
+        const timer = setTimeout(() => {
+          if (router.canGoBack()) {
+            router.back();
+          } else {
+            router.replace("/(main)");
+          }
+        }, 500);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [convList, isConvListLoading, conversationId]);
 
   const isGroup = conversation?.type === "group";
 
