@@ -198,7 +198,7 @@ export const FeedPostCard = ({ post, communityRole }: Props) => {
       <View className="flex-row items-start justify-between gap-3">
         <View className="flex-1 flex-row items-center gap-3">
           {post.communityInfo ? (
-            <View className="relative h-11 w-11 shrink-0">
+            <View style={{ position: "relative" }} className="h-11 w-11 shrink-0">
               {/* Avatar cộng đồng lớn */}
               <Pressable
                 onPress={() => router.push(`/(main)/(communities)/${post.communityInfo?.groupId}`)}
@@ -217,18 +217,23 @@ export const FeedPostCard = ({ post, communityRole }: Props) => {
                 )}
               </Pressable>
               {/* Avatar tác giả nhỏ ở góc dưới phải */}
-              <Pressable
-                onPress={() => router.push(`/(main)/(newsfeed)/user/${post.authorId}`)}
-                className="absolute -bottom-0.5 -right-0.5 h-6 w-6 items-center justify-center overflow-hidden rounded-full border-2 border-card bg-card shadow-sm"
+              <View
+                style={{ position: "absolute", bottom: -2, right: -2 }}
+                className="h-6 w-6 items-center justify-center overflow-hidden rounded-full border-2 border-card bg-card shadow-sm"
               >
-                {avatar ? (
-                  <Image source={{ uri: avatar }} className="h-full w-full" resizeMode="cover" />
-                ) : (
-                  <Text className="text-[9px] font-bold text-muted-foreground">
-                    {initial || "U"}
-                  </Text>
-                )}
-              </Pressable>
+                <Pressable
+                  onPress={() => router.push(`/(main)/(newsfeed)/user/${post.authorId}`)}
+                  className="h-full w-full items-center justify-center"
+                >
+                  {avatar ? (
+                    <Image source={{ uri: avatar }} className="h-full w-full" resizeMode="cover" />
+                  ) : (
+                    <Text className="text-[9px] font-bold text-muted-foreground">
+                      {initial || "U"}
+                    </Text>
+                  )}
+                </Pressable>
+              </View>
             </View>
           ) : (
             <Pressable
