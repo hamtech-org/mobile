@@ -80,3 +80,19 @@ export const env = {
   publicWebOrigin,
   hasReleaseBackendUrl: useDevAuto || Boolean(explicitApi),
 };
+
+if (__DEV__) {
+  // Kiểm tra Metro log: máy thật không dùng được 10.0.2.2 / localhost nếu thiếu .env
+  console.log("[env] apiBaseUrl:", apiBaseUrl);
+  console.log("[env] socketUrl:", socketUrl);
+  if (
+    Platform.OS === "android" &&
+    Constants.isDevice &&
+    !explicitApi &&
+    (apiBaseUrl.includes("10.0.2.2") || apiBaseUrl.includes("localhost"))
+  ) {
+    console.warn(
+      "[env] Máy Android thật cần EXPO_PUBLIC_API_BASE_URL trong mobile/.env (ngrok hoặc IP LAN), sau đó chạy: npx expo start -c",
+    );
+  }
+}
