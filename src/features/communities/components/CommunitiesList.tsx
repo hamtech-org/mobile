@@ -18,11 +18,13 @@ import { CategoryChip } from "./CategoryChip";
 import { CommunityCard } from "./CommunityCard";
 import { CommunitySkeleton } from "./CommunitySkeleton";
 import { CreateCommunityModal } from "./CreateCommunityModal";
+import { CommunityJoinedFeed } from "./CommunityJoinedFeed";
 
 const defaultAvatarGroup = require("../../../../assets/images/avatar-group-default.jpg");
 
 export function CommunitiesList() {
   const { primary, foreground, muted } = useIconColors();
+  const [activeTab, setActiveTab] = useState<"discover" | "feed">("discover");
   const [category, setCategory] = useState<CommunityCategory | undefined>(undefined);
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -123,107 +125,149 @@ export function CommunitiesList() {
         )}
       </View>
 
-      <FlatList
-        data={showSkeleton ? [1, 2, 3] : (displayData as any)}
-        keyExtractor={(item, index) =>
-          showSkeleton ? `skeleton-${index}` : (item as ICommunity).groupId
-        }
-        contentContainerStyle={{ padding: 16, gap: 14 }}
-        ListHeaderComponent={
-          !isSearching ? (
-            <View className="mb-2 gap-5">
-              <FlatList
-                horizontal
-                data={["all", ...COMMUNITY_CATEGORIES] as (CommunityCategory | "all")[]}
-                keyExtractor={(item) => item}
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ gap: 8 }}
-                renderItem={({ item }) => (
-                  <CategoryChip
-                    category={item}
-                    active={(item === "all" ? undefined : item) === category}
-                    onPress={() => setCategory(item === "all" ? undefined : item)}
-                  />
-                )}
-              />
-
-              {!!joinedItems.length && (
-                <View className="gap-3">
-                  <Text className="font-bold text-foreground">Cộng đồng của tôi</Text>
-                  <FlatList
-                    horizontal
-                    data={joinedItems}
-                    keyExtractor={(item) => item.groupId}
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={{ gap: 10 }}
-                    renderItem={({ item }) => (
-                      <Pressable
-                        onPress={() => router.push(`/(main)/(communities)/${item.groupId}`)}
-                        className="w-56 overflow-hidden rounded-2xl border border-border bg-card p-4 active:opacity-85"
-                      >
-                        <View className="flex-row items-center gap-3">
-                          <View
-                            style={{ width: 44, height: 44, borderRadius: 22, overflow: "hidden" }}
-                          >
-                            <Image
-                              source={
-                                normalizeMediaUrl(item.avatar)
-                                  ? { uri: normalizeMediaUrl(item.avatar) }
-                                  : defaultAvatarGroup
-                              }
-                              className="size-full"
-                              style={{ width: "100%", height: "100%", borderRadius: 22 }}
-                              resizeMode="cover"
-                            />
-                          </View>
-                          <View className="min-w-0 flex-1">
-                            <Text className="font-bold text-card-foreground" numberOfLines={1}>
-                              {item.name}
-                            </Text>
-                            <Text className="text-xs text-muted-foreground">
-                              {item.memberCount} thành viên
-                            </Text>
-                          </View>
-                        </View>
-                      </Pressable>
-                    )}
-                  />
-                </View>
-              )}
-
-              <Text className="font-bold text-foreground">
-                {category ? CATEGORY_LABEL[category] || category : "Tất cả chủ đề"}
-              </Text>
-            </View>
-          ) : (
-            <View className="mb-2">
-              <Text className="text-base font-bold text-foreground">
-                Kết quả tìm kiếm cho "{searchQuery}"
-              </Text>
-            </View>
-          )
-        }
-        ListEmptyComponent={
-          <View className="items-center gap-3 rounded-2xl border border-dashed border-border p-8">
-            <Users size={28} color={muted} />
-            <Text className="text-center font-semibold text-foreground">
-              {showSkeleton
-                ? "Đang tải dữ liệu..."
-                : isSearching
-                  ? "Không tìm thấy cộng đồng nào phù hợp."
-                  : "Chưa có cộng đồng trong chủ đề này."}
+      {!showSearchInput && (
+        <View className="flex-row border-b border-border/40 bg-background px-4">
+          <Pressable
+            onPress={() => setActiveTab("discover")}
+            className={`flex-1 items-center border-b-2 py-3 ${
+              activeTab === "discover" ? "border-primary" : "border-transparent"
+            }`}
+          >
+            <Text
+              className={`font-semibold ${
+                activeTab === "discover" ? "font-bold text-primary" : "text-muted-foreground"
+              }`}
+            >
+              Khám phá
             </Text>
-            {!showSkeleton && !isSearching && (
-              <Text className="text-center text-sm text-muted-foreground">
-                Bạn có thể tạo cộng đồng đầu tiên.
+          </Pressable>
+          <Pressable
+            onPress={() => setActiveTab("feed")}
+            className={`flex-1 items-center border-b-2 py-3 ${
+              activeTab === "feed" ? "border-primary" : "border-transparent"
+            }`}
+          >
+            <Text
+              className={`font-semibold ${
+                activeTab === "feed" ? "font-bold text-primary" : "text-muted-foreground"
+              }`}
+            >
+              Bảng tin
+            </Text>
+          </Pressable>
+        </View>
+      )}
+
+      {activeTab === "feed" && !isSearching ? (
+        <CommunityJoinedFeed />
+      ) : (
+        <FlatList
+          data={showSkeleton ? [1, 2, 3] : (displayData as any)}
+          keyExtractor={(item, index) =>
+            showSkeleton ? `skeleton-${index}` : (item as ICommunity).groupId
+          }
+          contentContainerStyle={{ padding: 16, gap: 14 }}
+          ListHeaderComponent={
+            !isSearching ? (
+              <View className="mb-2 gap-5">
+                <FlatList
+                  horizontal
+                  data={["all", ...COMMUNITY_CATEGORIES] as (CommunityCategory | "all")[]}
+                  keyExtractor={(item) => item}
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 8 }}
+                  renderItem={({ item }) => (
+                    <CategoryChip
+                      category={item}
+                      active={(item === "all" ? undefined : item) === category}
+                      onPress={() => setCategory(item === "all" ? undefined : item)}
+                    />
+                  )}
+                />
+
+                {!!joinedItems.length && (
+                  <View className="gap-3">
+                    <Text className="font-bold text-foreground">Cộng đồng của tôi</Text>
+                    <FlatList
+                      horizontal
+                      data={joinedItems}
+                      keyExtractor={(item) => item.groupId}
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={{ gap: 10 }}
+                      renderItem={({ item }) => (
+                        <Pressable
+                          onPress={() => router.push(`/(main)/(communities)/${item.groupId}`)}
+                          className="w-56 overflow-hidden rounded-2xl border border-border bg-card p-4 active:opacity-85"
+                        >
+                          <View className="flex-row items-center gap-3">
+                            <View
+                              style={{
+                                width: 44,
+                                height: 44,
+                                borderRadius: 22,
+                                overflow: "hidden",
+                              }}
+                            >
+                              <Image
+                                source={
+                                  normalizeMediaUrl(item.avatar)
+                                    ? { uri: normalizeMediaUrl(item.avatar) }
+                                    : defaultAvatarGroup
+                                }
+                                className="size-full"
+                                style={{ width: "100%", height: "100%", borderRadius: 22 }}
+                                resizeMode="cover"
+                              />
+                            </View>
+                            <View className="min-w-0 flex-1">
+                              <Text className="font-bold text-card-foreground" numberOfLines={1}>
+                                {item.name}
+                              </Text>
+                              <Text className="text-xs text-muted-foreground">
+                                {item.memberCount} thành viên
+                              </Text>
+                            </View>
+                          </View>
+                        </Pressable>
+                      )}
+                    />
+                  </View>
+                )}
+
+                <Text className="font-bold text-foreground">
+                  {category ? CATEGORY_LABEL[category] || category : "Tất cả chủ đề"}
+                </Text>
+              </View>
+            ) : (
+              <View className="mb-2">
+                <Text className="text-base font-bold text-foreground">
+                  Kết quả tìm kiếm cho "{searchQuery}"
+                </Text>
+              </View>
+            )
+          }
+          ListEmptyComponent={
+            <View className="items-center gap-3 rounded-2xl border border-dashed border-border p-8">
+              <Users size={28} color={muted} />
+              <Text className="text-center font-semibold text-foreground">
+                {showSkeleton
+                  ? "Đang tải dữ liệu..."
+                  : isSearching
+                    ? "Không tìm thấy cộng đồng nào phù hợp."
+                    : "Chưa có cộng đồng trong chủ đề này."}
               </Text>
-            )}
-          </View>
-        }
-        renderItem={({ item }) =>
-          showSkeleton ? <CommunitySkeleton /> : <CommunityCard item={item as any} />
-        }
-      />
+              {!showSkeleton && !isSearching && (
+                <Text className="text-center text-sm text-muted-foreground">
+                  Bạn có thể tạo cộng đồng đầu tiên.
+                </Text>
+              )}
+            </View>
+          }
+          renderItem={({ item }) =>
+            showSkeleton ? <CommunitySkeleton /> : <CommunityCard item={item as any} />
+          }
+        />
+      )}
 
       <CreateCommunityModal open={modalOpen} onClose={() => setModalOpen(false)} />
     </SafeAreaView>

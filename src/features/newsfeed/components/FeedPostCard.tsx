@@ -197,18 +197,86 @@ export const FeedPostCard = ({ post, communityRole }: Props) => {
       {/* Header */}
       <View className="flex-row items-start justify-between gap-3">
         <View className="flex-1 flex-row items-center gap-3">
-          <View className="size-11 items-center justify-center overflow-hidden rounded-full bg-muted/40">
-            {avatar ? (
-              <Image source={{ uri: avatar }} className="h-full w-full" resizeMode="cover" />
-            ) : (
-              <Text className="text-sm font-bold text-muted-foreground">{initial || "U"}</Text>
-            )}
-          </View>
+          {post.communityInfo ? (
+            <View className="relative h-11 w-11 shrink-0">
+              {/* Avatar cộng đồng lớn */}
+              <Pressable
+                onPress={() => router.push(`/(main)/(communities)/${post.communityInfo?.groupId}`)}
+                className="h-9 w-9 items-center justify-center overflow-hidden rounded-xl bg-muted/40"
+              >
+                {post.communityInfo.avatar ? (
+                  <Image
+                    source={{ uri: post.communityInfo.avatar }}
+                    className="h-full w-full"
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <Text className="text-xs font-bold text-muted-foreground">
+                    {post.communityInfo.name.charAt(0).toUpperCase()}
+                  </Text>
+                )}
+              </Pressable>
+              {/* Avatar tác giả nhỏ ở góc dưới phải */}
+              <Pressable
+                onPress={() => router.push(`/(main)/(newsfeed)/user/${post.authorId}`)}
+                className="absolute -bottom-0.5 -right-0.5 h-6 w-6 items-center justify-center overflow-hidden rounded-full border-2 border-card bg-card shadow-sm"
+              >
+                {avatar ? (
+                  <Image source={{ uri: avatar }} className="h-full w-full" resizeMode="cover" />
+                ) : (
+                  <Text className="text-[9px] font-bold text-muted-foreground">
+                    {initial || "U"}
+                  </Text>
+                )}
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              onPress={() => router.push(`/(main)/(newsfeed)/user/${post.authorId}`)}
+              className="size-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted/40"
+            >
+              {avatar ? (
+                <Image source={{ uri: avatar }} className="h-full w-full" resizeMode="cover" />
+              ) : (
+                <Text className="text-sm font-bold text-muted-foreground">{initial || "U"}</Text>
+              )}
+            </Pressable>
+          )}
+
           <View className="flex-1">
-            <Text className="text-base font-bold">{displayName}</Text>
-            <Text className="mt-1 text-xs text-muted-foreground">
-              {formatRelativeTime(post.createdAt)}
-            </Text>
+            {post.communityInfo ? (
+              <View>
+                <Text
+                  onPress={() =>
+                    router.push(`/(main)/(communities)/${post.communityInfo?.groupId}`)
+                  }
+                  className="text-base font-bold text-foreground active:underline"
+                >
+                  {post.communityInfo.name}
+                </Text>
+                <Text className="mt-1 text-xs text-muted-foreground">
+                  <Text
+                    onPress={() => router.push(`/(main)/(newsfeed)/user/${post.authorId}`)}
+                    className="font-semibold text-muted-foreground active:underline"
+                  >
+                    {displayName}
+                  </Text>
+                  <Text> · {formatRelativeTime(post.createdAt)}</Text>
+                </Text>
+              </View>
+            ) : (
+              <View>
+                <Text
+                  onPress={() => router.push(`/(main)/(newsfeed)/user/${post.authorId}`)}
+                  className="text-base font-bold text-foreground active:underline"
+                >
+                  {displayName}
+                </Text>
+                <Text className="mt-1 text-xs text-muted-foreground">
+                  {formatRelativeTime(post.createdAt)}
+                </Text>
+              </View>
+            )}
           </View>
         </View>
         <Pressable

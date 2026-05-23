@@ -11,6 +11,12 @@ export interface IAuthorInfo {
   avatar: string | null;
 }
 
+export interface ICommunityInfo {
+  groupId: string;
+  name: string;
+  avatar: string | null;
+}
+
 export interface ISharedPostInfo {
   postId: string;
   authorId: string;
@@ -45,6 +51,7 @@ export interface IPost {
   sharedFrom?: ISharedPostInfo;
   createdAt: string;
   updatedAt: string;
+  communityInfo?: ICommunityInfo;
 }
 
 export interface ISavedPost {

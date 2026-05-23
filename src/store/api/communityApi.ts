@@ -192,6 +192,21 @@ export const communityApi = createApi({
       }),
       providesTags: (_res, _err, { groupId }) => [{ type: "CommunityPosts", id: groupId }],
     }),
+    getJoinedCommunitiesFeed: builder.query<
+      ICommunityContentPage<IPost>,
+      { limit?: number; cursor?: string | null } | void
+    >({
+      query: (params) => ({
+        url: "/communities/feed",
+        params: { limit: params?.limit, cursor: params?.cursor ?? undefined },
+      }),
+      transformResponse: (response: ApiEnvelope<ICommunityContentPage<IPost>>) => ({
+        items: Array.isArray(response?.data?.items) ? response.data.items : [],
+        nextCursor: response?.data?.nextCursor ?? null,
+        hasMore: Boolean(response?.data?.hasMore),
+      }),
+      providesTags: ["CommunityPosts"],
+    }),
     searchGroups: builder.query<
       { items: ISearchGroupResult[]; total: number },
       { q: string; pageSize?: number }
@@ -376,4 +391,6 @@ export const {
   useGetCommunityModerationLogsQuery,
   useJoinCommunityChatMutation,
   useUnlinkChatMutation,
+  useGetJoinedCommunitiesFeedQuery,
+  useLazyGetJoinedCommunitiesFeedQuery,
 } = communityApi;
