@@ -35,7 +35,10 @@ function isElevated(role: MemberRole | undefined): boolean {
 
 type RoleLookupMember = { userId?: string; role?: string };
 
-export type GroupPermissionConversation = Pick<IConversation, "type" | "groupSettings"> & {
+export type GroupPermissionConversation = Pick<
+  IConversation,
+  "type" | "groupSettings" | "groupId"
+> & {
   creatorId?: string | null;
   leaderId?: string | null;
 };
@@ -183,6 +186,7 @@ export function canUserChangeGroupProfileInGroup(args: {
 }): boolean {
   const { conversation } = args;
   if (conversation?.type !== "group") return false;
+  if (conversation.groupId) return false;
   const role = resolveRoleForCheck(args);
   if (role == null) return false;
   if (role === "owner") return true;

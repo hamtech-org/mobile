@@ -41,6 +41,7 @@ export type GroupProfilePatch = {
   memberCount?: number;
   updatedAt?: string;
   leaderId?: string | null;
+  chatEnabled?: boolean;
 };
 
 /** Cập nhật tên/ảnh/số thành viên nhóm trên danh sách hội thoại (realtime). */
@@ -65,8 +66,17 @@ export function patchGroupProfileInConversationsCache(
       : undefined;
   const leaderId =
     typeof patch.leaderId === "string" && patch.leaderId.trim() ? patch.leaderId.trim() : undefined;
+  const chatEnabled = patch.chatEnabled;
 
-  if (!name && !avatar && memberCount === undefined && !updatedAt && !leaderId) return;
+  if (
+    !name &&
+    !avatar &&
+    memberCount === undefined &&
+    !updatedAt &&
+    !leaderId &&
+    chatEnabled === undefined
+  )
+    return;
 
   dispatch(
     conversationApi.util.updateQueryData(
@@ -80,6 +90,7 @@ export function patchGroupProfileInConversationsCache(
         if (memberCount !== undefined) c.memberCount = memberCount;
         if (updatedAt) c.updatedAt = updatedAt;
         if (leaderId) c.leaderId = leaderId;
+        if (chatEnabled !== undefined) c.chatEnabled = chatEnabled;
       },
     ),
   );
@@ -98,6 +109,7 @@ export function groupProfilePatchFromPayload(data: unknown): {
     memberCount?: number;
     updatedAt?: string;
     leaderId?: string;
+    chatEnabled?: boolean;
   };
   const conversationId = String(p?.conversationId ?? p?.groupId ?? "").trim();
   if (!conversationId) return null;
@@ -109,6 +121,7 @@ export function groupProfilePatchFromPayload(data: unknown): {
       memberCount: p.memberCount,
       updatedAt: p.updatedAt,
       leaderId: p.leaderId,
+      chatEnabled: p.chatEnabled,
     },
   };
 }
