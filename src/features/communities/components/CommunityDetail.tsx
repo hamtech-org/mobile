@@ -46,12 +46,9 @@ import {
   useUpdateCommunityMemberRoleMutation,
   useGetPendingPostsQuery,
   useJoinCommunityChatMutation,
-  useLinkExistingChatMutation,
   useUnlinkChatMutation,
 } from "@/store/api/communityApi";
-import { useGetConversationsQuery } from "@/store/api/chatApi";
 import { useAppSelector } from "@/hooks/useAppStore";
-import { LinkChatModal } from "./LinkChatModal";
 import { PendingPostsModal } from "./PendingPostsModal";
 import {
   type CommunityCategory,
@@ -93,8 +90,6 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
   const [reportVisible, setReportVisible] = useState(false);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
 
-  const [linkChatModalOpen, setLinkChatModalOpen] = useState(false);
-
   const groupMenuSheetRef = useRef<BottomSheet>(null);
   const memberManageSheetRef = useRef<BottomSheet>(null);
   const isTransitioningRef = useRef(false);
@@ -124,12 +119,7 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
   const [transferOwner] = useTransferCommunityOwnerMutation();
 
   const [joinCommunityChat, { isLoading: joiningChat }] = useJoinCommunityChatMutation();
-  const [linkExistingChat, { isLoading: linkingChat }] = useLinkExistingChatMutation();
   const [unlinkChat] = useUnlinkChatMutation();
-
-  const { data: conversations } = useGetConversationsQuery(undefined, {
-    skip: !isMember || !owner,
-  });
 
   const [profilesMap, setProfilesMap] = useState<Record<string, FriendListItem>>({});
   const [postMultipleUsers] = usePostMultipleUsersMutation();
@@ -167,13 +157,6 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
         });
     }
   }, [members, requests, postMultipleUsers]);
-
-  const eligibleConversations = useMemo(() => {
-    if (!conversations) return [];
-    return conversations.filter(
-      (c) => c.type === "group" && c.leaderId === currentUser?.userId && !c.groupId,
-    );
-  }, [conversations, currentUser]);
 
   // Auto-join community chat if joinChat=true query param is present
   useEffect(() => {
@@ -215,31 +198,21 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
     }
   };
 
-  const handleLinkChat = async (conversationId: string) => {
-    try {
-      await linkExistingChat({ groupId, conversationId }).unwrap();
-      toast.success("Liên kết phòng trò chuyện thành công");
-      setLinkChatModalOpen(false);
-    } catch (err: any) {
-      toast.error(err?.data?.message || "Không thể liên kết phòng trò chuyện");
-    }
-  };
-
   const handleConfirmUnlinkChat = () => {
     Alert.alert(
-      "Hủy liên kết phòng chat?",
-      "Bạn có chắc chắn muốn hủy liên kết phòng chat hiện tại? Thành viên sẽ không thể nhắn tin từ cộng đồng này nữa.",
+      "Giải tán phòng chat?",
+      "Bạn có chắc chắn muốn giải tán phòng chat hiện tại? Toàn bộ lịch sử tin nhắn và thành viên sẽ bị xóa sạch khỏi hệ thống.",
       [
         { text: "Hủy", style: "cancel" },
         {
-          text: "Hủy liên kết",
+          text: "Giải tán",
           style: "destructive",
           onPress: async () => {
             try {
               await unlinkChat(groupId).unwrap();
-              toast.success("Đã hủy liên kết phòng trò chuyện");
+              toast.success("Giải tán phòng trò chuyện thành công");
             } catch (err: any) {
-              toast.error(err?.data?.message || "Không thể hủy liên kết phòng trò chuyện");
+              toast.error(err?.data?.message || "Không thể giải tán phòng trò chuyện");
             }
           },
         },
@@ -773,7 +746,6 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
         confirmArchive={confirmArchive}
         onReportPress={() => setReportVisible(true)}
         renderBackdrop={renderBackdrop}
-        onLinkChatPress={() => setLinkChatModalOpen(true)}
         onUnlinkChatPress={handleConfirmUnlinkChat}
       />
 
@@ -886,15 +858,6 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
         groupId={groupId}
         mutedColor={muted}
         foregroundColor={foreground}
-      />
-
-      {/* Link Chat Modal */}
-      <LinkChatModal
-        open={linkChatModalOpen}
-        onClose={() => setLinkChatModalOpen(false)}
-        conversations={eligibleConversations}
-        onConfirm={handleLinkChat}
-        loading={linkingChat}
       />
     </SafeAreaView>
   );

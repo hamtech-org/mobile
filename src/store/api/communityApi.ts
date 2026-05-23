@@ -279,15 +279,6 @@ export const communityApi = createApi({
       transformResponse: (response: ApiEnvelope<{ conversationId: string }>) => response.data,
       invalidatesTags: (_res, _err, { groupId }) => [{ type: "CommunityDetail", id: groupId }],
     }),
-    linkExistingChat: builder.mutation<null, { groupId: string; conversationId: string }>({
-      query: ({ groupId, conversationId }) => ({
-        url: `/communities/${groupId}/link-chat`,
-        method: "POST",
-        body: { conversationId },
-      }),
-      transformResponse: () => null,
-      invalidatesTags: (_res, _err, { groupId }) => [{ type: "CommunityDetail", id: groupId }],
-    }),
     unlinkChat: builder.mutation<null, string>({
       query: (groupId) => ({
         url: `/communities/${groupId}/link-chat`,
@@ -323,6 +314,5 @@ export const {
   useResolvePendingPostMutation,
   useGetCommunityModerationLogsQuery,
   useJoinCommunityChatMutation,
-  useLinkExistingChatMutation,
   useUnlinkChatMutation,
 } = communityApi;
