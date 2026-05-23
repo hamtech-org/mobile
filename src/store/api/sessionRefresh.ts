@@ -1,5 +1,6 @@
 import type { UnknownAction } from "@reduxjs/toolkit";
 
+import { ngrokHeadersRecord } from "@/config/apiRequestHeaders";
 import { env } from "@/config/env";
 import { secureStorage } from "@/services/storage";
 import { clearMarkAsReadDedupeCache } from "@/utils/markAsReadSessionDedupe";
@@ -34,7 +35,7 @@ export function refreshAuthSession(dispatch: (action: UnknownAction) => unknown)
       try {
         response = await fetch(`${base}/auth/refresh-token`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...ngrokHeadersRecord() },
           body: JSON.stringify({ refreshToken }),
         });
       } catch {
