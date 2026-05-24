@@ -1,6 +1,7 @@
 import { Tabs } from "expo-router";
 import { useEffect, useMemo } from "react";
 import { useColorScheme, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MessageCircleMore, Newspaper, PlayCircle, User, Users, Radio } from "lucide-react-native";
 
 import { ChatSocketBootstrap } from "@/components/chat/ChatSocketBootstrap";
@@ -30,6 +31,7 @@ const TABS: TabConfig[] = [
 export default function MainLayout() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
+  const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
   const { data: conversations } = useGetConversationsQuery();
   const { data: notifData } = useGetNotificationsQuery({ limit: 50 });
@@ -58,8 +60,8 @@ export default function MainLayout() {
             backgroundColor: isDark ? "hsl(224 30% 10%)" : "#ffffff",
             borderTopColor: isDark ? "hsl(224 25% 22%)" : "hsl(220 14% 89%)",
             borderTopWidth: 0.5,
-            height: 60,
-            paddingBottom: 8,
+            height: 52 + Math.max(insets.bottom, 8),
+            paddingBottom: Math.max(insets.bottom, 8),
             paddingTop: 4,
           },
           tabBarActiveTintColor: isDark ? "hsl(214 100% 58%)" : "hsl(214 100% 50%)",
@@ -84,6 +86,7 @@ export default function MainLayout() {
           />
         ))}
         <Tabs.Screen name="(notifications)" options={{ href: null }} />
+        <Tabs.Screen name="ai-assistant" options={{ href: null }} />
       </Tabs>
       <ReelUploadBanner />
     </View>
