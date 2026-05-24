@@ -25,6 +25,29 @@ import { filterNotifications, type NotificationFilterChip } from "@/utils/notifi
 import type { INotification } from "@/types/notification.types";
 
 const PAGE_SIZE = 30;
+const FILTER_CHIPS: NotificationFilterChip[] = [
+  "all",
+  "unread",
+  "message",
+  "direct",
+  "group",
+  "friend",
+  "post",
+  "reel",
+  "live",
+];
+
+const EMPTY_LABELS: Record<NotificationFilterChip, string> = {
+  all: "Chưa có thông báo",
+  unread: "Không còn thông báo chưa đọc",
+  message: "Không có thông báo tin nhắn",
+  direct: "Không có thông báo chat 1:1",
+  group: "Không có thông báo nhóm",
+  friend: "Không có thông báo kết bạn",
+  post: "Không có thông báo bài viết",
+  reel: "Không có thông báo Reels",
+  live: "Không có thông báo livestream",
+};
 
 export default function NotificationsScreen() {
   const dispatch = useAppDispatch();
@@ -44,17 +67,13 @@ export default function NotificationsScreen() {
   );
 
   const chipCounts = useMemo(() => {
-    const base = allItems.filter((n) => !hiddenIds.has(n.notificationId));
-    return {
-      all: base.length,
-      unread: base.filter((n) => !n.isRead).length,
-      message: base.filter((n) => ["message", "group_invite", "mention"].includes(n.type)).length,
-      post: base.filter((n) =>
-        ["post_reaction", "post_comment", "reel_new", "reel_comment", "comment_reply"].includes(
-          n.type,
-        ),
-      ).length,
-    };
+    return FILTER_CHIPS.reduce<Record<NotificationFilterChip, number>>(
+      (acc, id) => {
+        acc[id] = filterNotifications(allItems, id, hiddenIds).length;
+        return acc;
+      },
+      {} as Record<NotificationFilterChip, number>,
+    );
   }, [allItems, hiddenIds]);
 
   const hasMore = allItems.length >= limit;
@@ -117,14 +136,7 @@ export default function NotificationsScreen() {
     return <Loading fullScreen message="Đang tải thông báo..." />;
   }
 
-  const emptyLabel =
-    chip === "unread"
-      ? "Không còn thông báo chưa đọc"
-      : chip === "message"
-        ? "Không có thông báo tin nhắn"
-        : chip === "post"
-          ? "Không có thông báo bài viết"
-          : "Chưa có thông báo";
+  const emptyLabel = EMPTY_LABELS[chip];
 
   return (
     <SafeAreaView className="flex-1 bg-background" edges={["top"]}>

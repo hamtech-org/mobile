@@ -121,7 +121,7 @@ export const mediaApi = createApi({
 
           const parsed = parseEnvelope<MediaUploadResult>(result.body, result.status);
           if (!parsed.ok) {
-            return { error: parsed.error };
+            return { error: parsed.error as any };
           }
           return { data: parsed.data };
         } catch (e) {
@@ -186,7 +186,7 @@ export const mediaApi = createApi({
 
             const parsed = parseEnvelope<MediaUploadResult>(uploadRes.body, uploadRes.status);
             if (!parsed.ok) {
-              return { error: parsed.error };
+              return { error: parsed.error as any };
             }
             results.push(parsed.data);
           }

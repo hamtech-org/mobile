@@ -43,7 +43,6 @@ import {
 import { MAX_PINNED_CHATS_TO_TOP } from "@/constants/chatPin";
 import { formatConversationListLastPreview } from "@/utils/conversationListPreview";
 import { sortConversationsForSidebar } from "@/utils/conversationListSort";
-import { NotificationBellButton } from "@/components/notifications/NotificationBellButton";
 import { useDueTaskNotifications } from "@/hooks/useDueTaskNotifications";
 
 type ChatListRow =
@@ -240,11 +239,8 @@ export default function ChatListScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
-      <View className="flex-row items-center justify-between px-4 pb-2 pt-3">
-        <Text className="min-w-0 flex-1 text-2xl font-bold tracking-tight text-foreground">
-          Tin nhắn
-        </Text>
-        <NotificationBellButton />
+      <View className="px-4 pb-2 pt-3">
+        <Text className="text-2xl font-bold tracking-tight text-foreground">Tin nhắn</Text>
       </View>
 
       <View className="flex-row items-center gap-2 px-4 pb-3">

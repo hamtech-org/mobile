@@ -12,7 +12,7 @@ export const apiClient = axios.create({
 apiClient.interceptors.request.use(async (config) => {
   const headers = (config.headers ?? {}) as Record<string, string>;
   applyNgrokHeaders(headers);
-  config.headers = headers;
+  config.headers = headers as any;
 
   const token = await secureStorage.getAccessToken();
   if (token) {

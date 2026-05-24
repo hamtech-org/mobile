@@ -6,7 +6,12 @@ const CHIPS: { id: NotificationFilterChip; label: string }[] = [
   { id: "all", label: "Tất cả" },
   { id: "unread", label: "Chưa đọc" },
   { id: "message", label: "Tin nhắn" },
+  { id: "direct", label: "1:1" },
+  { id: "group", label: "Nhóm" },
+  { id: "friend", label: "Kết bạn" },
   { id: "post", label: "Bài viết" },
+  { id: "reel", label: "Reels" },
+  { id: "live", label: "Live" },
 ];
 
 interface NotificationFilterChipsProps {

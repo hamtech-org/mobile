@@ -61,6 +61,7 @@ function buildSystemMessage({
     isEdited: false,
     isRecalled: false,
     reactions: {},
+    status: "sent",
     createdAt: nowIso,
   };
 }

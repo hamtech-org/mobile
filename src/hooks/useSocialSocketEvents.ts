@@ -8,7 +8,8 @@ import { addInboxNotification, setInboxUnreadCount } from "@/store/slices/inboxN
 import { notificationApi } from "@/store/api/notificationApi";
 import { userApi } from "@/store/api/userApi";
 import type { INotification } from "@/types/notification.types";
-import { toast } from "@/utils/appToast";
+import { showLocalSystemNotification } from "@/utils/localSystemNotification";
+import { getNotificationPresentation } from "@/utils/notificationPresentation";
 
 export { navigateFromNotification, openNotificationFromItem } from "@/utils/notificationNavigation";
 
@@ -23,7 +24,15 @@ export function useSocialSocketEvents(): void {
     const onNotificationNew = (payload: { notification?: INotification; unreadCount?: number }) => {
       if (payload.notification) {
         dispatch(addInboxNotification(payload.notification));
-        toast.info(`${payload.notification.title}: ${payload.notification.body}`, 5000);
+        const presentation = getNotificationPresentation(payload.notification);
+        showLocalSystemNotification({
+          title: presentation.title,
+          body: presentation.body,
+          channel: payload.notification.data.route === "chat" ? "messages" : "social",
+          notificationId: `social-${payload.notification.notificationId || Date.now()}`,
+          avatarUrl: presentation.avatar,
+          data: payload.notification.data,
+        });
       }
       if (typeof payload.unreadCount === "number") {
         dispatch(setInboxUnreadCount(payload.unreadCount));
@@ -37,23 +46,59 @@ export function useSocialSocketEvents(): void {
       }
     };
 
-    const onFriendRequestNew = (data: { senderId?: string; senderName?: string }) => {
-      toast.info(`${data.senderName ?? "Ai đó"} đã gửi lời mời kết bạn`);
+    const onFriendRequestNew = (data: {
+      senderId?: string;
+      senderName?: string;
+      senderAvatar?: string | null;
+    }) => {
+      const name = data.senderName?.trim() || "Ai đó";
+      showLocalSystemNotification({
+        title: name,
+        body: "đã gửi lời mời kết bạn",
+        channel: "social",
+        notificationId: `social-friend-req-${data.senderId || Date.now()}`,
+        avatarUrl: data.senderAvatar,
+        data: {
+          route: "friends",
+          id: String(data.senderId ?? ""),
+          actorId: data.senderId,
+          actorName: name,
+          actorAvatar: data.senderAvatar ?? null,
+        },
+      });
       dispatch(userApi.util.invalidateTags(["Friend"]));
     };
 
     const onFriendAccepted = () => {
-      toast.success("Lời mời kết bạn đã được chấp nhận");
+      showLocalSystemNotification({
+        title: "Kết bạn",
+        body: "Lời mời kết bạn đã được chấp nhận",
+        channel: "social",
+        notificationId: `social-friend-acc-${Date.now()}`,
+        data: { route: "friends", id: "" },
+      });
       dispatch(userApi.util.invalidateTags(["Friend"]));
     };
 
     const onReelNew = () => {
-      toast.info("Có reel mới từ người bạn theo dõi", 4000);
+      showLocalSystemNotification({
+        title: "HamTech",
+        body: "Có reel mới từ người bạn theo dõi",
+        channel: "social",
+        notificationId: `social-reel-${Date.now()}`,
+        data: { route: "reel", id: "" },
+      });
     };
 
     const onLiveStarted = (data: { title?: string }) => {
-      const label = data.title?.trim() ? `Live: ${data.title}` : "Bạn bè đang phát live";
-      toast.info(label, 4000);
+      const title = data.title?.trim() || "Bạn bè đang phát live";
+      showLocalSystemNotification({
+        title: "Live",
+        body: title,
+        channel: "social",
+        notificationId: `social-live-${Date.now()}`,
+        data: { route: "live", id: "" },
+      });
     };
 
     const onNewDeviceLogin = (data: { ipAddress?: string }) => {

@@ -5,11 +5,15 @@
   "scripts": {
     "start": "expo start",
     "start:clear": "expo start -c",
+    "clean:metro": "node -e \"const fs=require('fs');const p=['.expo'];for(const d of p){try{fs.rmSync(d,{recursive:true,force:true});}catch(e){}}\"",
+    "clean:android": "node -e \"const fs=require('fs');const p=['android/build','android/app/build','android/.gradle'];for(const d of p){try{fs.rmSync(d,{recursive:true,force:true});}catch(e){}}\"",
+    "clean:all": "npm run clean:metro && npm run clean:android",
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
     "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md}\"",
+    "postinstall": "patch-package",
     "prepare": "husky",
     "build:android:apk": "eas build --platform android --profile preview"
   },
@@ -17,6 +21,7 @@
     "@10play/tentap-editor": "^1.0.1",
     "@expo/vector-icons": "^15.0.3",
     "@gorhom/bottom-sheet": "^5.2.9",
+    "@notifee/react-native": "^9.1.8",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/datetimepicker": "8.4.4",
     "@react-native-picker/picker": "2.11.1",
@@ -82,6 +87,7 @@
     "eslint-plugin-prettier": "^5.5.5",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
+    "patch-package": "^8.0.1",
     "prettier": "^3.8.3",
     "prettier-plugin-tailwindcss": "^0.7.2",
     "typescript": "~5.9.2"
