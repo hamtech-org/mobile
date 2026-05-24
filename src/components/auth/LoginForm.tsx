@@ -1,23 +1,36 @@
 import { Link } from "expo-router";
 import { useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Modal, Pressable, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { useCameraPermissions } from "expo-camera";
 import { z } from "zod";
 
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/common/Button";
 import { Input } from "@/components/common/Input";
+import { FaceLivenessWebViewModal } from "@/components/auth/FaceLivenessWebViewModal";
 
 const loginSchema = z.object({
   email: z.string().email("Email không hợp lệ."),
   password: z.string().min(6, "Mật khẩu tối thiểu 6 ký tự."),
 });
 
+const faceEmailSchema = z.object({
+  email: z.string().email("Email không hợp lệ."),
+});
+
 export const LoginForm = ({ redirectPath }: { redirectPath?: string }) => {
-  const { login, isLoading, errorMessage } = useAuth();
+  const { login, createFaceLivenessSession, loginWithFace, isLoading, errorMessage } = useAuth();
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
   const [localSubmitMessage, setLocalSubmitMessage] = useState<string | null>(null);
+  const [faceEmail, setFaceEmail] = useState("");
+  const [faceEmailError, setFaceEmailError] = useState<string | undefined>();
+  const [faceMessage, setFaceMessage] = useState<string | null>(null);
+  const [isFaceEmailModalOpen, setIsFaceEmailModalOpen] = useState(false);
+  const [livenessSessionId, setLivenessSessionId] = useState("");
 
   const handleSubmit = async () => {
     const parsed = loginSchema.safeParse({ email, password });
@@ -35,6 +48,67 @@ export const LoginForm = ({ redirectPath }: { redirectPath?: string }) => {
     if (success) {
       setLocalSubmitMessage("Đăng nhập bước 1 thành công. Vui lòng nhập OTP.");
     }
+  };
+
+  const openFaceLogin = () => {
+    setFaceEmail(email.trim());
+    setFaceEmailError(undefined);
+    setFaceMessage(null);
+    setIsFaceEmailModalOpen(true);
+  };
+
+  const startFaceLogin = async () => {
+    const parsed = faceEmailSchema.safeParse({ email: faceEmail.trim() });
+    if (!parsed.success) {
+      setFaceEmailError(parsed.error.flatten().fieldErrors.email?.[0]);
+      return;
+    }
+
+    setFaceEmailError(undefined);
+    setFaceMessage(null);
+
+    if (!cameraPermission?.granted) {
+      if (cameraPermission?.canAskAgain === false) {
+        setFaceMessage(
+          "Ứng dụng chưa có quyền camera. Vào Cài đặt thiết bị để bật quyền camera cho HamTech.",
+        );
+        return;
+      }
+
+      const nextPermission = await requestCameraPermission();
+      if (!nextPermission.granted) {
+        setFaceMessage("Cần quyền camera để xác thực khuôn mặt.");
+        return;
+      }
+    }
+
+    const sessionId = await createFaceLivenessSession();
+    if (!sessionId) {
+      setFaceMessage(errorMessage || "Không thể tạo phiên xác thực khuôn mặt.");
+      return;
+    }
+
+    setLivenessSessionId(sessionId);
+    setIsFaceEmailModalOpen(false);
+  };
+
+  const handleFaceLivenessSuccess = async () => {
+    const success = await loginWithFace(faceEmail.trim(), livenessSessionId, redirectPath);
+    if (success) {
+      setLivenessSessionId("");
+      setFaceEmail("");
+      setFaceMessage(null);
+      return;
+    }
+
+    setLivenessSessionId("");
+    setIsFaceEmailModalOpen(true);
+    setFaceMessage(errorMessage || "Đăng nhập bằng khuôn mặt thất bại. Vui lòng thử lại.");
+  };
+
+  const cancelFaceLiveness = () => {
+    setLivenessSessionId("");
+    setIsFaceEmailModalOpen(true);
   };
 
   return (
@@ -77,6 +151,94 @@ export const LoginForm = ({ redirectPath }: { redirectPath?: string }) => {
         <Text className="text-sm text-primary">{localSubmitMessage}</Text>
       ) : null}
       <Button label="Đăng nhập" onPress={handleSubmit} loading={isLoading} />
+
+      <View className="my-1 flex-row items-center gap-3">
+        <View className="h-px flex-1 bg-border" />
+        <Text className="text-xs text-muted-foreground">hoặc</Text>
+        <View className="h-px flex-1 bg-border" />
+      </View>
+
+      <Button
+        label="Đăng nhập bằng khuôn mặt"
+        variant="secondary"
+        onPress={openFaceLogin}
+        leftIcon={<Ionicons name="scan-outline" size={18} color="hsl(var(--foreground) / 1)" />}
+      />
+
+      <Modal
+        visible={isFaceEmailModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsFaceEmailModalOpen(false)}
+      >
+        <Pressable
+          className="flex-1 justify-center bg-black/45 px-5"
+          onPress={() => setIsFaceEmailModalOpen(false)}
+        >
+          <Pressable className="gap-4 rounded-3xl border border-border bg-card p-5">
+            <View className="flex-row items-start justify-between gap-3">
+              <View className="min-w-0 flex-1 gap-1">
+                <Text className="text-xl font-bold text-foreground">Đăng nhập bằng khuôn mặt</Text>
+                <Text className="text-sm leading-relaxed text-muted-foreground">
+                  Nhập email để xác minh danh tính của bạn.
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => setIsFaceEmailModalOpen(false)}
+                className="size-9 items-center justify-center rounded-full bg-muted active:opacity-70"
+                accessibilityLabel="Đóng"
+              >
+                <Ionicons name="close" size={18} color="hsl(var(--foreground) / 1)" />
+              </Pressable>
+            </View>
+
+            <Input
+              label="Email"
+              value={faceEmail}
+              onChangeText={(value) => {
+                setFaceEmail(value);
+                setFaceEmailError(undefined);
+                setFaceMessage(null);
+              }}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              error={faceEmailError}
+            />
+
+            {faceMessage ? <Text className="text-sm text-destructive">{faceMessage}</Text> : null}
+
+            <View className="flex-row gap-3">
+              <View className="flex-1">
+                <Button
+                  label="Hủy"
+                  variant="secondary"
+                  onPress={() => setIsFaceEmailModalOpen(false)}
+                />
+              </View>
+              <View className="flex-1">
+                <Button label="Tiếp tục" onPress={startFaceLogin} loading={isLoading} />
+              </View>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <FaceLivenessWebViewModal
+        visible={Boolean(livenessSessionId)}
+        sessionId={livenessSessionId}
+        onSuccess={() => {
+          void handleFaceLivenessSuccess();
+        }}
+        onCancel={cancelFaceLiveness}
+        onRetry={() => {
+          setLivenessSessionId("");
+          setIsFaceEmailModalOpen(true);
+          setFaceMessage("Phiên xác thực đã hết hiệu lực. Bấm Tiếp tục để tạo phiên mới.");
+        }}
+        onError={(message) => {
+          setFaceMessage(message);
+        }}
+      />
     </View>
   );
 };
