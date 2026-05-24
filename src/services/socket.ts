@@ -1,6 +1,7 @@
 import { io, type Socket } from "socket.io-client";
 
 import { env } from "@/config/env";
+import { ngrokSkipBrowserWarningHeaders } from "@/utils/ngrok";
 
 let socketClient: Socket | null = null;
 
@@ -17,6 +18,7 @@ export const getSocketClient = (): Socket => {
     socketClient = io(env.socketUrl, {
       autoConnect: false,
       transports: ["websocket"],
+      extraHeaders: ngrokSkipBrowserWarningHeaders(env.socketUrl),
     });
 
     if (__DEV__) {

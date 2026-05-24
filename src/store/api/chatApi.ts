@@ -66,6 +66,12 @@ export {
 } from "./endpoints/taskApi";
 
 export { useGetLatestAIRecapQuery, useGenerateAIRecapMutation } from "./endpoints/aiRecapApi";
+export { useGetAiAssistantThreadQuery } from "./endpoints/aiAssistantApi";
+export type {
+  AiAssistantAction,
+  AiAssistantThread,
+  AiAssistantThreadMessage,
+} from "./endpoints/aiAssistantApi";
 
 // 3. Re-export specific request interfaces for convenience
 export type {

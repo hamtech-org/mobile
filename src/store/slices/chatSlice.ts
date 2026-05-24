@@ -4,6 +4,7 @@ import { applyPinnedMruOrderUpdate } from "@/utils/pinnedMessageOrder";
 
 /** Giống web `ChatFrameNoticeVariant` — màu + icon banner nhóm. */
 export type ChatFrameBannerVariant = "poll" | "task_assigned" | "task_joined";
+export type FriendPresenceStatus = "online" | "offline" | "away" | string;
 
 /** Thông báo ngắn trong khung chat (ghim, đổi tên nhóm, …) kèm mốc giờ. */
 export interface ChatFrameBanner {
@@ -20,6 +21,7 @@ interface ChatState {
   activeConversationId: string | null;
   messages: Record<string, IMessage[]>;
   typingUsers: Record<string, TypingUserEntry[]>;
+  friendStatuses: Record<string, FriendPresenceStatus>;
   replyingTo: IMessage | null;
   frameBanner: ChatFrameBanner | null;
   messageJoinCutoffMsByConversation: Record<string, number>;
@@ -35,6 +37,7 @@ const initialState: ChatState = {
   activeConversationId: null,
   messages: {},
   typingUsers: {},
+  friendStatuses: {},
   replyingTo: null,
   frameBanner: null,
   messageJoinCutoffMsByConversation: {},
@@ -214,6 +217,16 @@ const chatSlice = createSlice({
     },
 
     // ─── Reset unread khi mở conversation ────────────────────────────
+    friendStatusChanged: (
+      state,
+      action: PayloadAction<{ userId: string; status: FriendPresenceStatus }>,
+    ) => {
+      const userId = String(action.payload.userId ?? "").trim();
+      const status = String(action.payload.status ?? "").trim();
+      if (!userId || !status) return;
+      state.friendStatuses[userId] = status;
+    },
+
     resetUnread: (state, _action: PayloadAction<string>) => {
       // Unread count được quản lý qua RTK Query cache (conversations list),
       // reducer này chủ yếu để dispatch signal cho middleware nếu cần.
@@ -296,6 +309,7 @@ export const {
   messageReacted,
   typingStarted,
   typingStopped,
+  friendStatusChanged,
   resetUnread,
   setReplyingTo,
   clearReplyingTo,

@@ -8,6 +8,7 @@ import { Linking, Platform } from "react-native";
 import { env } from "@/config/env";
 import { store } from "@/store/store";
 import { toast } from "@/utils/appToast";
+import { ngrokSkipBrowserWarningHeaders } from "@/utils/ngrok";
 import { normalizeMediaUrl } from "@/utils/url";
 
 const MEDIA_UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
@@ -105,7 +106,10 @@ export function resolveChatMediaAttachmentUrl(storedUrl: string, filename?: stri
 function authHeadersForDownload(url: string): Record<string, string> {
   if (isCloudFrontSignedUrl(url)) return {};
   const token = store.getState().auth.accessToken;
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  return {
+    ...ngrokSkipBrowserWarningHeaders(url),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
 }
 
 function sanitizeFilename(name: string): string {
