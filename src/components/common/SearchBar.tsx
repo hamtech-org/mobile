@@ -10,6 +10,8 @@ interface SearchBarProps {
   /** Callback khi nhấn clear (tùy chọn — mặc định clear text) */
   onClear?: () => void;
   autoFocus?: boolean;
+  onFocus?: () => void;
+  onBlur?: () => void;
 }
 
 /**
@@ -25,6 +27,8 @@ export const SearchBar = ({
   placeholder = "Tìm kiếm...",
   onClear,
   autoFocus = false,
+  onFocus,
+  onBlur,
 }: SearchBarProps) => {
   const { muted } = useIconColors();
   const handleClear = () => {
@@ -45,6 +49,8 @@ export const SearchBar = ({
         value={value}
         onChangeText={onChangeText}
         autoFocus={autoFocus}
+        onFocus={onFocus}
+        onBlur={onBlur}
         returnKeyType="search"
         clearButtonMode="never"
       />

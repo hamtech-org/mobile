@@ -11,6 +11,9 @@ module.exports = () => {
   if (process.env.EXPO_PUBLIC_AGORA_APP_ID) {
     extra.agoraAppId = process.env.EXPO_PUBLIC_AGORA_APP_ID;
   }
+  if (process.env.EXPO_PUBLIC_AWS_COGNITO_IDENTITY_POOL_ID) {
+    extra.awsCognitoIdentityPoolId = process.env.EXPO_PUBLIC_AWS_COGNITO_IDENTITY_POOL_ID;
+  }
   if (process.env.EXPO_PUBLIC_API_BASE_URL) {
     extra.apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
   }

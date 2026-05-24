@@ -5,15 +5,22 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { ArrowLeft, QrCode } from "lucide-react-native";
 
 import { extractJoinSuffixFromText } from "@/utils/groupJoinLinkMessage";
+import { tryParseUserQrPayload, type UserQrPayload } from "@/utils/userQrPayload";
 import { toast } from "@/utils/appToast";
 
 type Props = {
   visible: boolean;
   onClose: () => void;
   onScannedSuffix: (suffix: string) => void;
+  onScannedUser?: (user: UserQrPayload) => void;
 };
 
-export function GroupJoinQrScannerModal({ visible, onClose, onScannedSuffix }: Props) {
+export function GroupJoinQrScannerModal({
+  visible,
+  onClose,
+  onScannedSuffix,
+  onScannedUser,
+}: Props) {
   const [permission, requestPermission] = useCameraPermissions();
   const [requesting, setRequesting] = useState(false);
   const handledRef = useRef(false);
@@ -31,15 +38,24 @@ export function GroupJoinQrScannerModal({ visible, onClose, onScannedSuffix }: P
   const handleBarcode = useCallback(
     ({ data }: { data: string }) => {
       if (handledRef.current) return;
-      const suffix = extractJoinSuffixFromText(data);
-      if (!suffix) {
-        toast.error("Mã QR không hợp lệ — cần link mời tham gia nhóm HamTech");
+
+      const user = tryParseUserQrPayload(data);
+      if (user) {
+        handledRef.current = true;
+        onScannedUser?.(user);
         return;
       }
+
+      const suffix = extractJoinSuffixFromText(data);
+      if (!suffix) {
+        toast.error("Mã QR không hợp lệ - cần QR HamTech hoặc link mời tham gia nhóm");
+        return;
+      }
+
       handledRef.current = true;
       onScannedSuffix(suffix);
     },
-    [onScannedSuffix],
+    [onScannedSuffix, onScannedUser],
   );
 
   const showCamera = Boolean(permission?.granted);
@@ -68,7 +84,7 @@ export function GroupJoinQrScannerModal({ visible, onClose, onScannedSuffix }: P
                 <QrCode size={48} color="#fff" strokeWidth={1.5} />
                 <Text style={styles.permissionTitle}>Cần quyền camera</Text>
                 <Text style={styles.permissionHint}>
-                  Cho phép truy cập camera để quét mã QR tham gia nhóm.
+                  Cho phép truy cập camera để quét mã QR HamTech.
                 </Text>
                 {permission.canAskAgain ? (
                   <Pressable
@@ -100,7 +116,7 @@ export function GroupJoinQrScannerModal({ visible, onClose, onScannedSuffix }: P
             >
               <ArrowLeft size={22} color="#fff" strokeWidth={2} />
             </Pressable>
-            <Text style={styles.title}>Quét mã QR tham gia nhóm</Text>
+            <Text style={styles.title}>Quét mã QR HamTech</Text>
             <View style={styles.backBtnPlaceholder} />
           </View>
 

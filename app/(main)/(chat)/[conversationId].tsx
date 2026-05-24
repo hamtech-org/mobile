@@ -29,6 +29,7 @@ import {
   type PendingAttachment,
   type PollVoteModalPoll,
 } from "@/components/chat";
+import { AISummaryModal } from "@/components/chat/AISummaryModal";
 import { ChatPinnedReminderBar } from "@/components/chat/ChatPinnedReminderBar";
 import { PinLimitModal } from "@/components/chat/PinLimitModal";
 import {
@@ -56,6 +57,7 @@ import {
   useClosePollMutation,
   useAddPollOptionMutation,
 } from "@/store/api/chatApi";
+import { useGetFriendsQuery } from "@/store/api/userApi";
 import { useCallContext } from "@/contexts/CallContext";
 import { useAppDispatch, useAppSelector } from "@/hooks/useAppStore";
 import { useChat } from "@/hooks/useChat";
@@ -67,6 +69,7 @@ import { setReplyingTo, clearReplyingTo, clearChatFrameBanner } from "@/store/sl
 import type { IMessage, TypingUserEntry } from "@/types/chat.types";
 import { prepareLocalFileForUpload } from "@/utils/uploadAttachment";
 import { toast } from "@/utils/appToast";
+import { apiClient } from "@/services/api";
 import { formatChatPreviewLine } from "@/utils/messageDisplay";
 import {
   chatMediaDownloadUrl,
@@ -83,6 +86,24 @@ import {
 import { filterGroupMembersExcludingRemoved } from "@/utils/groupMembersRealtime";
 import { isTaskJoinDeadlinePassed } from "@/utils/taskJoin";
 const EMPTY_TYPING_USERS: TypingUserEntry[] = [];
+
+function messageSendErrorText(error: unknown): string {
+  const code = (error as { data?: { error?: { code?: string } } })?.data?.error?.code;
+  if (code === "MESSAGE_BLOCKED_BY_ME") {
+    return "Bạn đang chặn người dùng này, vui lòng gỡ chặn để tiếp tục nhắn tin.";
+  }
+  if (code === "MESSAGE_BLOCKED_BY_OTHER") {
+    return "Bạn đã bị chặn bởi người dùng này.";
+  }
+  return "Gửi tin nhắn thất bại. Vui lòng thử lại.";
+}
+
+interface AIGroupSummaryPayload {
+  summary?: string;
+  highlights?: string[];
+  unreadSummary?: string;
+  unreadMessageCount?: number;
+}
 
 function toPollVoteModalPoll(raw: unknown): PollVoteModalPoll | null {
   if (!raw || typeof raw !== "object") return null;
@@ -128,6 +149,37 @@ function findPollCreatedSystemMessage(messages: IMessage[], pollId: string): IMe
   return null;
 }
 
+function bulletizeSummaryLines(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => (line.startsWith("-") || line.startsWith("•") ? line : `• ${line}`))
+    .join("\n");
+}
+
+function buildAiSummaryText(payload: AIGroupSummaryPayload): string {
+  const summary = String(payload.summary ?? "").trim();
+  const highlights = Array.isArray(payload.highlights) ? payload.highlights : [];
+  const unreadSummary = String(payload.unreadSummary ?? "").trim();
+  const unreadMessageCount = Number(payload.unreadMessageCount ?? 0);
+
+  const summaryBlock = summary
+    ? `Tổng hợp tin nhắn\n${bulletizeSummaryLines(summary)}`
+    : "Tổng hợp tin nhắn\n• (Chưa có)";
+
+  const highlightsBlock =
+    highlights.length > 0
+      ? `Điểm nổi bật\n${highlights.map((h) => `• ${String(h).trim()}`).join("\n")}`
+      : "Điểm nổi bật\n• Không có";
+
+  const unreadSummaryBlock = unreadSummary
+    ? `Tin nhắn vừa bỏ lỡ (${unreadMessageCount})\n${bulletizeSummaryLines(unreadSummary)}`
+    : `Tin nhắn vừa bỏ lỡ (${unreadMessageCount})\n• (Chưa có)`;
+
+  return [summaryBlock, highlightsBlock, unreadSummaryBlock].join("\n\n");
+}
+
 /**
  * ChatDetailScreen — Màn hình chi tiết cuộc trò chuyện.
  * Tích hợp full realtime, media, reply, actions và typing indicators.
@@ -152,6 +204,7 @@ export default function ChatDetailScreen() {
       ? (state.chat.typingUsers[conversationId] ?? EMPTY_TYPING_USERS)
       : EMPTY_TYPING_USERS,
   );
+  const friendStatuses = useAppSelector((state) => state.chat.friendStatuses);
 
   const listRef = useRef<FlatList<IMessage>>(null);
   const jumpHighlightClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -169,6 +222,9 @@ export default function ChatDetailScreen() {
   const [inChatSearchOpen, setInChatSearchOpen] = useState(false);
   const [groupPollModalOpen, setGroupPollModalOpen] = useState(false);
   const [groupTaskModalOpen, setGroupTaskModalOpen] = useState(false);
+  const [aiSummaryOpen, setAiSummaryOpen] = useState(false);
+  const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
+  const [aiSummaryResult, setAiSummaryResult] = useState("");
   const [openAiSummaryOnGroupModal, setOpenAiSummaryOnGroupModal] = useState(false);
   const [addMembersOpen, setAddMembersOpen] = useState(false);
   const [isScrolledUp, setIsScrolledUp] = useState(false);
@@ -240,6 +296,16 @@ export default function ChatDetailScreen() {
   }, [convList, isConvListLoading, conversationId]);
 
   const isGroup = conversation?.type === "group";
+  const directOtherUserId =
+    conversation && conversation.type !== "group" ? conversation.otherUserId?.trim() : undefined;
+  const { data: friends = [] } = useGetFriendsQuery(undefined, {
+    skip: !directOtherUserId,
+  });
+  const directFriendStatus = directOtherUserId
+    ? (friendStatuses[directOtherUserId] ??
+      friends.find((friend) => friend.userId === directOtherUserId)?.status)
+    : undefined;
+  const isDirectFriendOnline = directFriendStatus === "online";
 
   const { data: groupMembersRaw = [] } = useGetGroupMembersQuery(conversationId!, {
     skip: !isGroup || !conversationId,
@@ -309,6 +375,43 @@ export default function ChatDetailScreen() {
 
   const groupDisbanded = Boolean(isGroup && conversation?.isDeleted);
   const chatPaused = Boolean(isGroup && conversation?.chatEnabled === false);
+
+  const runAiSummary = useCallback(
+    async (showSuccessToast: boolean) => {
+      if (!conversationId) return;
+      setAiSummaryResult("");
+      setAiSummaryLoading(true);
+      try {
+        const result = await apiClient.post<{
+          success?: boolean;
+          data?: AIGroupSummaryPayload;
+        }>("/ai/group-summary", {
+          conversationId,
+          limit: 40,
+        });
+        setAiSummaryResult(buildAiSummaryText(result.data?.data ?? {}));
+        if (showSuccessToast) {
+          toast.success("Đã tạo tóm tắt AI");
+        }
+      } catch (error) {
+        console.error("Failed to generate AI summary:", error);
+        setAiSummaryResult(
+          showSuccessToast ? "Không thể làm mới tóm tắt." : "Không thể tạo tóm tắt vào lúc này.",
+        );
+        if (showSuccessToast) {
+          toast.error("Không thể tạo tóm tắt AI");
+        }
+      } finally {
+        setAiSummaryLoading(false);
+      }
+    },
+    [conversationId],
+  );
+
+  const openAiSummaryModal = useCallback(() => {
+    setAiSummaryOpen(true);
+    void runAiSummary(false);
+  }, [runAiSummary]);
 
   const myRoleInGroup = useMemo(() => {
     if (!currentUserId) return undefined;
@@ -625,10 +728,12 @@ export default function ChatDetailScreen() {
         dispatch(clearReplyingTo());
         void sendReplyMessage(conversationId, content, reply).catch((err) => {
           console.error("sendReplyMessage:", err);
+          toast.error(messageSendErrorText(err));
         });
       } else {
         void sendMessage(conversationId, content).catch((err) => {
           console.error("sendMessage:", err);
+          toast.error(messageSendErrorText(err));
         });
       }
 
@@ -724,6 +829,11 @@ export default function ChatDetailScreen() {
         listRef.current?.scrollToOffset({ offset: 0, animated: true });
       } catch (err) {
         console.error("Upload/Send failed:", err);
+        const blockedText = messageSendErrorText(err);
+        if (blockedText !== "Gửi tin nhắn thất bại. Vui lòng thử lại.") {
+          toast.error(blockedText);
+          throw err;
+        }
         const apiMsg =
           err &&
           typeof err === "object" &&
@@ -968,6 +1078,7 @@ export default function ChatDetailScreen() {
       {conversation && (
         <ChatHeader
           conversation={conversation}
+          isOnline={isDirectFriendOnline}
           currentUserId={currentUserId}
           typingUsers={typingUsers}
           memberCount={resolvedGroupMemberCount}
@@ -1176,15 +1287,7 @@ export default function ChatDetailScreen() {
                     ? () => toast.error("Nhóm không cho phép thành viên tạo công việc / nhắc hẹn.")
                     : undefined
               }
-              onOpenAiSummary={
-                isGroup
-                  ? () => {
-                      setOpenAiSummaryOnGroupModal(true);
-                      setGroupModalInitial(undefined);
-                      setGroupManageOpen(true);
-                    }
-                  : undefined
-              }
+              onOpenAiSummary={isGroup ? openAiSummaryModal : undefined}
             />
           ) : (
             <GroupMemberSendRestrictedBar />
@@ -1194,6 +1297,15 @@ export default function ChatDetailScreen() {
 
       {isGroup && conversationId ? (
         <>
+          <AISummaryModal
+            visible={aiSummaryOpen}
+            onClose={() => !aiSummaryLoading && setAiSummaryOpen(false)}
+            conversationName={conversation?.name ?? "Nhóm chat"}
+            loading={aiSummaryLoading}
+            result={aiSummaryResult}
+            onRerun={() => void runAiSummary(true)}
+          />
+
           <GroupPollModal
             visible={groupPollModalOpen}
             onClose={() => setGroupPollModalOpen(false)}
