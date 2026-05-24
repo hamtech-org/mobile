@@ -5,6 +5,7 @@ type ExtraConfig = {
   apiBaseUrl?: string;
   socketUrl?: string;
   agoraAppId?: string;
+  awsCognitoIdentityPoolId?: string;
 };
 
 const extra = (Constants.expoConfig?.extra ?? {}) as ExtraConfig;
@@ -41,6 +42,7 @@ const explicitApi =
   (typeof extra.apiBaseUrl === "string" && extra.apiBaseUrl.trim()) ||
   (typeof process.env.EXPO_PUBLIC_API_BASE_URL === "string" &&
     process.env.EXPO_PUBLIC_API_BASE_URL.trim()) ||
+  (typeof process.env.EXPO_API_BASE_URL === "string" && process.env.EXPO_API_BASE_URL.trim()) ||
   (typeof process.env.EXPO_PUBLIC_API_URL === "string" && process.env.EXPO_PUBLIC_API_URL.trim()) ||
   "";
 
@@ -48,6 +50,7 @@ const explicitSocket =
   (typeof extra.socketUrl === "string" && extra.socketUrl.trim()) ||
   (typeof process.env.EXPO_PUBLIC_SOCKET_URL === "string" &&
     process.env.EXPO_PUBLIC_SOCKET_URL.trim()) ||
+  (typeof process.env.EXPO_SOCKET_URL === "string" && process.env.EXPO_SOCKET_URL.trim()) ||
   "";
 
 const useDevAuto = __DEV__ || Boolean(Constants.expoConfig?.hostUri);
@@ -66,6 +69,23 @@ const agoraFromEnv =
 const agoraAppId =
   (typeof extra.agoraAppId === "string" && extra.agoraAppId.trim()) || agoraFromEnv;
 
+const awsCognitoIdentityPoolId =
+  (typeof extra.awsCognitoIdentityPoolId === "string" && extra.awsCognitoIdentityPoolId.trim()) ||
+  (typeof process.env.EXPO_PUBLIC_AWS_COGNITO_IDENTITY_POOL_ID === "string" &&
+    process.env.EXPO_PUBLIC_AWS_COGNITO_IDENTITY_POOL_ID.trim()) ||
+  (typeof process.env.EXPO_AWS_COGNITO_IDENTITY_POOL_ID === "string" &&
+    process.env.EXPO_AWS_COGNITO_IDENTITY_POOL_ID.trim()) ||
+  (typeof process.env.VITE_AWS_COGNITO_IDENTITY_POOL_ID === "string" &&
+    process.env.VITE_AWS_COGNITO_IDENTITY_POOL_ID.trim()) ||
+  "us-east-1:93d5a993-ce60-4eb7-82d7-daee331ea66f";
+
+const awsRegion =
+  (typeof process.env.EXPO_PUBLIC_AWS_REGION === "string" &&
+    process.env.EXPO_PUBLIC_AWS_REGION.trim()) ||
+  (typeof process.env.EXPO_AWS_REGION === "string" && process.env.EXPO_AWS_REGION.trim()) ||
+  (typeof process.env.VITE_AWS_REGION === "string" && process.env.VITE_AWS_REGION.trim()) ||
+  "us-east-1";
+
 const publicWebOrigin =
   (typeof process.env.EXPO_PUBLIC_WEB_ORIGIN === "string" &&
     process.env.EXPO_PUBLIC_WEB_ORIGIN.trim()) ||
@@ -76,6 +96,8 @@ export const env = {
   socketUrl,
   host: defaultHost,
   agoraAppId,
+  awsRegion,
+  awsCognitoIdentityPoolId,
   /** Domain web cho link mời nhóm (copy/chia sẻ), vd. https://hamtech.app */
   publicWebOrigin,
   hasReleaseBackendUrl: useDevAuto || Boolean(explicitApi),
