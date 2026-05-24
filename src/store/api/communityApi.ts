@@ -13,6 +13,8 @@ import type {
   ISearchGroupResult,
   ICommunityReportsPage,
   ICommunityInvitation,
+  ICommunityAutoMod,
+  IUpdateAutoModDto,
 } from "@/types/community.types";
 
 interface ApiEnvelope<T> {
@@ -448,6 +450,21 @@ export const communityApi = createApi({
       transformResponse: (response: ApiEnvelope<ICommunity>) => response.data,
       invalidatesTags: ["Communities"],
     }),
+    getCommunityAutoMod: builder.query<ICommunityAutoMod, string>({
+      query: (groupId) => `/communities/${groupId}/automod`,
+      transformResponse: (response: ApiEnvelope<ICommunityAutoMod>) => response.data,
+    }),
+    updateCommunityAutoMod: builder.mutation<
+      ICommunityAutoMod,
+      { groupId: string; body: IUpdateAutoModDto }
+    >({
+      query: ({ groupId, body }) => ({
+        url: `/communities/${groupId}/automod`,
+        method: "PUT",
+        body,
+      }),
+      transformResponse: (response: ApiEnvelope<ICommunityAutoMod>) => response.data,
+    }),
   }),
 });
 
@@ -488,4 +505,6 @@ export const {
   useDisableInviteLinkMutation,
   useGetCommunityByInviteCodeQuery,
   useAcceptInviteLinkMutation,
+  useGetCommunityAutoModQuery,
+  useUpdateCommunityAutoModMutation,
 } = communityApi;

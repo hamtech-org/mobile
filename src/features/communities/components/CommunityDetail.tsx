@@ -24,6 +24,7 @@ import {
   Users,
   History,
   ShieldAlert,
+  ShieldCheck,
 } from "lucide-react-native";
 import BottomSheet, {
   BottomSheetBackdrop,
@@ -70,6 +71,7 @@ import { TransferOwnerModal } from "./TransferOwnerModal";
 import { ModerationLogsModal } from "./ModerationLogsModal";
 import { ReportsModal } from "./ReportsModal";
 import { InviteFriendsSheet } from "./InviteFriendsSheet";
+import { CommunityAutoModModal } from "./CommunityAutoModModal";
 
 export interface CommunityDetailProps {
   groupId: string;
@@ -90,6 +92,7 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
   const [reportVisible, setReportVisible] = useState(false);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [reportsModalOpen, setReportsModalOpen] = useState(false);
+  const [autoModModalOpen, setAutoModModalOpen] = useState(false);
 
   const groupMenuSheetRef = useRef<BottomSheet>(null);
   const memberManageSheetRef = useRef<BottomSheet>(null);
@@ -486,6 +489,14 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
                   <Text className="text-[9px] font-bold text-white">{pendingReportsCount}</Text>
                 </View>
               )}
+            </Pressable>
+          )}
+          {manager && (owner || community.viewerRole === "admin") && (
+            <Pressable
+              onPress={() => setAutoModModalOpen(true)}
+              className="h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/25 backdrop-blur-md active:scale-90"
+            >
+              <ShieldCheck size={18} color="#fff" />
             </Pressable>
           )}
           {manager && (
@@ -920,6 +931,15 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
       <ReportsModal
         open={reportsModalOpen}
         onClose={() => setReportsModalOpen(false)}
+        groupId={groupId}
+        mutedColor={muted}
+        foregroundColor={foreground}
+      />
+
+      {/* Auto-Mod Configuration Modal */}
+      <CommunityAutoModModal
+        open={autoModModalOpen}
+        onClose={() => setAutoModModalOpen(false)}
         groupId={groupId}
         mutedColor={muted}
         foregroundColor={foreground}

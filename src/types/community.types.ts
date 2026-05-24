@@ -211,3 +211,15 @@ export interface ICommunityInvitation {
     avatar: string | null;
   };
 }
+
+export interface ICommunityAutoMod {
+  autoModerateEnabled: boolean;
+  autoModerateAction: "censor" | "block";
+  blacklistedKeywords: string[];
+}
+
+export interface IUpdateAutoModDto {
+  autoModerateEnabled: boolean;
+  autoModerateAction: "censor" | "block";
+  blacklistedKeywords: string[];
+}
