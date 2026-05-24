@@ -1,5 +1,13 @@
 import { Image, Pressable, Text, View } from "react-native";
-import { Globe2, Lock, Plus, ShieldCheck, MessageSquare } from "lucide-react-native";
+import {
+  Globe2,
+  Lock,
+  Plus,
+  ShieldCheck,
+  MessageSquare,
+  UserPlus,
+  Sparkles,
+} from "lucide-react-native";
 import { type ICommunity } from "@/types/community.types";
 import { useIconColors } from "@/hooks/useIconColors";
 import { normalizeMediaUrl } from "@/utils/url";
@@ -21,6 +29,11 @@ export interface CommunityHeaderProps {
   onChatPress?: () => void;
   chatEnabled?: boolean;
   joiningChat?: boolean;
+  canInvite?: boolean;
+  onInvitePress?: () => void;
+  onAcceptInvite?: () => void;
+  onDeclineInvite?: () => void;
+  inviteLoading?: boolean;
 }
 
 export function CommunityHeader({
@@ -34,6 +47,11 @@ export function CommunityHeader({
   onChatPress,
   chatEnabled,
   joiningChat,
+  canInvite,
+  onInvitePress,
+  onAcceptInvite,
+  onDeclineInvite,
+  inviteLoading,
 }: CommunityHeaderProps) {
   const { primary } = useIconColors();
 
@@ -55,6 +73,38 @@ export function CommunityHeader({
         {/* Top gradient overlay to ensure white icons are visible */}
         <View className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/40 to-transparent" />
       </View>
+
+      {community.viewerInviteStatus === "pending" && (
+        <View className="mx-4 mt-1 flex-row items-center justify-between gap-3 rounded-2xl border border-blue-500/20 bg-blue-500/5 p-4">
+          <View className="flex-1 flex-row items-center gap-3">
+            <View className="size-10 items-center justify-center rounded-xl bg-blue-600/10">
+              <Sparkles size={20} color="#2563eb" />
+            </View>
+            <View className="min-w-0 flex-1">
+              <Text className="text-sm font-bold text-foreground">Bạn được mời tham gia!</Text>
+              <Text className="mt-0.5 text-xs text-muted-foreground" numberOfLines={2}>
+                Hãy tham gia ngay để bắt đầu trò chuyện và thảo luận cùng mọi người.
+              </Text>
+            </View>
+          </View>
+          <View className="shrink-0 flex-row gap-2">
+            <Pressable
+              onPress={onDeclineInvite}
+              disabled={inviteLoading}
+              className="rounded-xl bg-muted/40 px-3 py-2 active:bg-muted/70"
+            >
+              <Text className="text-xs font-bold text-foreground">Từ chối</Text>
+            </Pressable>
+            <Pressable
+              onPress={onAcceptInvite}
+              disabled={inviteLoading}
+              className="rounded-xl bg-blue-600 px-3.5 py-2 active:bg-blue-700"
+            >
+              <Text className="text-xs font-bold text-white">Đồng ý</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
 
       {/* Community Main Info */}
       <View className="gap-4 px-4">
@@ -176,6 +226,15 @@ export function CommunityHeader({
                 ? "Đang chờ duyệt yêu cầu..."
                 : "Tham gia cộng đồng"}
             </Text>
+          </Pressable>
+        )}
+        {canInvite && (
+          <Pressable
+            onPress={onInvitePress}
+            className="mt-1 flex-row items-center justify-center gap-2 rounded-2xl border border-blue-500/30 bg-blue-600/10 py-3.5 transition-all active:scale-95"
+          >
+            <UserPlus size={16} color="#2563eb" strokeWidth={2.5} />
+            <Text className="text-[15px] font-bold text-blue-600">Mời bạn bè tham gia</Text>
           </Pressable>
         )}
       </View>

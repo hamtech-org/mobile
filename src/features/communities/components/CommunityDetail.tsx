@@ -1,5 +1,5 @@
-import { useEffect, useRef, useCallback, useMemo, useState } from "react";
-import { Alert, FlatList, Pressable, Text, View } from "react-native";
+import { useEffect, useRef, useCallback, useState } from "react";
+import { Alert, FlatList, Pressable, Text, View, Vibration } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 import {
@@ -49,14 +49,11 @@ import {
   useJoinCommunityChatMutation,
   useUnlinkChatMutation,
   useGetCommunityReportsQuery,
+  useAcceptInvitationMutation,
+  useDeclineInvitationMutation,
 } from "@/store/api/communityApi";
-import { useAppSelector } from "@/hooks/useAppStore";
 import { PendingPostsModal } from "./PendingPostsModal";
-import {
-  type CommunityCategory,
-  type CommunityMemberRole,
-  type ICommunityMember,
-} from "@/types/community.types";
+import { type CommunityMemberRole, type ICommunityMember } from "@/types/community.types";
 import type { IPost } from "@/types/newsfeed.types";
 import { toast } from "@/utils/appToast";
 import { CATEGORY_LABEL, ROLE_LABEL, type TabKey } from "../constants";
@@ -72,6 +69,7 @@ import { CommunityReportSheet } from "./CommunityReportSheet";
 import { TransferOwnerModal } from "./TransferOwnerModal";
 import { ModerationLogsModal } from "./ModerationLogsModal";
 import { ReportsModal } from "./ReportsModal";
+import { InviteFriendsSheet } from "./InviteFriendsSheet";
 
 export interface CommunityDetailProps {
   groupId: string;
@@ -79,7 +77,6 @@ export interface CommunityDetailProps {
 
 export function CommunityDetail({ groupId }: CommunityDetailProps) {
   const { primary, foreground, muted, destructive } = useIconColors();
-  const currentUser = useAppSelector((state) => state.auth.user);
   const { joinChat } = useLocalSearchParams<{ joinChat?: string }>();
 
   const [tab, setTab] = useState<TabKey>("posts");
@@ -96,6 +93,7 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
 
   const groupMenuSheetRef = useRef<BottomSheet>(null);
   const memberManageSheetRef = useRef<BottomSheet>(null);
+  const inviteFriendsSheetRef = useRef<BottomSheet>(null);
   const isTransitioningRef = useRef(false);
 
   const {
@@ -126,6 +124,28 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
   const [removeMember] = useRemoveCommunityMemberMutation();
   const [updateRole] = useUpdateCommunityMemberRoleMutation();
   const [transferOwner] = useTransferCommunityOwnerMutation();
+
+  const [acceptInvitation, { isLoading: acceptLoading }] = useAcceptInvitationMutation();
+  const [declineInvitation, { isLoading: declineLoading }] = useDeclineInvitationMutation();
+
+  const handleAcceptInvite = async () => {
+    try {
+      await acceptInvitation(groupId).unwrap();
+      Vibration.vibrate(80); // Quick haptic vibration feedback
+      toast.success("Chào mừng bạn đến với cộng đồng!");
+    } catch (err: any) {
+      toast.error(err?.data?.message || "Không thể đồng ý lời mời");
+    }
+  };
+
+  const handleDeclineInvite = async () => {
+    try {
+      await declineInvitation(groupId).unwrap();
+      toast.success("Đã từ chối lời mời");
+    } catch (err: any) {
+      toast.error(err?.data?.message || "Không thể từ chối lời mời");
+    }
+  };
 
   const [joinCommunityChat, { isLoading: joiningChat }] = useJoinCommunityChatMutation();
   const [unlinkChat] = useUnlinkChatMutation();
@@ -297,6 +317,10 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
   }
 
   const isMember = community.viewerStatus === "active";
+  const canInvite =
+    community.type === "public"
+      ? isMember
+      : ["owner", "admin", "moderator"].includes(community.viewerRole || "");
 
   const handleJoin = async (): Promise<void> => {
     try {
@@ -506,6 +530,11 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
               chatEnabled={community.chatEnabled ?? false}
               joiningChat={joiningChat}
               onChatPress={handleJoinChat}
+              canInvite={canInvite}
+              onInvitePress={() => inviteFriendsSheetRef.current?.expand()}
+              onAcceptInvite={handleAcceptInvite}
+              onDeclineInvite={handleDeclineInvite}
+              inviteLoading={acceptLoading || declineLoading}
             />
           }
           ListEmptyComponent={
@@ -558,6 +587,11 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
               chatEnabled={community.chatEnabled ?? false}
               joiningChat={joiningChat}
               onChatPress={handleJoinChat}
+              canInvite={canInvite}
+              onInvitePress={() => inviteFriendsSheetRef.current?.expand()}
+              onAcceptInvite={handleAcceptInvite}
+              onDeclineInvite={handleDeclineInvite}
+              inviteLoading={acceptLoading || declineLoading}
             />
           }
           renderItem={() => (
@@ -889,6 +923,16 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
         groupId={groupId}
         mutedColor={muted}
         foregroundColor={foreground}
+      />
+
+      {/* Invite Friends Bottom Sheet */}
+      <InviteFriendsSheet
+        sheetRef={inviteFriendsSheetRef}
+        groupId={groupId}
+        mutedColor={muted}
+        foregroundColor={foreground}
+        onClose={() => inviteFriendsSheetRef.current?.close()}
+        renderBackdrop={renderBackdrop}
       />
     </SafeAreaView>
   );

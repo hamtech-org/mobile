@@ -13,7 +13,11 @@ export type NotificationType =
   | "comment_reply"
   | "ai_job_done"
   | "stats_milestone"
-  | "community_chat_enabled";
+  | "community_chat_enabled"
+  | "post_approved"
+  | "post_rejected"
+  | "community_invite"
+  | "community_invite_accepted";
 
 export type NotificationRoute =
   | "chat"

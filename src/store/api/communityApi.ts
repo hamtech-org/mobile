@@ -11,8 +11,8 @@ import type {
   ICreateCommunityDto,
   CommunityMemberRole,
   ISearchGroupResult,
-  ICommunityReport,
   ICommunityReportsPage,
+  ICommunityInvitation,
 } from "@/types/community.types";
 
 interface ApiEnvelope<T> {
@@ -33,6 +33,7 @@ export const communityApi = createApi({
     "CommunityPendingPosts",
     "CommunityModerationLogs",
     "CommunityReports",
+    "CommunityInvitations",
   ],
   endpoints: (builder) => ({
     listCommunities: builder.query<
@@ -361,6 +362,92 @@ export const communityApi = createApi({
       transformResponse: () => null,
       invalidatesTags: (_res, _err, groupId) => [{ type: "CommunityDetail", id: groupId }],
     }),
+    inviteFriends: builder.mutation<
+      { success: boolean; invitedUserIds: string[] },
+      { groupId: string; userIds: string[] }
+    >({
+      query: ({ groupId, userIds }) => ({
+        url: `/communities/${groupId}/invites`,
+        method: "POST",
+        body: { userIds },
+      }),
+      transformResponse: (response: ApiEnvelope<{ success: boolean; invitedUserIds: string[] }>) =>
+        response.data,
+      invalidatesTags: (_res, _err, { groupId }) => [{ type: "CommunityDetail", id: groupId }],
+    }),
+    getReceivedInvitations: builder.query<
+      { items: ICommunityInvitation[]; nextCursor: string | null; hasMore: boolean },
+      { limit?: number; cursor?: string } | void
+    >({
+      query: (params) => ({
+        url: "/communities/invites",
+        params: { limit: params?.limit, cursor: params?.cursor },
+      }),
+      transformResponse: (
+        response: ApiEnvelope<{
+          items: ICommunityInvitation[];
+          nextCursor: string | null;
+          hasMore: boolean;
+        }>,
+      ) => ({
+        items: Array.isArray(response?.data?.items) ? response.data.items : [],
+        nextCursor: response?.data?.nextCursor ?? null,
+        hasMore: Boolean(response?.data?.hasMore),
+      }),
+      providesTags: ["CommunityInvitations"],
+    }),
+    acceptInvitation: builder.mutation<ICommunity, string>({
+      query: (groupId) => ({
+        url: `/communities/${groupId}/invites/accept`,
+        method: "POST",
+      }),
+      transformResponse: (response: ApiEnvelope<ICommunity>) => response.data,
+      invalidatesTags: (_res, _err, groupId) => [
+        "Communities",
+        "CommunityInvitations",
+        { type: "CommunityDetail", id: groupId },
+      ],
+    }),
+    declineInvitation: builder.mutation<null, string>({
+      query: (groupId) => ({
+        url: `/communities/${groupId}/invites/decline`,
+        method: "POST",
+      }),
+      transformResponse: () => null,
+      invalidatesTags: ["CommunityInvitations"],
+    }),
+    getInviteLink: builder.mutation<{ inviteCode: string; inviteCodeEnabled: boolean }, string>({
+      query: (groupId) => ({
+        url: `/communities/${groupId}/invite-link`,
+        method: "POST",
+      }),
+      transformResponse: (
+        response: ApiEnvelope<{ inviteCode: string; inviteCodeEnabled: boolean }>,
+      ) => response.data,
+      invalidatesTags: (_res, _err, groupId) => [{ type: "CommunityDetail", id: groupId }],
+    }),
+    disableInviteLink: builder.mutation<null, string>({
+      query: (groupId) => ({
+        url: `/communities/${groupId}/invite-link`,
+        method: "DELETE",
+      }),
+      transformResponse: () => null,
+      invalidatesTags: (_res, _err, groupId) => [{ type: "CommunityDetail", id: groupId }],
+    }),
+    getCommunityByInviteCode: builder.query<ICommunity, string>({
+      query: (inviteCode) => ({
+        url: `/communities/join/${inviteCode}`,
+      }),
+      transformResponse: (response: ApiEnvelope<ICommunity>) => response.data,
+    }),
+    acceptInviteLink: builder.mutation<ICommunity, string>({
+      query: (inviteCode) => ({
+        url: `/communities/join/${inviteCode}/accept`,
+        method: "POST",
+      }),
+      transformResponse: (response: ApiEnvelope<ICommunity>) => response.data,
+      invalidatesTags: ["Communities"],
+    }),
   }),
 });
 
@@ -393,4 +480,12 @@ export const {
   useUnlinkChatMutation,
   useGetJoinedCommunitiesFeedQuery,
   useLazyGetJoinedCommunitiesFeedQuery,
+  useInviteFriendsMutation,
+  useGetReceivedInvitationsQuery,
+  useAcceptInvitationMutation,
+  useDeclineInvitationMutation,
+  useGetInviteLinkMutation,
+  useDisableInviteLinkMutation,
+  useGetCommunityByInviteCodeQuery,
+  useAcceptInviteLinkMutation,
 } = communityApi;

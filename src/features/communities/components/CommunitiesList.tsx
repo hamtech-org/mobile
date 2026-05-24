@@ -1,11 +1,26 @@
-import { useEffect, useMemo, useState } from "react";
-import { FlatList, Image, Pressable, Text, TextInput, View } from "react-native";
+import { useEffect, useState } from "react";
+import {
+  FlatList,
+  Image,
+  Pressable,
+  Text,
+  TextInput,
+  View,
+  Vibration,
+  ActivityIndicator,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import { ArrowLeft, Plus, Search, Users } from "lucide-react-native";
+import { ArrowLeft, Plus, Search, Users, MailOpen, Calendar } from "lucide-react-native";
 
 import { useIconColors } from "@/hooks/useIconColors";
-import { useListCommunitiesQuery, useLazySearchGroupsQuery } from "@/store/api/communityApi";
+import {
+  useListCommunitiesQuery,
+  useLazySearchGroupsQuery,
+  useGetReceivedInvitationsQuery,
+  useAcceptInvitationMutation,
+  useDeclineInvitationMutation,
+} from "@/store/api/communityApi";
 import {
   COMMUNITY_CATEGORIES,
   type CommunityCategory,
@@ -13,6 +28,7 @@ import {
   type ISearchGroupResult,
 } from "@/types/community.types";
 import { normalizeMediaUrl } from "@/utils/url";
+import { toast } from "@/utils/appToast";
 import { CATEGORY_LABEL } from "../constants";
 import { CategoryChip } from "./CategoryChip";
 import { CommunityCard } from "./CommunityCard";
@@ -24,7 +40,7 @@ const defaultAvatarGroup = require("../../../../assets/images/avatar-group-defau
 
 export function CommunitiesList() {
   const { primary, foreground, muted } = useIconColors();
-  const [activeTab, setActiveTab] = useState<"discover" | "feed">("discover");
+  const [activeTab, setActiveTab] = useState<"discover" | "feed" | "invites">("discover");
   const [category, setCategory] = useState<CommunityCategory | undefined>(undefined);
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -37,7 +53,31 @@ export function CommunitiesList() {
   const { data, isLoading } = useListCommunitiesQuery({ category, limit: 30 });
   const { data: joined } = useListCommunitiesQuery({ scope: "joined", limit: 8 });
 
+  // Received invitations
+  const { data: invitesData, isLoading: isInvitesLoading } = useGetReceivedInvitationsQuery();
+  const [acceptInvitation, { isLoading: isAccepting }] = useAcceptInvitationMutation();
+  const [declineInvitation, { isLoading: isDeclining }] = useDeclineInvitationMutation();
+
   const joinedItems = joined?.items ?? [];
+
+  const handleAccept = async (groupId: string) => {
+    try {
+      await acceptInvitation(groupId).unwrap();
+      Vibration.vibrate(80);
+      toast.success("Đã đồng ý tham gia cộng đồng!");
+    } catch (err: any) {
+      toast.error(err?.data?.message || "Không thể đồng ý tham gia");
+    }
+  };
+
+  const handleDecline = async (groupId: string) => {
+    try {
+      await declineInvitation(groupId).unwrap();
+      toast.success("Đã từ chối lời mời");
+    } catch (err: any) {
+      toast.error(err?.data?.message || "Không thể từ chối lời mời");
+    }
+  };
 
   useEffect(() => {
     if (searchQuery.trim().length < 2) {
@@ -155,11 +195,139 @@ export function CommunitiesList() {
               Bảng tin
             </Text>
           </Pressable>
+          <Pressable
+            onPress={() => setActiveTab("invites")}
+            className={`flex-1 items-center border-b-2 py-3 ${
+              activeTab === "invites" ? "border-primary" : "border-transparent"
+            }`}
+          >
+            <Text
+              className={`font-semibold ${
+                activeTab === "invites" ? "font-bold text-primary" : "text-muted-foreground"
+              }`}
+            >
+              Lời mời
+            </Text>
+          </Pressable>
         </View>
       )}
 
       {activeTab === "feed" && !isSearching ? (
         <CommunityJoinedFeed />
+      ) : activeTab === "invites" && !isSearching ? (
+        <FlatList
+          data={isInvitesLoading ? [1, 2] : (invitesData?.items ?? [])}
+          keyExtractor={(item, index) =>
+            isInvitesLoading ? `skeleton-${index}` : (item as any).groupId
+          }
+          contentContainerStyle={{ padding: 16, gap: 14 }}
+          ListHeaderComponent={
+            <View className="mb-2">
+              <Text className="text-lg font-bold text-foreground">Lời mời gia nhập cộng đồng</Text>
+              <Text className="mt-0.5 text-xs text-muted-foreground">
+                Các lời mời từ bạn bè gửi đến bạn để cùng kết nối và thảo luận.
+              </Text>
+            </View>
+          }
+          ListEmptyComponent={
+            <View className="mt-4 items-center gap-3 rounded-2xl border border-dashed border-border p-10">
+              <View className="size-14 items-center justify-center rounded-2xl bg-muted/30">
+                <MailOpen size={28} color={muted} />
+              </View>
+              <Text className="mt-2 text-center font-bold text-foreground">
+                Hộp thư lời mời đang trống
+              </Text>
+              <Text className="px-4 text-center text-xs text-muted-foreground">
+                Bạn chưa nhận được lời mời gia nhập cộng đồng nào.
+              </Text>
+            </View>
+          }
+          renderItem={({ item }) => {
+            if (isInvitesLoading) {
+              return <CommunitySkeleton />;
+            }
+            const invite = item as any;
+            const communityName = invite.communityInfo?.name ?? "Cộng đồng Zalogram";
+            const inviterName = invite.invitedByInfo?.displayName ?? "Người dùng Zalogram";
+            const inviterAvatar = invite.invitedByInfo?.avatar;
+            const communityAvatar = invite.communityInfo?.avatar;
+
+            return (
+              <View className="flex-col gap-4 rounded-2xl border border-border bg-card p-4 shadow-sm">
+                <View className="flex-row items-center gap-3">
+                  <View className="size-12 items-center justify-center overflow-hidden rounded-xl border border-border/10 bg-primary/10">
+                    {communityAvatar ? (
+                      <Image
+                        source={{ uri: normalizeMediaUrl(communityAvatar) }}
+                        className="size-full"
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <Text className="text-sm font-extrabold text-primary">
+                        {communityName.slice(0, 2).toUpperCase()}
+                      </Text>
+                    )}
+                  </View>
+                  <View className="min-w-0 flex-1">
+                    <Pressable
+                      onPress={() => router.push(`/(main)/(communities)/${invite.groupId}`)}
+                    >
+                      <Text
+                        className="text-sm font-bold text-foreground active:text-primary"
+                        numberOfLines={1}
+                      >
+                        {communityName}
+                      </Text>
+                    </Pressable>
+                    <View className="mt-1 flex-row items-center gap-1.5">
+                      <Text className="text-xs text-muted-foreground">Mời bởi:</Text>
+                      <View className="flex-row items-center gap-1">
+                        {inviterAvatar && (
+                          <Image
+                            source={{ uri: normalizeMediaUrl(inviterAvatar) }}
+                            className="size-3.5 rounded-full"
+                            resizeMode="cover"
+                          />
+                        )}
+                        <Text className="text-xs font-bold text-foreground" numberOfLines={1}>
+                          {inviterName}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+
+                <View className="flex-row items-center gap-2 border-t border-border/40 pt-2.5">
+                  <Calendar size={13} color={muted} />
+                  <Text className="text-[11px] font-semibold text-muted-foreground">
+                    Mời vào {new Date(invite.createdAt).toLocaleDateString("vi-VN")}
+                  </Text>
+                </View>
+
+                <View className="mt-1 w-full flex-row gap-2">
+                  <Pressable
+                    disabled={isAccepting || isDeclining}
+                    onPress={() => void handleDecline(invite.groupId)}
+                    className="h-9 flex-1 items-center justify-center rounded-xl bg-muted/40 px-3 active:bg-muted/70"
+                  >
+                    <Text className="text-xs font-bold text-foreground">Từ chối</Text>
+                  </Pressable>
+                  <Pressable
+                    disabled={isAccepting || isDeclining}
+                    onPress={() => void handleAccept(invite.groupId)}
+                    className="h-9 flex-1 items-center justify-center rounded-xl bg-primary px-3 active:bg-primary/80"
+                  >
+                    {isAccepting ? (
+                      <ActivityIndicator size="small" color="#FFF" />
+                    ) : (
+                      <Text className="text-xs font-bold text-primary-foreground">Chấp nhận</Text>
+                    )}
+                  </Pressable>
+                </View>
+              </View>
+            );
+          }}
+        />
       ) : (
         <FlatList
           data={showSkeleton ? [1, 2, 3] : (displayData as any)}
