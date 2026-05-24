@@ -50,9 +50,28 @@ export default function NotificationsScreen() {
       unread: base.filter((n) => !n.isRead).length,
       message: base.filter((n) => ["message", "group_invite", "mention"].includes(n.type)).length,
       post: base.filter((n) =>
-        ["post_reaction", "post_comment", "reel_new", "reel_comment", "comment_reply"].includes(
-          n.type,
-        ),
+        [
+          "post_reaction",
+          "post_comment",
+          "reel_new",
+          "reel_comment",
+          "comment_reply",
+          "live_started",
+        ].includes(n.type),
+      ).length,
+      community: base.filter((n) =>
+        [
+          "community_join_request",
+          "community_request_resolved",
+          "community_member_kicked",
+          "community_role_changed",
+          "community_ownership_transferred",
+          "post_approved",
+          "post_rejected",
+          "community_invite",
+          "community_invite_accepted",
+          "community_chat_enabled",
+        ].includes(n.type),
       ).length,
     };
   }, [allItems, hiddenIds]);
@@ -124,7 +143,9 @@ export default function NotificationsScreen() {
         ? "Không có thông báo tin nhắn"
         : chip === "post"
           ? "Không có thông báo bài viết"
-          : "Chưa có thông báo";
+          : chip === "community"
+            ? "Không có thông báo cộng đồng"
+            : "Chưa có thông báo";
 
   return (
     <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
