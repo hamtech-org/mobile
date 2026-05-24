@@ -1089,21 +1089,31 @@ export function GroupManageModal({
     }
   }, [groupId, patchPrefs]);
 
-  const buildAiSummaryText = useCallback((summary: string, highlights: string[]) => {
-    const summaryBlock = summary
-      ? `Tóm tắt\n${summary
-          .split("\n")
-          .map((l) => l.trim())
-          .filter(Boolean)
-          .map((l) => (l.startsWith("-") || l.startsWith("•") ? l : `• ${l}`))
-          .join("\n")}`
-      : "Tóm tắt\n• (Chưa có)";
-    const highlightsBlock =
-      highlights.length > 0
-        ? `Điểm nổi bật\n${highlights.map((h) => `• ${String(h).trim()}`).join("\n")}`
-        : "Điểm nổi bật\n• Không có";
-    return [summaryBlock, highlightsBlock].join("\n\n");
+  const bulletizeAiSummaryLines = useCallback((text: string) => {
+    return text
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((l) => (l.startsWith("-") || l.startsWith("•") ? l : `• ${l}`))
+      .join("\n");
   }, []);
+
+  const buildAiSummaryText = useCallback(
+    (summary: string, highlights: string[], unreadSummary: string, unreadMessageCount: number) => {
+      const summaryBlock = summary
+        ? `Tổng hợp tin nhắn\n${bulletizeAiSummaryLines(summary)}`
+        : "Tổng hợp tin nhắn\n• (Chưa có)";
+      const highlightsBlock =
+        highlights.length > 0
+          ? `Điểm nổi bật\n${highlights.map((h) => `• ${String(h).trim()}`).join("\n")}`
+          : "Điểm nổi bật\n• Không có";
+      const unreadSummaryBlock = unreadSummary
+        ? `Tin nhắn vừa bỏ lỡ (${unreadMessageCount})\n${bulletizeAiSummaryLines(unreadSummary)}`
+        : `Tin nhắn vừa bỏ lỡ (${unreadMessageCount})\n• (Chưa có)`;
+      return [summaryBlock, highlightsBlock, unreadSummaryBlock].join("\n\n");
+    },
+    [bulletizeAiSummaryLines],
+  );
 
   const runAiSummary = useCallback(
     async (showSuccessToast: boolean) => {
@@ -1112,7 +1122,12 @@ export function GroupManageModal({
       try {
         const result = await apiClient.post<{
           success?: boolean;
-          data?: { summary?: string; highlights?: string[] };
+          data?: {
+            summary?: string;
+            highlights?: string[];
+            unreadSummary?: string;
+            unreadMessageCount?: number;
+          };
         }>("/ai/group-summary", {
           conversationId: groupId,
           limit: 40,
@@ -1122,7 +1137,11 @@ export function GroupManageModal({
         const highlights = Array.isArray(payload?.highlights)
           ? (payload.highlights as string[])
           : [];
-        setAiSummaryResult(buildAiSummaryText(summary, highlights));
+        const unreadSummary = String(payload?.unreadSummary ?? "").trim();
+        const unreadMessageCount = Number(payload?.unreadMessageCount ?? 0);
+        setAiSummaryResult(
+          buildAiSummaryText(summary, highlights, unreadSummary, unreadMessageCount),
+        );
         if (showSuccessToast) {
           toast.success("Đã tạo tóm tắt AI");
         }
@@ -3170,7 +3189,13 @@ export function GroupManageModal({
           style={styles.overlay}
           onPress={() => !aiSummaryLoading && setAiSummaryOpen(false)}
         >
-          <Pressable style={styles.aiSheet} onPress={(e) => e.stopPropagation()}>
+          <Pressable
+            style={[
+              styles.aiSheet,
+              { maxHeight: Math.min(Dimensions.get("window").height * 0.88, 720) },
+            ]}
+            onPress={(e) => e.stopPropagation()}
+          >
             <View style={styles.aiSheetHeader}>
               <View style={styles.aiSheetIconWrap}>
                 <Sparkles size={18} color="#fff" strokeWidth={2} />
@@ -3189,12 +3214,12 @@ export function GroupManageModal({
                 <Text style={{ fontSize: 22, color: Z.sub, fontWeight: "300" }}>×</Text>
               </Pressable>
             </View>
-            <ScrollView
-              style={{ maxHeight: Dimensions.get("window").height * 0.62 }}
-              contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
-              keyboardShouldPersistTaps="handled"
-            >
-              {aiSummaryLoading ? (
+            {aiSummaryLoading ? (
+              <ScrollView
+                style={styles.aiSheetScroll}
+                contentContainerStyle={styles.aiSheetScrollContent}
+                keyboardShouldPersistTaps="handled"
+              >
                 <View style={{ alignItems: "center", paddingVertical: 32 }}>
                   <ActivityIndicator size="large" color={Z.primary} />
                   <Text style={[styles.menuLabel, { marginTop: 16 }]}>AI đang phân tích...</Text>
@@ -3207,21 +3232,29 @@ export function GroupManageModal({
                     Đang đọc và tóm tắt lịch sử trò chuyện gần đây
                   </Text>
                 </View>
-              ) : (
-                <>
+              </ScrollView>
+            ) : (
+              <>
+                <ScrollView
+                  style={styles.aiSheetScroll}
+                  contentContainerStyle={styles.aiSheetScrollContent}
+                  keyboardShouldPersistTaps="handled"
+                >
                   <Text style={{ fontSize: 14, lineHeight: 22, color: Z.text }}>
                     {aiSummaryResult}
                   </Text>
+                </ScrollView>
+                <View style={styles.aiSheetFooter}>
                   <Pressable
-                    style={[styles.primaryBtn, { marginTop: 16 }]}
+                    style={styles.primaryBtn}
                     onPress={() => void handleRerunAiSummary()}
                     disabled={aiSummaryLoading}
                   >
                     <Text style={styles.primaryBtnText}>Phân tích lại</Text>
                   </Pressable>
-                </>
-              )}
-            </ScrollView>
+                </View>
+              </>
+            )}
           </Pressable>
         </Pressable>
       </Modal>
@@ -3778,7 +3811,6 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     borderRadius: 16,
     backgroundColor: Z.bg,
-    maxHeight: "88%",
     overflow: "hidden",
     ...Platform.select({
       ios: {
@@ -3809,6 +3841,21 @@ const styles = StyleSheet.create({
   },
   aiSheetTitle: { fontSize: 16, fontWeight: "700", color: Z.text },
   aiSheetSub: { fontSize: 11, color: Z.sub, marginTop: 2, fontWeight: "600" },
+  aiSheetScroll: {
+    flexShrink: 1,
+  },
+  aiSheetScrollContent: {
+    padding: 16,
+    paddingBottom: 24,
+  },
+  aiSheetFooter: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Z.line,
+    backgroundColor: Z.bg,
+  },
   thumbPlaceholder: { backgroundColor: Z.subBg, alignItems: "center", justifyContent: "center" },
   mediaFileList: {
     flex: 1,
