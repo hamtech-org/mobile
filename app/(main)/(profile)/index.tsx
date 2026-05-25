@@ -19,6 +19,8 @@ import { useColorScheme } from "nativewind";
 
 import { Button } from "@/components/common/Button";
 import { ScreenHeader } from "@/components/layout/ScreenHeader";
+import { useAppSelector } from "@/hooks/useAppStore";
+import { formatUnreadBadge } from "@/utils/chatBadge";
 import { NotificationBellButton } from "@/components/notifications/NotificationBellButton";
 import { FaceLivenessWebViewModal } from "@/components/auth/FaceLivenessWebViewModal";
 import { useAuth } from "@/hooks/useAuth";
@@ -103,6 +105,8 @@ export default function ProfileScreen() {
   const { colorScheme, setColorScheme } = useColorScheme();
   const { foreground, muted, primary, destructive } = useIconColors();
   const isDark = colorScheme === "dark";
+  const inboxUnread = useAppSelector((s) => s.inboxNotification.unreadCount);
+  const inboxBadge = formatUnreadBadge(inboxUnread);
 
   const {
     data: profileRes,

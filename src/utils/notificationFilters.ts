@@ -1,16 +1,21 @@
 import type { INotification, NotificationType } from "@/types/notification.types";
+import { getNotificationPresentation } from "@/utils/notificationPresentation";
 
-export type NotificationFilterChip = "all" | "unread" | "message" | "post";
+export type NotificationFilterChip =
+  | "all"
+  | "unread"
+  | "message"
+  | "direct"
+  | "group"
+  | "friend"
+  | "post"
+  | "reel"
+  | "live";
 
 const MESSAGE_TYPES: NotificationType[] = ["message", "group_invite", "mention"];
-const POST_TYPES: NotificationType[] = [
-  "post_reaction",
-  "post_comment",
-  "reel_new",
-  "reel_comment",
-  "comment_reply",
-  "live_started",
-];
+const FRIEND_TYPES: NotificationType[] = ["friend_request", "friend_accepted"];
+const POST_TYPES: NotificationType[] = ["post_reaction", "post_comment", "comment_reply"];
+const REEL_TYPES: NotificationType[] = ["reel_new", "reel_comment"];
 
 export function filterNotifications(
   items: INotification[],
@@ -26,8 +31,23 @@ export function filterNotifications(
     case "message":
       list = list.filter((n) => MESSAGE_TYPES.includes(n.type));
       break;
+    case "direct":
+      list = list.filter((n) => getNotificationPresentation(n).kind === "chat_direct");
+      break;
+    case "group":
+      list = list.filter((n) => getNotificationPresentation(n).kind === "chat_group");
+      break;
+    case "friend":
+      list = list.filter((n) => FRIEND_TYPES.includes(n.type));
+      break;
     case "post":
       list = list.filter((n) => POST_TYPES.includes(n.type));
+      break;
+    case "reel":
+      list = list.filter((n) => REEL_TYPES.includes(n.type));
+      break;
+    case "live":
+      list = list.filter((n) => n.type === "live_started");
       break;
     default:
       break;

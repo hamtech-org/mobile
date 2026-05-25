@@ -1,6 +1,7 @@
 import type { AppDispatch } from "@/store/store";
 import { store } from "@/store/store";
-import { chatApi, CHAT_MESSAGES_QUERY_LIMIT } from "@/store/api/chatApi";
+import { CHAT_MESSAGES_QUERY_LIMIT } from "@/store/api/chatApi";
+import { messageApi } from "@/store/api/endpoints/messageApi";
 import { messageEdited } from "@/store/slices/chatSlice";
 
 export type TaskAssignedPatchFields = {
@@ -81,7 +82,7 @@ export function patchTaskAssignedSystemMessages(
   const rtkPatched = new Map<string, string>();
 
   dispatch(
-    chatApi.util.updateQueryData("getMessages", queryArg, (draft) => {
+    messageApi.util.updateQueryData("getMessages", queryArg, (draft: any) => {
       if (!draft) return;
       for (const [id, content] of patchDraftMessages(draft, tid, fields)) {
         rtkPatched.set(id, content);

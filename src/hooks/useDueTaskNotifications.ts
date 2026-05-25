@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 
 import { useAppDispatch } from "@/hooks/useAppStore";
-import { chatApi } from "@/store/api/chatApi";
 import { taskApi } from "@/store/api/endpoints/taskApi";
 import type { IConversation } from "@/types/chat.types";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -63,7 +62,7 @@ export function useDueTaskNotifications({
 
         for (const gid of groupIds) {
           const res = await dispatch(
-            chatApi.endpoints.getTasks.initiate(gid, { subscribe: false, forceRefetch: false }),
+            taskApi.endpoints.getTasks.initiate(gid, { subscribe: false, forceRefetch: false }),
           );
           const data = (res as { data?: { data?: GroupTaskLike[] } })?.data?.data;
           if (!Array.isArray(data) || data.length === 0) continue;

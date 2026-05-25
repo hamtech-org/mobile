@@ -11,8 +11,6 @@ import { useCreatePostHeader } from "@/features/newsfeed/hooks/useCreatePostHead
 import { CreatePostHeader } from "@/features/newsfeed/components/CreatePostHeader";
 import { ReelsStrip } from "@/features/newsfeed/components/ReelsStrip";
 import { PaginatedFeedList } from "@/features/newsfeed/components/PaginatedFeedList";
-import { NotificationBellButton } from "@/components/notifications/NotificationBellButton";
-
 export default function NewsfeedScreen() {
   const router = useRouter();
   const { posts, hasMore, isLoadingInitial, isFetchingNext, loadMore } = useNewsfeedPagination();
@@ -33,7 +31,6 @@ export default function NewsfeedScreen() {
             >
               <Ionicons name="search-outline" size={22} color="hsl(var(--foreground) / 1)" />
             </Pressable>
-            <NotificationBellButton />
             <Pressable
               onPress={() => router.push("/(main)/(newsfeed)/editor/new")}
               className="p-2 active:opacity-70"

@@ -4,7 +4,8 @@ import { Image } from "expo-image";
 import { Check, EyeOff } from "lucide-react-native";
 
 import type { INotification } from "@/types/notification.types";
-import { getNotificationActor, getNotificationFallbackInitial } from "@/utils/notificationActor";
+import { getNotificationPresentation } from "@/utils/notificationPresentation";
+import { normalizeMediaUrl } from "@/utils/url";
 
 function formatRelativeTime(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
@@ -32,7 +33,8 @@ export function NotificationSwipeableRow({
   onMarkRead,
   onHide,
 }: NotificationSwipeableRowProps) {
-  const actor = getNotificationActor(item);
+  const presentation = getNotificationPresentation(item);
+  const avatarUri = presentation.avatar ? normalizeMediaUrl(presentation.avatar) : undefined;
 
   const renderRightActions = () => (
     <View className="mb-2 flex-row">
@@ -66,31 +68,36 @@ export function NotificationSwipeableRow({
         }`}
       >
         <View className="size-11 items-center justify-center overflow-hidden rounded-full bg-muted">
-          {actor.avatar ? (
-            <Image source={{ uri: actor.avatar }} className="size-11" contentFit="cover" />
+          {avatarUri ? (
+            <Image source={{ uri: avatarUri }} className="size-11" contentFit="cover" />
           ) : (
-            <Text className="text-sm font-bold text-foreground">
-              {getNotificationFallbackInitial(item)}
-            </Text>
+            <Text className="text-sm font-bold text-foreground">{presentation.fallback}</Text>
           )}
         </View>
 
         <View className="min-w-0 flex-1">
           <View className="flex-row items-start gap-2">
-            <Text
-              className={`flex-1 text-sm leading-snug ${
-                item.isRead ? "font-medium text-foreground" : "font-semibold text-foreground"
-              }`}
-              numberOfLines={2}
-            >
-              {item.title}
-            </Text>
+            <View className="min-w-0 flex-1">
+              <View className="flex-row items-center gap-2">
+                <Text
+                  className={`min-w-0 flex-1 text-sm leading-snug ${
+                    item.isRead ? "font-medium text-foreground" : "font-semibold text-foreground"
+                  }`}
+                  numberOfLines={1}
+                >
+                  {presentation.title}
+                </Text>
+                <View className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5">
+                  <Text className="text-[10px] font-medium text-primary">{presentation.label}</Text>
+                </View>
+              </View>
+            </View>
             {!item.isRead ? (
               <View className="mt-1.5 size-2 shrink-0 rounded-full bg-red-500" />
             ) : null}
           </View>
           <Text className="mt-0.5 text-xs text-muted-foreground" numberOfLines={2}>
-            {item.body}
+            {presentation.body}
           </Text>
           <Text className="mt-1 text-[11px] text-muted-foreground">
             {formatRelativeTime(item.createdAt)}
