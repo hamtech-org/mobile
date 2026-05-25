@@ -65,7 +65,7 @@ export function GroupJoinQrScannerModal({
 
       const suffix = extractJoinSuffixFromText(data);
       if (!suffix) {
-        toast.error("Ma QR khong hop le - can QR HamTech hoac link moi tham gia nhom");
+        toast.error("Mã qr không hợp lệ.");
         return;
       }
 
