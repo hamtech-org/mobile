@@ -39,6 +39,36 @@ export const conversationApi = chatApi.injectEndpoints({
         body,
       }),
       invalidatesTags: ["Conversations"],
+      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
+        try {
+          const { data: res } = await queryFulfilled;
+          if (res?.data) {
+            const incoming = res.data;
+            dispatch(
+              (chatApi.util as any).updateQueryData(
+                "getConversations",
+                undefined,
+                (draft: IConversation[]) => {
+                  if (!Array.isArray(draft)) return;
+                  const idx = draft.findIndex((c) => c.conversationId === incoming.conversationId);
+                  if (idx >= 0) {
+                    draft[idx] = { ...draft[idx], ...incoming };
+                  } else {
+                    draft.push(incoming);
+                  }
+                  draft.sort((a, b) => {
+                    const ta = a.lastMessageAt ?? a.updatedAt ?? "";
+                    const tb = b.lastMessageAt ?? b.updatedAt ?? "";
+                    return tb.localeCompare(ta);
+                  });
+                },
+              ),
+            );
+          }
+        } catch {
+          // ignore
+        }
+      },
     }),
 
     patchConversationPreferences: builder.mutation<
