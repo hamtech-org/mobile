@@ -46,7 +46,7 @@ export function formatConversationListLastPreview(
     if (lm.type !== "system") return null;
     if (typeof content !== "string") return null;
     const raw = content.trim();
-    if (!raw.startsWith("{")) return null;
+    if (!raw) return null;
     return formatSystemLastMessagePreview(
       raw,
       lm.senderId,

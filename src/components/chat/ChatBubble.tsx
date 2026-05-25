@@ -68,6 +68,7 @@ import {
 } from "@/utils/time";
 import { toast } from "@/utils/appToast";
 import { TaskDeadlineChipMobile } from "@/utils/taskDeadlineDisplay";
+import { resolveTaskAssigneeDisplayLabel } from "@/utils/taskAssigneeLabel";
 import { isTaskJoinDeadlinePassed } from "@/utils/taskJoin";
 import { mergePollWithGroupList, parsePollPayloadFromMessageContent } from "@/utils/groupPollMerge";
 import { resolveGroupJoinLinkFromMessageContent } from "@/utils/groupJoinLinkMessage";
@@ -654,14 +655,15 @@ function SystemCenterBlock({
       : (view.dueDate ?? "");
   const joinDeadlinePassed = isTaskJoinDeadlinePassed(dueForJoin || undefined);
 
-  let assigneeDisplay = "—";
-  if (explicitAssignToAll) assigneeDisplay = "Cả nhóm";
-  else {
-    const ids = hasSubtasksAssignees ? subAssigneeIds : topIds;
-    if (ids.length > 0)
-      assigneeDisplay = ids.map((id) => byId.get(String(id)) ?? String(id)).join(", ");
-    else assigneeDisplay = view.assigneeLabel || "—";
-  }
+  const assigneeDisplay = resolveTaskAssigneeDisplayLabel({
+    assignToAll: explicitAssignToAll,
+    broadcast: Boolean((t as { broadcast?: boolean })?.broadcast),
+    assigneeIds: hasSubtasksAssignees ? subAssigneeIds : topIds,
+    memberCount: groupExtras?.groupMembers?.length ?? 0,
+    nameById: byId,
+    fallbackLabel: view.assigneeLabel,
+    currentUserId: uid || undefined,
+  });
 
   const subtaskProgress =
     boardSubs.length === 0

@@ -39,6 +39,10 @@ import {
 import { resolveChatSenderAvatarUrl } from "@/utils/notificationAvatar";
 import { formatChatPreviewLine, getMessageTypeLabel } from "@/utils/messageDisplay";
 import { sortConversationsForSidebar } from "@/utils/conversationListSort";
+import {
+  parseConversationCreatedPayload,
+  upsertConversationInListCache,
+} from "@/utils/conversationRealtimeCache";
 import { formatSystemLastMessagePreview } from "@/utils/systemMessage";
 import {
   applyKickedFromGroupRealtime,
@@ -115,6 +119,8 @@ function messageMentionsViewer(msg: IMessage, viewerName?: string | null): boole
 function shouldSkipSystemFrameBanner(kind: string): boolean {
   if (kind === "message_pinned" || kind === "message_unpinned") return true;
   return (
+    kind === "group_created" ||
+    kind === "group_profile_updated" ||
     kind === "group_admin_promoted" ||
     kind === "group_admin_demoted" ||
     kind === "group_owner_transferred" ||
@@ -216,6 +222,7 @@ export function useChatRealtimeEvents({
   /** Tránh xử lý `message:new` trùng cùng messageId (vd: backend/lỗi emit đúp) — banner khung chat không lặp. */
   const recentMessageSocketRef = useRef<Map<string, number>>(new Map());
   const frameBannerDedupeMapRef = useRef<Map<string, number>>(new Map());
+  const conversationsRefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const systemNotificationDedupeMapRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
@@ -225,6 +232,29 @@ export function useChatRealtimeEvents({
   useEffect(() => {
     if (!socket) return;
     const timers = typingIndicatorTimersRef.current;
+
+    const scheduleConversationsListRefetch = () => {
+      if (conversationsRefetchTimerRef.current) {
+        clearTimeout(conversationsRefetchTimerRef.current);
+      }
+      conversationsRefetchTimerRef.current = setTimeout(() => {
+        conversationsRefetchTimerRef.current = null;
+        void dispatch(
+          conversationApi.endpoints.getConversations.initiate(undefined, {
+            forceRefetch: true,
+          }),
+        );
+      }, 350);
+    };
+
+    const handleConversationCreated = (data: unknown) => {
+      const conv = parseConversationCreatedPayload(data);
+      if (!conv) {
+        scheduleConversationsListRefetch();
+        return;
+      }
+      upsertConversationInListCache(dispatch, conv);
+    };
 
     const clearTypingIndicatorTimer = (key: string) => {
       const t = timers[key];
@@ -385,12 +415,16 @@ export function useChatRealtimeEvents({
                 ? "[File]"
                 : getMessageTypeLabel(msg.type) || "Tin nhắn";
 
+      let convMissing = false;
       dispatch(
         conversationApi.util.updateQueryData("getConversations", undefined, (draft) => {
           const conv = draft?.find(
             (item: IConversation) => item.conversationId === msg.conversationId,
           );
-          if (!conv) return;
+          if (!conv) {
+            convMissing = true;
+            return;
+          }
           const alreadySamePreview =
             conv.lastMessage &&
             conv.lastMessage.content === listPreview &&
@@ -418,6 +452,7 @@ export function useChatRealtimeEvents({
           draft.splice(0, draft.length, ...sorted);
         }),
       );
+      if (convMissing) scheduleConversationsListRefetch();
 
       if (
         msg.type !== "system" &&
@@ -736,7 +771,13 @@ export function useChatRealtimeEvents({
       const hasMemberCountPatch =
         typeof profileFromPayload?.patch.memberCount === "number" &&
         Number.isFinite(profileFromPayload.patch.memberCount);
-      if (!hasMemberCountPatch) {
+      const profileOnlyPatch =
+        Boolean(profileFromPayload) &&
+        !hasMemberCountPatch &&
+        (profileFromPayload.patch.name !== undefined ||
+          profileFromPayload.patch.avatar !== undefined ||
+          profileFromPayload.patch.updatedAt !== undefined);
+      if (!profileOnlyPatch) {
         dispatch(chatApi.util.invalidateTags(["Conversations"]));
       }
       if (conversationId === activeConvRef.current) {
@@ -1123,6 +1164,7 @@ export function useChatRealtimeEvents({
       }, TYPING_INDICATOR_IDLE_MS);
     };
 
+    socket.on("conversation:created", handleConversationCreated);
     socket.on("message:new", handleNewMessage);
     socket.on("message:edited", handleEdited);
     socket.on("message:recalled", handleRecalled);
@@ -1166,10 +1208,15 @@ export function useChatRealtimeEvents({
     socket.on("group:recap_new", handleGroupRecapNew);
 
     return () => {
+      if (conversationsRefetchTimerRef.current) {
+        clearTimeout(conversationsRefetchTimerRef.current);
+        conversationsRefetchTimerRef.current = null;
+      }
       for (const key of Object.keys(timers)) {
         clearTimeout(timers[key]!);
         delete timers[key];
       }
+      socket.off("conversation:created", handleConversationCreated);
       socket.off("message:new", handleNewMessage);
       socket.off("message:edited", handleEdited);
       socket.off("message:recalled", handleRecalled);

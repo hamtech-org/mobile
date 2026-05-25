@@ -148,6 +148,8 @@ import {
 import { getJoinGroupUrl as joinUrlFromSuffix } from "@/utils/joinGroupUrl";
 import { filterGroupMembersExcludingRemoved } from "@/utils/groupMembersRealtime";
 import { useGroupJoinLinkModalOptional } from "@/contexts/GroupJoinLinkModalContext";
+import { buildAppMediaDownloadUrl } from "@/utils/chatMediaDownload";
+import { resolveGroupAvatarDisplayUrl } from "@/utils/groupAvatarUrl";
 import { normalizeMediaUrl } from "@/utils/url";
 
 /** Màu / kích thước khớp web MemberManagementModal (inline). */
@@ -211,11 +213,17 @@ const mmAvatarStyles = StyleSheet.create({
 function GroupHeroAvatar({
   uri,
   name,
+  conversationId,
+  cacheVersion,
 }: {
   uri?: string | null;
   name?: string | null;
+  conversationId: string;
+  cacheVersion?: string | null;
 }): ReactElement {
-  const imageUri = uri?.trim() ? normalizeMediaUrl(uri.trim()) : undefined;
+  const imageUri = uri?.trim()
+    ? resolveGroupAvatarDisplayUrl(uri.trim(), { conversationId, updatedAt: cacheVersion })
+    : undefined;
   if (imageUri) {
     return (
       <Image source={{ uri: imageUri }} style={groupHeroAvatarStyles.image} resizeMode="cover" />
@@ -884,7 +892,8 @@ export function GroupManageModal({
         file: { uri: file.uri, name: file.name, type: file.type },
         mediaType: "image",
       }).unwrap();
-      const url = uploadRes.url?.trim();
+      const mid = uploadRes.mediaId?.trim();
+      const url = mid ? buildAppMediaDownloadUrl(mid) : uploadRes.url?.trim();
       if (!url) throw new Error("no url");
       await updateGroup({ groupId, avatar: url }).unwrap();
       toast.success("Đã cập nhật ảnh đại diện nhóm");
@@ -1386,7 +1395,12 @@ export function GroupManageModal({
           ]}
         >
           <View style={styles.heroAvatarFrame}>
-            <GroupHeroAvatar uri={conversation.avatar} name={conversation.name} />
+            <GroupHeroAvatar
+              uri={conversation.avatar}
+              name={conversation.name}
+              conversationId={groupId}
+              cacheVersion={conversation.updatedAt}
+            />
           </View>
           {canEditGroupProfile && !conversation.groupId ? (
             <View style={styles.camBadge}>
@@ -1675,7 +1689,12 @@ export function GroupManageModal({
           style={[styles.avatarWrap, (!canEditGroupProfile || busy) && { opacity: 0.75 }]}
         >
           <View style={styles.heroAvatarFrame}>
-            <GroupHeroAvatar uri={conversation.avatar} name={conversation.name} />
+            <GroupHeroAvatar
+              uri={conversation.avatar}
+              name={conversation.name}
+              conversationId={groupId}
+              cacheVersion={conversation.updatedAt}
+            />
           </View>
           {canEditGroupProfile ? (
             <View style={styles.camBadge}>
