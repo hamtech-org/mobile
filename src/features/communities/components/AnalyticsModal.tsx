@@ -23,6 +23,17 @@ import {
 } from "lucide-react-native";
 import { useGetCommunityAnalyticsQuery } from "@/store/api/communityApi";
 import { useIconColors } from "@/hooks/useIconColors";
+import { extractTextFromTiptapJson } from "@/utils/tiptapText";
+
+/**
+ * Trích xuất văn bản sạch từ nội dung bài viết (Tiptap JSON) và rút gọn.
+ */
+const getCleanPostContent = (content: string, maxLength: number = 80): string => {
+  if (!content) return "";
+  const cleanText = extractTextFromTiptapJson(content);
+  if (cleanText.length <= maxLength) return cleanText;
+  return `${cleanText.slice(0, maxLength)}...`;
+};
 
 export interface AnalyticsModalProps {
   open: boolean;
@@ -478,7 +489,7 @@ export function AnalyticsModal({
                             className={`text-xs font-semibold ${isDark ? "text-neutral-200" : "text-neutral-800"}`}
                             numberOfLines={1}
                           >
-                            {post.content || "Bài viết đa phương tiện"}
+                            {getCleanPostContent(post.content) || "Bài viết đa phương tiện"}
                           </Text>
                           <Text
                             className={`mt-0.5 text-[10px] ${isDark ? "text-neutral-500" : "text-neutral-400"}`}
