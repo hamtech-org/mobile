@@ -25,6 +25,7 @@ import {
   History,
   ShieldAlert,
   ShieldCheck,
+  BarChart2,
 } from "lucide-react-native";
 import BottomSheet, {
   BottomSheetBackdrop,
@@ -54,6 +55,7 @@ import {
   useDeclineInvitationMutation,
 } from "@/store/api/communityApi";
 import { PendingPostsModal } from "./PendingPostsModal";
+import { AnalyticsModal } from "./AnalyticsModal";
 import { type CommunityMemberRole, type ICommunityMember } from "@/types/community.types";
 import type { IPost } from "@/types/newsfeed.types";
 import { toast } from "@/utils/appToast";
@@ -88,6 +90,7 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
   const [requestsModalOpen, setRequestsModalOpen] = useState(false);
   const [pendingPostsModalOpen, setPendingPostsModalOpen] = useState(false);
   const [moderationLogsModalOpen, setModerationLogsModalOpen] = useState(false);
+  const [analyticsModalOpen, setAnalyticsModalOpen] = useState(false);
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
   const [reportVisible, setReportVisible] = useState(false);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
@@ -450,6 +453,14 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
           >
             <Users size={18} color="#fff" />
           </Pressable>
+          {manager && (
+            <Pressable
+              onPress={() => setAnalyticsModalOpen(true)}
+              className="h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/25 backdrop-blur-md active:scale-90"
+            >
+              <BarChart2 size={18} color="#fff" />
+            </Pressable>
+          )}
           {manager && (
             <Pressable
               onPress={() => setRequestsModalOpen(true)}
@@ -940,6 +951,15 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
       <CommunityAutoModModal
         open={autoModModalOpen}
         onClose={() => setAutoModModalOpen(false)}
+        groupId={groupId}
+        mutedColor={muted}
+        foregroundColor={foreground}
+      />
+
+      {/* Community Analytics Modal */}
+      <AnalyticsModal
+        open={analyticsModalOpen}
+        onClose={() => setAnalyticsModalOpen(false)}
         groupId={groupId}
         mutedColor={muted}
         foregroundColor={foreground}

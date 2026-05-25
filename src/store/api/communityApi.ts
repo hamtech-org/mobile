@@ -15,6 +15,7 @@ import type {
   ICommunityInvitation,
   ICommunityAutoMod,
   IUpdateAutoModDto,
+  ICommunityAnalyticsDashboard,
 } from "@/types/community.types";
 
 interface ApiEnvelope<T> {
@@ -455,7 +456,7 @@ export const communityApi = createApi({
       transformResponse: (response: ApiEnvelope<ICommunityAutoMod>) => response.data,
     }),
     updateCommunityAutoMod: builder.mutation<
-      ICommunityAutoMod,
+      ICommunity,
       { groupId: string; body: IUpdateAutoModDto }
     >({
       query: ({ groupId, body }) => ({
@@ -464,6 +465,16 @@ export const communityApi = createApi({
         body,
       }),
       transformResponse: (response: ApiEnvelope<ICommunityAutoMod>) => response.data,
+    }),
+    getCommunityAnalytics: builder.query<
+      ICommunityAnalyticsDashboard,
+      { groupId: string; days?: number }
+    >({
+      query: ({ groupId, days = 30 }) => ({
+        url: `/communities/${groupId}/analytics`,
+        params: { days },
+      }),
+      transformResponse: (response: ApiEnvelope<ICommunityAnalyticsDashboard>) => response.data,
     }),
   }),
 });
@@ -507,4 +518,5 @@ export const {
   useAcceptInviteLinkMutation,
   useGetCommunityAutoModQuery,
   useUpdateCommunityAutoModMutation,
+  useGetCommunityAnalyticsQuery,
 } = communityApi;
