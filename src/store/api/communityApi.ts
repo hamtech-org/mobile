@@ -16,6 +16,7 @@ import type {
   ICommunityAutoMod,
   IUpdateAutoModDto,
   ICommunityAnalyticsDashboard,
+  ICommunityModerationLogsPage,
 } from "@/types/community.types";
 
 interface ApiEnvelope<T> {
@@ -456,7 +457,7 @@ export const communityApi = createApi({
       transformResponse: (response: ApiEnvelope<ICommunityAutoMod>) => response.data,
     }),
     updateCommunityAutoMod: builder.mutation<
-      ICommunity,
+      ICommunityAutoMod,
       { groupId: string; body: IUpdateAutoModDto }
     >({
       query: ({ groupId, body }) => ({

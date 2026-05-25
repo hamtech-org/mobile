@@ -109,6 +109,7 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
     error,
     refetch,
   } = useGetCommunityQuery(groupId, { skip: !groupId });
+  const isMember = community?.viewerStatus === "active";
   const { data: members } = useGetCommunityMembersQuery(groupId, { skip: !groupId });
   const { data: posts } = useGetCommunityPostsQuery({ groupId, limit: 20 }, { skip: !groupId });
   const manager = canManage(community?.viewerRole);
@@ -322,7 +323,6 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
     );
   }
 
-  const isMember = community.viewerStatus === "active";
   const canInvite =
     community.type === "public"
       ? isMember
@@ -830,6 +830,7 @@ export function CommunityDetail({ groupId }: CommunityDetailProps) {
       {/* Community Report Sheet */}
       <CommunityReportSheet
         groupId={groupId}
+        entityId={groupId}
         visible={reportVisible}
         onClose={() => setReportVisible(false)}
       />

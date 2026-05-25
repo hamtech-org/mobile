@@ -48,6 +48,7 @@ export interface IPost {
   moderationStatus: ModerationStatus;
   currentUserReaction?: ReactionType | null;
   isSaved?: boolean;
+  isPinned?: boolean;
   sharedFrom?: ISharedPostInfo;
   createdAt: string;
   updatedAt: string;

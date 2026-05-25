@@ -216,7 +216,7 @@ export function CommunitiesList() {
         <CommunityJoinedFeed />
       ) : activeTab === "invites" && !isSearching ? (
         <FlatList
-          data={isInvitesLoading ? [1, 2] : (invitesData?.items ?? [])}
+          data={isInvitesLoading ? ([1, 2] as any) : (invitesData?.items ?? [])}
           keyExtractor={(item, index) =>
             isInvitesLoading ? `skeleton-${index}` : (item as any).groupId
           }

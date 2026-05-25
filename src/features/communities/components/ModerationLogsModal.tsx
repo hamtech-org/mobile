@@ -77,8 +77,10 @@ export function ModerationLogsModal({
   useEffect(() => {
     if (logsRes?.items) {
       setAccumulatedLogs((prev) => {
-        const existingIds = new Set(prev.map((item) => item.logId));
-        const newItems = logsRes.items.filter((item) => !existingIds.has(item.logId));
+        const existingIds = new Set(prev.map((item: ICommunityModerationLog) => item.logId));
+        const newItems = logsRes.items.filter(
+          (item: ICommunityModerationLog) => !existingIds.has(item.logId),
+        );
         return [...prev, ...newItems];
       });
     }

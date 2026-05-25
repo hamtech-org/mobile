@@ -88,6 +88,7 @@ export interface ICreateCommunityDto {
   joinPolicy?: CommunityJoinPolicy;
   rules?: ICommunityRule[];
   isPostApprovalRequired?: boolean;
+  chatEnabled?: boolean;
 }
 
 export interface ISearchGroupResult {

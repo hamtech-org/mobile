@@ -494,7 +494,7 @@ export function AnalyticsModal({
                           <Text
                             className={`mt-0.5 text-[10px] ${isDark ? "text-neutral-500" : "text-neutral-400"}`}
                           >
-                            {post.authorInfo?.displayName || "Ban quản trị"}
+                            {post.author?.displayName || "Ban quản trị"}
                           </Text>
                         </View>
                       </View>
