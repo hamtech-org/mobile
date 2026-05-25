@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, router } from "expo-router";
 import {
   Alert,
   FlatList,
@@ -272,11 +272,28 @@ export default function ChatDetailScreen() {
 
   const [uploadMediaMulti] = useUploadMediaMultiMutation();
 
-  const { data: convList } = useGetConversationsQuery();
+  const { data: convList, isLoading: isConvListLoading } = useGetConversationsQuery();
   const conversation = useMemo(
     () => convList?.find((c) => c.conversationId === conversationId),
     [convList, conversationId],
   );
+
+  // Tự động quay lại nếu cuộc trò chuyện không còn tồn tại (bị kick hoặc rời đi)
+  useEffect(() => {
+    if (convList && !isConvListLoading && conversationId) {
+      const exists = convList.some((c) => c.conversationId === conversationId);
+      if (!exists) {
+        const timer = setTimeout(() => {
+          if (router.canGoBack()) {
+            router.back();
+          } else {
+            router.replace("/(main)");
+          }
+        }, 500);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [convList, isConvListLoading, conversationId]);
 
   const isGroup = conversation?.type === "group";
   const directOtherUserId =
@@ -357,6 +374,7 @@ export default function ChatDetailScreen() {
   }, [isGroup, groupMembersForPerm.length, conversation?.memberCount]);
 
   const groupDisbanded = Boolean(isGroup && conversation?.isDeleted);
+  const chatPaused = Boolean(isGroup && conversation?.chatEnabled === false);
 
   const runAiSummary = useCallback(
     async (showSuccessToast: boolean) => {
@@ -414,6 +432,7 @@ export default function ChatDetailScreen() {
 
   const canSendInGroup = useMemo(() => {
     if (groupDisbanded) return false;
+    if (chatPaused) return false;
     if (!isGroup || !conversation) return true;
     return canUserSendMessageInGroup({
       conversation,
@@ -1232,6 +1251,15 @@ export default function ChatDetailScreen() {
               </Text>
               <Text className="mt-1 text-center text-sm text-muted-foreground">
                 Không thể gửi tin nhắn mới trong cuộc trò chuyện này.
+              </Text>
+            </View>
+          ) : chatPaused ? (
+            <View className="border-t border-border/30 bg-muted/30 px-4 py-5">
+              <Text className="text-center text-[15px] font-semibold text-foreground">
+                Trò chuyện tạm dừng
+              </Text>
+              <Text className="mt-1 text-center text-sm text-muted-foreground">
+                Trò chuyện đã bị tắt bởi quản trị viên Cộng đồng.
               </Text>
             </View>
           ) : canSendInGroup ? (

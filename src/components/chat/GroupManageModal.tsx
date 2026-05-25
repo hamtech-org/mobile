@@ -125,8 +125,8 @@ import { useUploadMediaMutation } from "@/store/api/mediaApi";
 import { useSendFriendRequestMutation } from "@/store/api/userApi";
 import { prepareLocalFileForUpload } from "@/utils/uploadAttachment";
 import { toast } from "@/utils/appToast";
-import { formatChatPreviewLine } from "@/utils/messageDisplay";
 import { apiClient } from "@/services/api";
+import { useLeaveCommunityMutation } from "@/store/api/communityApi";
 import {
   buildPatchForMutePayload,
   describeMuteSuccess,
@@ -416,6 +416,7 @@ export function GroupManageModal({
 }: GroupManageModalProps): ReactElement {
   const insets = useSafeAreaInsets();
   const groupId = conversation.conversationId;
+  const isCommunityChat = !!conversation.groupId;
   const authUserId = useAppSelector((s) => s.auth.user?.userId);
   const effectiveUserId = (currentUserId ?? authUserId)?.trim() || undefined;
 
@@ -583,6 +584,7 @@ export function GroupManageModal({
   const [sendFriendReq] = useSendFriendRequestMutation();
   const [uploadMedia, { isLoading: uploadingAvatar }] = useUploadMediaMutation();
   const [deleteTaskMut] = useDeleteTaskMutation();
+  const [leaveCommunity] = useLeaveCommunityMutation();
 
   const {
     data: pollsEnvelope,
@@ -659,7 +661,8 @@ export function GroupManageModal({
   }, [othersForOwnerHandoff, successorSearchQuery]);
 
   const effectiveMemberCount = members.length;
-  const leaveBlockedByMinMembers = effectiveMemberCount <= MIN_GROUP_MEMBERS;
+  const leaveBlockedByMinMembers =
+    !conversation.groupId && effectiveMemberCount <= MIN_GROUP_MEMBERS;
   const leaveMinMembersHint = `Nhóm cần còn tối thiểu ${MIN_GROUP_MEMBERS} thành viên sau khi có người rời (hiện ${effectiveMemberCount} người). Hãy mời thêm thành viên hoặc giải tán nhóm.`;
 
   const joinSuffix = settings?.joinLinkSuffix;
@@ -1003,6 +1006,58 @@ export function GroupManageModal({
   );
 
   const handleLeavePress = useCallback(() => {
+    if (conversation.groupId && isOwner) {
+      Alert.alert(
+        "Không thể rời nhóm",
+        "Bạn là Quản trị viên sáng lập của Cộng đồng này và không thể rời khỏi phòng trò chuyện. Nếu không muốn sử dụng chat nữa, vui lòng Tắt trò chuyện hoặc Giải tán phòng chat tại trang Cộng đồng.",
+        [{ text: "OK" }],
+      );
+      return;
+    }
+
+    if (conversation.groupId) {
+      Alert.alert(
+        "Rời nhóm",
+        "Cuộc trò chuyện này liên kết với Cộng đồng. Bạn muốn thực hiện hành động nào?",
+        [
+          {
+            text: "Chỉ rời phòng chat",
+            onPress: () => {
+              void (async () => {
+                try {
+                  await leaveGroup({ groupId }).unwrap();
+                  toast.success("Đã rời phòng chat");
+                  navigateOut();
+                } catch (e: unknown) {
+                  toast.error("Không thể rời phòng chat");
+                }
+              })();
+            },
+          },
+          {
+            text: "Rời cả Cộng đồng",
+            style: "destructive",
+            onPress: () => {
+              void (async () => {
+                try {
+                  await leaveCommunity(conversation.groupId!).unwrap();
+                  toast.success("Đã rời cộng đồng và phòng chat");
+                  navigateOut();
+                } catch (e: unknown) {
+                  toast.error("Không thể rời cộng đồng");
+                }
+              })();
+            },
+          },
+          {
+            text: "Hủy",
+            style: "cancel",
+          },
+        ],
+      );
+      return;
+    }
+
     if (leaveBlockedByMinMembers) {
       toast.warning(leaveMinMembersHint);
       return;
@@ -1018,7 +1073,17 @@ export function GroupManageModal({
       return;
     }
     setLeaveConfirmOpen(true);
-  }, [leaveBlockedByMinMembers, leaveMinMembersHint, isOwner, othersForOwnerHandoff.length]);
+  }, [
+    conversation.groupId,
+    leaveBlockedByMinMembers,
+    leaveMinMembersHint,
+    isOwner,
+    othersForOwnerHandoff.length,
+    leaveGroup,
+    leaveCommunity,
+    groupId,
+    navigateOut,
+  ]);
 
   const handleTransferPress = useCallback(() => {
     if (othersForOwnerHandoff.length === 0) {
@@ -1036,8 +1101,16 @@ export function GroupManageModal({
   }, [othersForOwnerHandoff.length, adminSlotsFull]);
 
   const handleDeleteGroup = useCallback(() => {
+    if (conversation.groupId) {
+      Alert.alert(
+        "Giải tán nhóm",
+        "Để giải tán phòng chat này, vui lòng thực hiện từ cài đặt giải tán tại trang chi tiết Cộng đồng.",
+        [{ text: "OK" }],
+      );
+      return;
+    }
     setDisbandConfirmOpen(true);
-  }, []);
+  }, [conversation.groupId]);
 
   const toggleMuted = useCallback(
     async (next: boolean) => {
@@ -1299,14 +1372,23 @@ export function GroupManageModal({
     >
       <View style={styles.hero}>
         <Pressable
-          onPress={() => void pickAvatar()}
-          disabled={busy || !canEditGroupProfile}
-          style={[styles.avatarWrap, !canEditGroupProfile && { opacity: 0.85 }]}
+          onPress={() => {
+            if (conversation.groupId) {
+              toast.error("Tên nhóm và ảnh đại diện được đồng bộ từ Cộng đồng");
+              return;
+            }
+            void pickAvatar();
+          }}
+          disabled={busy || !canEditGroupProfile || !!conversation.groupId}
+          style={[
+            styles.avatarWrap,
+            (!canEditGroupProfile || !!conversation.groupId) && { opacity: 0.85 },
+          ]}
         >
           <View style={styles.heroAvatarFrame}>
             <GroupHeroAvatar uri={conversation.avatar} name={conversation.name} />
           </View>
-          {canEditGroupProfile ? (
+          {canEditGroupProfile && !conversation.groupId ? (
             <View style={styles.camBadge}>
               <Camera size={16} color="#fff" strokeWidth={2} />
             </View>
@@ -1318,6 +1400,10 @@ export function GroupManageModal({
           </Text>
           <Pressable
             onPress={() => {
+              if (conversation.groupId) {
+                toast.error("Tên nhóm và ảnh đại diện được đồng bộ từ Cộng đồng");
+                return;
+              }
               if (!canEditGroupProfile) {
                 toast.error("Bạn không có quyền đổi tên hoặc ảnh nhóm");
                 return;
@@ -1333,6 +1419,29 @@ export function GroupManageModal({
         <Text style={styles.memberCountText}>
           {members.length > 0 ? members.length : (conversation.memberCount ?? 0)} thành viên
         </Text>
+        {conversation.groupId ? (
+          <Pressable
+            onPress={() => {
+              onClose();
+              router.push(`/communities/${conversation.groupId}`);
+            }}
+            style={{
+              marginTop: 10,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 6,
+              backgroundColor: "rgba(0, 104, 255, 0.08)",
+              paddingVertical: 6,
+              paddingHorizontal: 12,
+              borderRadius: 16,
+            }}
+          >
+            <Users size={14} color="#0068FF" />
+            <Text style={{ fontSize: 13, fontWeight: "700", color: "#0068FF" }}>
+              Đến trang Cộng đồng
+            </Text>
+          </Pressable>
+        ) : null}
 
         <View style={styles.quickRow}>
           <Pressable
@@ -1374,7 +1483,19 @@ export function GroupManageModal({
               {isPinnedToTop ? <>Bỏ ghim{"\n"}hội thoại</> : <>Ghim hội{"\n"}thoại</>}
             </Text>
           </Pressable>
-          <Pressable style={styles.quickCell} onPress={() => setPanel("add")} disabled={busy}>
+          <Pressable
+            style={styles.quickCell}
+            onPress={() => {
+              if (conversation.groupId) {
+                toast.info(
+                  "Vui lòng mời thành viên tham gia Cộng đồng để tham gia phòng chat này.",
+                );
+                return;
+              }
+              setPanel("add");
+            }}
+            disabled={busy}
+          >
             <View style={styles.quickIcon}>
               <UserPlus size={16} color={Z.sub} strokeWidth={1.75} />
             </View>
@@ -1589,7 +1710,23 @@ export function GroupManageModal({
 
   const renderMembers = () => (
     <View style={styles.mmRoot}>
-      {canModerateMembers && !membersLeadersOnly ? (
+      {isCommunityChat && (
+        <View
+          style={{
+            backgroundColor: "rgba(0, 104, 255, 0.08)",
+            padding: 12,
+            marginHorizontal: 16,
+            marginTop: 12,
+            borderRadius: 8,
+          }}
+        >
+          <Text style={{ fontSize: 12, color: "#0068FF", fontWeight: "600", lineHeight: 18 }}>
+            Thành viên và vai trò được đồng bộ từ Cộng đồng. Vui lòng quản lý thành viên tại trang
+            quản trị Cộng đồng.
+          </Text>
+        </View>
+      )}
+      {canModerateMembers && !membersLeadersOnly && !isCommunityChat ? (
         <View style={styles.mmTabsRow}>
           <Pressable
             onPress={() => setMemberManageTab("list")}
@@ -1663,14 +1800,20 @@ export function GroupManageModal({
           renderItem={({ item: m }) => {
             const isSelfAdmin = m.role === "admin" && m.userId === effectiveUserId;
             const canKickThis =
+              !isCommunityChat &&
               !membersLeadersOnly &&
               canKickMembers &&
               Boolean(effectiveUserId) &&
               m.userId !== effectiveUserId &&
               m.role !== "owner";
-            const canDemote = (canKickMembers || isSelfAdmin) && m.role === "admin";
+            const canDemote =
+              !isCommunityChat && (canKickMembers || isSelfAdmin) && m.role === "admin";
             const canPromote =
-              !membersLeadersOnly && canKickMembers && m.role === "member" && !adminSlotsFull;
+              !isCommunityChat &&
+              !membersLeadersOnly &&
+              canKickMembers &&
+              m.role === "member" &&
+              !adminSlotsFull;
             const menuOpen = memberActionMenuUserId === m.userId;
             const displayName = memberRowDisplayName(m, effectiveUserId);
             return (

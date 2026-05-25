@@ -11,7 +11,10 @@ import { useCreatePostHeader } from "@/features/newsfeed/hooks/useCreatePostHead
 import { CreatePostHeader } from "@/features/newsfeed/components/CreatePostHeader";
 import { ReelsStrip } from "@/features/newsfeed/components/ReelsStrip";
 import { PaginatedFeedList } from "@/features/newsfeed/components/PaginatedFeedList";
+import { NotificationBellButton } from "@/components/notifications/NotificationBellButton";
+import { useIconColors } from "@/hooks/useIconColors";
 export default function NewsfeedScreen() {
+  const { foreground } = useIconColors();
   const router = useRouter();
   const { posts, hasMore, isLoadingInitial, isFetchingNext, loadMore } = useNewsfeedPagination();
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -29,14 +32,15 @@ export default function NewsfeedScreen() {
               className="p-2 active:opacity-70"
               accessibilityLabel="Tìm kiếm"
             >
-              <Ionicons name="search-outline" size={22} color="hsl(var(--foreground) / 1)" />
+              <Ionicons name="search-outline" size={22} color={foreground} />
             </Pressable>
+            <NotificationBellButton />
             <Pressable
               onPress={() => router.push("/(main)/(newsfeed)/editor/new")}
               className="p-2 active:opacity-70"
               accessibilityLabel="Tạo bài viết"
             >
-              <Ionicons name="add-circle-outline" size={24} color="hsl(var(--foreground) / 1)" />
+              <Ionicons name="add-circle-outline" size={24} color={foreground} />
             </Pressable>
           </View>
         }

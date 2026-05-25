@@ -41,6 +41,16 @@ const TYPE_LABEL: Record<NotificationType, string> = {
   ai_job_done: "AI",
   stats_milestone: "Thống kê",
   call_missed: "Cuộc gọi nhỡ",
+  community_chat_enabled: "Nhóm trò chuyện",
+  post_approved: "Duyệt bài viết",
+  post_rejected: "Từ chối bài viết",
+  community_invite: "Lời mời cộng đồng",
+  community_invite_accepted: "Chấp nhận lời mời",
+  community_join_request: "Yêu cầu tham gia",
+  community_request_resolved: "Duyệt yêu cầu",
+  community_member_kicked: "Rời cộng đồng",
+  community_role_changed: "Đổi vai trò",
+  community_ownership_transferred: "Chuyển chủ sở hữu",
 };
 
 function asRecord(value: unknown): DataRecord {

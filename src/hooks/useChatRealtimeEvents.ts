@@ -1,4 +1,6 @@
 import { useEffect, useRef } from "react";
+import { Alert } from "react-native";
+import { router } from "expo-router";
 import type { Socket } from "socket.io-client";
 
 import { env } from "@/config/env";
@@ -1014,6 +1016,32 @@ export function useChatRealtimeEvents({
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
     };
 
+    const handleConversationDisbanded = (payload: Record<string, unknown>) => {
+      const cid = String(payload?.conversationId ?? "").trim();
+      if (!cid) return;
+
+      if (payload.reason === "community_archived") {
+        Alert.alert("Cộng đồng giải tán", "Cộng đồng liên kết đã bị lưu trữ. Phòng chat đã đóng.", [
+          {
+            text: "OK",
+            onPress: () => {
+              if (cid === activeConvRef.current) {
+                router.replace("/(main)/(chat)");
+              }
+            },
+          },
+        ]);
+      } else {
+        toast.info("Phòng chat đã bị giải tán.", 10_000);
+        if (cid === activeConvRef.current) {
+          router.replace("/(main)/(chat)");
+        }
+      }
+
+      removeConversationFromListCache(cid);
+      dispatch(chatApi.util.invalidateTags(["Conversations"]));
+    };
+
     const handleGroupDeleted = (payload: Record<string, unknown>) => {
       const gid = groupIdFromPayload(payload);
       if (!gid) return;
@@ -1120,6 +1148,7 @@ export function useChatRealtimeEvents({
     socket.on("group:join_request_new", handleGroupJoinRequestNew);
     socket.on("group:join_request_updated", handleGroupJoinRequestUpdated);
     socket.on("group:disbanded", handleGroupDisbanded);
+    socket.on("conversation:disbanded", handleConversationDisbanded);
     socket.on("group:deleted", handleGroupDeleted);
     const handleGroupMembershipRevoked = (payload: Record<string, unknown>) => {
       const gid = groupIdFromPayload(payload);
@@ -1166,6 +1195,7 @@ export function useChatRealtimeEvents({
       socket.off("group:join_request_new", handleGroupJoinRequestNew);
       socket.off("group:join_request_updated", handleGroupJoinRequestUpdated);
       socket.off("group:disbanded", handleGroupDisbanded);
+      socket.off("conversation:disbanded", handleConversationDisbanded);
       socket.off("group:deleted", handleGroupDeleted);
       socket.off("group:membership_revoked", handleGroupMembershipRevoked);
       socket.off("group:request_approved", handleGroupRequestApproved);

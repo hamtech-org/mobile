@@ -2,6 +2,8 @@ import { Pressable, Text, TextInput, View, type TextInputProps } from "react-nat
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
 
+import { useIconColors } from "@/hooks/useIconColors";
+
 interface InputProps extends TextInputProps {
   label: string;
   error?: string;
@@ -30,6 +32,7 @@ export const Input = ({
   onChangeText,
   ...props
 }: InputProps) => {
+  const { muted } = useIconColors();
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const shouldTogglePassword = enablePasswordToggle && secureTextEntry;
 
@@ -52,7 +55,7 @@ export const Input = ({
       >
         <TextInput
           className={`flex-1 text-foreground ${inputSizeClassName} ${inputClassName ?? ""}`}
-          placeholderTextColor="hsl(var(--muted-foreground) / 1)"
+          placeholderTextColor={muted}
           editable={!disabled}
           secureTextEntry={shouldTogglePassword ? !isPasswordVisible : secureTextEntry}
           onChangeText={handleChangeText}

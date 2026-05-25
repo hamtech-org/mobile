@@ -35,6 +35,7 @@ const FILTER_CHIPS: NotificationFilterChip[] = [
   "post",
   "reel",
   "live",
+  "community",
 ];
 
 const EMPTY_LABELS: Record<NotificationFilterChip, string> = {
@@ -47,6 +48,7 @@ const EMPTY_LABELS: Record<NotificationFilterChip, string> = {
   post: "Không có thông báo bài viết",
   reel: "Không có thông báo Reels",
   live: "Không có thông báo livestream",
+  community: "Không có thông báo cộng đồng",
 };
 
 export default function NotificationsScreen() {

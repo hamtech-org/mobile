@@ -12,7 +12,9 @@ import {
   DeviceEventEmitter,
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter, usePathname } from "expo-router";
+import { toast } from "@/utils/appToast";
+import type { Href } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useGetPostByIdQuery, useUpdatePostMutation } from "@/store/api/newsfeedApi";
@@ -68,8 +70,11 @@ const VideoPreviewPlayer = ({ url }: { url: string }) => {
   );
 };
 
-export default function EditPostEditorScreen() {
+export default function EditPostEditorScreen({
+  fromTab = "newsfeed",
+}: { fromTab?: "newsfeed" | "communities" } = {}) {
   const router = useRouter();
+  const pathname = usePathname();
   const params = useLocalSearchParams<{ postId: string }>();
   const postId = params.postId;
   const currentUser = useSelector((state: RootState) => state.auth.user);
@@ -183,11 +188,33 @@ export default function EditPostEditorScreen() {
 
     await updatePost({ postId, data: payload }).unwrap();
     DeviceEventEmitter.emit("post:updated", { postId, ...payload });
-    router.replace("/(main)/(newsfeed)");
+    toast.success("Cập nhật bài viết thành công!");
+
+    const isInCommunityTab = fromTab === "communities";
+    const redirectTarget: Href =
+      isInCommunityTab && post?.groupId
+        ? `/(main)/(communities)/${post.groupId}`
+        : isInCommunityTab
+          ? `/(main)/(communities)`
+          : "/(main)/(newsfeed)";
+
+    router.replace(redirectTarget);
   };
 
   const handleCancel = () => {
-    router.back();
+    const isInCommunityTab = fromTab === "communities";
+    const fallback: Href =
+      isInCommunityTab && post?.groupId
+        ? `/(main)/(communities)/${post.groupId}`
+        : isInCommunityTab
+          ? `/(main)/(communities)`
+          : "/(main)/(newsfeed)";
+
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace(fallback);
+    }
   };
 
   const busy = isLoading || updating || uploading;

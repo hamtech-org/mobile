@@ -12,6 +12,9 @@
         "screens": {
           "join": {
             "path": "join/:suffix"
+          },
+          "c/join/[inviteCode]": {
+            "path": "c/join/:inviteCode"
           }
         }
       }

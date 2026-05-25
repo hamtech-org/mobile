@@ -20,21 +20,12 @@ export function isGroupAdminSlotsFull(members: AdminCountableMember[] | undefine
 
 function mergedMemberPermissions(gs?: IGroupSettings) {
   const mp = gs?.memberPermissions;
-  if (!mp) {
-    return {
-      changeNameAvatar: false,
-      pinMessages: false,
-      createNotesReminders: false,
-      createPolls: false,
-      sendMessages: false,
-    };
-  }
   return {
-    changeNameAvatar: Boolean(mp.changeNameAvatar),
-    pinMessages: Boolean(mp.pinMessages),
-    createNotesReminders: Boolean(mp.createNotesReminders),
-    createPolls: Boolean(mp.createPolls),
-    sendMessages: Boolean(mp.sendMessages),
+    changeNameAvatar: mp?.changeNameAvatar ?? true,
+    pinMessages: mp?.pinMessages ?? true,
+    createNotesReminders: mp?.createNotesReminders ?? true,
+    createPolls: mp?.createPolls ?? true,
+    sendMessages: mp?.sendMessages ?? true,
   };
 }
 
@@ -44,7 +35,10 @@ function isElevated(role: MemberRole | undefined): boolean {
 
 type RoleLookupMember = { userId?: string; role?: string };
 
-export type GroupPermissionConversation = Pick<IConversation, "type" | "groupSettings"> & {
+export type GroupPermissionConversation = Pick<
+  IConversation,
+  "type" | "groupSettings" | "groupId"
+> & {
   creatorId?: string | null;
   leaderId?: string | null;
 };
@@ -192,6 +186,7 @@ export function canUserChangeGroupProfileInGroup(args: {
 }): boolean {
   const { conversation } = args;
   if (conversation?.type !== "group") return false;
+  if (conversation.groupId) return false;
   const role = resolveRoleForCheck(args);
   if (role == null) return false;
   if (role === "owner") return true;
