@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   Alert,
   Image,
@@ -12,7 +12,9 @@ import {
   DeviceEventEmitter,
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter, usePathname } from "expo-router";
+import { toast } from "@/utils/appToast";
+import type { Href } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useCreatePostMutation } from "@/store/api/newsfeedApi";
@@ -36,6 +38,7 @@ import {
   Pencil,
 } from "lucide-react-native";
 import { extractHashtags } from "@/utils/extractHashtags";
+import { useGetCommunityQuery } from "@/store/api/communityApi";
 
 const MAX_MEDIA = 10;
 
@@ -67,8 +70,12 @@ const VideoPreviewPlayer = ({ url }: { url: string }) => {
   );
 };
 
-export default function NewPostEditorScreen() {
+export default function NewPostEditorScreen({
+  fromTab = "newsfeed",
+}: { fromTab?: "newsfeed" | "communities" } = {}) {
   const router = useRouter();
+  const pathname = usePathname();
+  const { groupId } = useLocalSearchParams<{ groupId?: string }>();
   const currentUser = useSelector((state: RootState) => state.auth.user);
 
   const emptyDoc = useMemo(
@@ -81,6 +88,14 @@ export default function NewPostEditorScreen() {
   const [mediaItems, setMediaItems] = useState<MobileMediaItem[]>([]);
   const [isMoreOpen, setIsMoreOpen] = useState(false);
   const [isMediaManagerOpen, setIsMediaManagerOpen] = useState(false);
+
+  const { data: community } = useGetCommunityQuery(groupId || "", { skip: !groupId });
+
+  useEffect(() => {
+    if (groupId && community) {
+      setVisibility(community.type === "public" ? "public" : "friends");
+    }
+  }, [groupId, community]);
 
   const postType: "text" | "image" = mediaItems.length > 0 ? "image" : "text";
   const previewUris = mediaItems.map((item) => (item.kind === "local" ? item.localUri : item.url));
@@ -161,28 +176,60 @@ export default function NewPostEditorScreen() {
       type: postType,
       visibility,
       publicationStatus: status,
+      ...(groupId ? { groupId, communityId: groupId } : {}),
       categories: [] as string[],
       tags,
       mediaUrls: finalMediaUrls,
     };
 
+    const isInCommunityTab = fromTab === "communities";
+    const redirectTarget: Href =
+      isInCommunityTab && groupId
+        ? `/(main)/(communities)/${groupId}`
+        : isInCommunityTab
+          ? `/(main)/(communities)`
+          : "/(main)/(newsfeed)";
+
     const res = await createPost(payload).unwrap();
     if (res && status === "published") {
       DeviceEventEmitter.emit("post:created", res);
+      if (res.moderationStatus === "pending") {
+        toast.success("Bài viết đã gửi & đang chờ kiểm duyệt.");
+      } else {
+        toast.success("Đăng bài viết thành công!");
+      }
+    } else if (res && status === "draft") {
+      toast.success("Đã lưu bản nháp.");
     }
-    router.replace("/(main)/(newsfeed)");
+    router.replace(redirectTarget);
   };
 
   const handleCancel = () => {
+    const isInCommunityTab = fromTab === "communities";
+    const fallback: Href =
+      isInCommunityTab && groupId
+        ? `/(main)/(communities)/${groupId}`
+        : isInCommunityTab
+          ? `/(main)/(communities)`
+          : "/(main)/(newsfeed)";
+
+    const goBack = () => {
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace(fallback);
+      }
+    };
+
     if (!hasContent) {
-      router.back();
+      goBack();
       return;
     }
     Alert.alert("Lưu bản nháp?", "Bạn có muốn lưu bài viết này vào mục nháp không?", [
       {
         text: "Bỏ qua",
         style: "destructive",
-        onPress: () => router.back(),
+        onPress: goBack,
       },
       {
         text: "Lưu nháp",
@@ -200,7 +247,7 @@ export default function NewPostEditorScreen() {
 
   const PrivacyIcon = visibility === "public" ? Globe : visibility === "friends" ? Users : Lock;
   const privacyText =
-    visibility === "public" ? "Công khai" : visibility === "friends" ? "Bạn bè" : "Chỉ mình tôi";
+    visibility === "public" ? "Công khai" : groupId ? "Thành viên nhóm" : "Bạn bè";
 
   const handleRemoveMedia = (index: number) => {
     setMediaItems((prev) => prev.filter((_, i) => i !== index));
@@ -209,8 +256,9 @@ export default function NewPostEditorScreen() {
   return (
     <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
         className="flex-1"
+        keyboardVerticalOffset={Platform.OS === "ios" ? 64 : 0}
       >
         {/* Header */}
         <View className="flex-row items-center justify-between border-b border-border/40 px-4 py-3">
@@ -248,15 +296,31 @@ export default function NewPostEditorScreen() {
             </View>
             <View>
               <Text className="text-[15px] font-bold">{currentUser?.displayName}</Text>
+              {groupId && (
+                <Text className="mt-0.5 text-[13px] font-medium text-slate-500">
+                  Đăng vào:{" "}
+                  <Text className="font-bold text-blue-600">{community?.name || "Cộng đồng"}</Text>
+                </Text>
+              )}
               <View className="mt-1 flex-row items-center gap-2">
                 <Pressable
-                  onPress={() => setIsMoreOpen(true)}
+                  onPress={() => {
+                    if (groupId) {
+                      Alert.alert(
+                        "Quyền riêng tư cố định",
+                        "Quyền riêng tư được đặt theo cấu hình của nhóm và không thể thay đổi.",
+                      );
+                      return;
+                    }
+                    setIsMoreOpen(true);
+                  }}
                   className="flex-row items-center gap-1.5 rounded-md bg-blue-100 px-2.5 py-1 dark:bg-blue-900/40"
                 >
                   <PrivacyIcon size={12} color="#3b82f6" />
                   <Text className="text-xs font-semibold text-blue-700 dark:text-blue-300">
                     {privacyText}
                   </Text>
+                  {groupId && <Lock size={10} color="#3b82f6" />}
                 </Pressable>
               </View>
             </View>
@@ -393,9 +457,11 @@ export default function NewPostEditorScreen() {
             <Pressable className="p-2" disabled={busy}>
               <MapPin size={24} color="#ef4444" />
             </Pressable>
-            <Pressable className="p-2" onPress={() => setIsMoreOpen(true)} disabled={busy}>
-              <MoreHorizontal size={24} color="#9ca3af" />
-            </Pressable>
+            {!groupId && (
+              <Pressable className="p-2" onPress={() => setIsMoreOpen(true)} disabled={busy}>
+                <MoreHorizontal size={24} color="#9ca3af" />
+              </Pressable>
+            )}
           </View>
         </View>
       </KeyboardAvoidingView>

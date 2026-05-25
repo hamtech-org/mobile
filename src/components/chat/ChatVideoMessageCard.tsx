@@ -68,7 +68,9 @@ export function ChatVideoMessageCard({
           onPress={onPress}
           onLongPress={onPress}
           accessibilityLabel="Tùy chọn tin nhắn video"
-        />
+        >
+          {null}
+        </ChatMediaLongPressLayer>
         <Pressable
           onPress={onFullscreen}
           style={styles.fullscreenBtn}

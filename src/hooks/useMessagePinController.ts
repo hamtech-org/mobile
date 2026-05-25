@@ -3,21 +3,20 @@ import { useCallback, useState } from "react";
 import { useAppDispatch } from "@/hooks/useAppStore";
 import {
   CHAT_MESSAGES_QUERY_LIMIT,
-  chatApi,
   usePinMessageMutation,
   useUnpinMessageMutation,
 } from "@/store/api/chatApi";
+import { messageApi } from "@/store/api/endpoints/messageApi";
 import { messagePinUpdated, messageReceived } from "@/store/slices/chatSlice";
 import { MAX_PINNED_PER_CONVERSATION } from "@/constants/chatPin";
-import type { IConversation, IMessage } from "@/types/chat.types";
-import type { GroupMember } from "@/types/chat.group.types";
+import type { IConversation, IMessage, IGroupMember } from "@/types/chat.types";
 import { canUserPinMessageInGroup } from "@/utils/groupConversationPermissions";
 import { toast } from "@/utils/appToast";
 
 type UseMessagePinControllerParams = {
   activeConversation?: IConversation;
   currentUserId: string;
-  groupMembers: GroupMember[];
+  groupMembers: IGroupMember[];
   pinnedMessagesOrdered: IMessage[];
   allMessages: IMessage[];
 };
@@ -40,7 +39,7 @@ export function useMessagePinController({
   const patchMessageInCache = useCallback(
     (conversationId: string, messageId: string, patch: Partial<IMessage>) => {
       dispatch(
-        chatApi.util.updateQueryData(
+        messageApi.util.updateQueryData(
           "getMessages",
           { conversationId, limit: CHAT_MESSAGES_QUERY_LIMIT },
           (draft) => {
@@ -76,7 +75,7 @@ export function useMessagePinController({
         createdAt: new Date().toISOString(),
       };
       dispatch(
-        chatApi.util.updateQueryData(
+        messageApi.util.updateQueryData(
           "getMessages",
           { conversationId, limit: CHAT_MESSAGES_QUERY_LIMIT },
           (draft) => {

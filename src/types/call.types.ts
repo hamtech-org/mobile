@@ -50,9 +50,8 @@ export interface IncomingCallData {
   sessionId?: string;
 }
 
-/** Server → callee: một thiết bị khác của cùng user đã accept/reject — tắt chuông đồng bộ. */
 export interface IncomingCallDismissedPayload {
   channelName: string;
   conversationId: string;
-  reason: "accepted" | "rejected";
+  reason?: "accepted" | "rejected" | "ended" | "cancelled";
 }

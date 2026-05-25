@@ -7,7 +7,7 @@ import com.facebook.react.uimanager.ViewManager
 
 class HamtechFaceLivenessPackage : ReactPackage {
   override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> =
-      listOf(HamtechFaceLivenessModule(reactContext))
+      listOf(HamtechFaceLivenessModule(reactContext), HamtechNotificationModule(reactContext))
 
   override fun createViewManagers(
       reactContext: ReactApplicationContext

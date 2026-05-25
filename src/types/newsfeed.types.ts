@@ -11,6 +11,12 @@ export interface IAuthorInfo {
   avatar: string | null;
 }
 
+export interface ICommunityInfo {
+  groupId: string;
+  name: string;
+  avatar: string | null;
+}
+
 export interface ISharedPostInfo {
   postId: string;
   authorId: string;
@@ -24,6 +30,8 @@ export interface ISharedPostInfo {
 export interface IPost {
   postId: string;
   authorId: string;
+  groupId?: string;
+  communityId?: string;
   content: string;
   mediaUrls: string[];
   type: PostType;
@@ -40,9 +48,11 @@ export interface IPost {
   moderationStatus: ModerationStatus;
   currentUserReaction?: ReactionType | null;
   isSaved?: boolean;
+  isPinned?: boolean;
   sharedFrom?: ISharedPostInfo;
   createdAt: string;
   updatedAt: string;
+  communityInfo?: ICommunityInfo;
 }
 
 export interface ISavedPost {

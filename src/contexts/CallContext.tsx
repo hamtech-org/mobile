@@ -32,6 +32,12 @@ import type {
   IncomingCallDismissedPayload,
 } from "@/types/call.types";
 
+import {
+  dismissCallSystemNotification,
+  showIncomingCallSystemNotification,
+} from "@/utils/notificationPresenters";
+import { isSocketLocalNotificationEnabled } from "@/utils/localSystemNotification";
+
 import { useSocketContext } from "./SocketContext";
 import { CallContext, type CallContextValue } from "./callContext.shared";
 
@@ -115,21 +121,30 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
       const payload = data as IncomingCallData;
       dispatch(setReturnTo(pathname));
       dispatch(setIncomingCall(payload));
+      if (isSocketLocalNotificationEnabled()) {
+        showIncomingCallSystemNotification(payload);
+      }
     };
 
     const onAccepted = () => {
+      const ch = store.getState().call.channelName;
+      if (ch) void dismissCallSystemNotification(ch);
       dispatch(setCallAccepted());
     };
 
     const onRejected = () => {
+      const ch = store.getState().call.channelName;
+      const st = store.getState().call;
+      if (ch) void dismissCallSystemNotification(ch);
       void playCuocGoiNhoTone();
       dispatch(setEndReason("rejected"));
       dispatch(setCallEnded());
     };
 
     const onEnded = () => {
-      const st = store.getState().call.status;
-      if (st === "incoming-ringing") {
+      const st = store.getState().call;
+      if (st.channelName) void dismissCallSystemNotification(st.channelName);
+      if (st.status === "incoming-ringing") {
         dispatch(setEndReason("missed"));
       }
       dispatch(setCallEnded());
@@ -151,6 +166,7 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
     const onIncomingDismissed = (data: unknown) => {
       const p = data as IncomingCallDismissedPayload;
       if (!p?.channelName || !p?.conversationId) return;
+      void dismissCallSystemNotification(p.channelName);
       const st = store.getState().call;
       if (st.status !== "incoming-ringing") return;
       if (st.channelName !== p.channelName) return;
@@ -322,6 +338,7 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
       conversationId: callState.conversationId,
       type: callState.callType || "audio",
     });
+    void dismissCallSystemNotification(callState.channelName);
     dispatch(setCallAccepted());
     const rt = callState.returnTo ?? pathname;
     const convId = callState.conversationId || "";
@@ -346,6 +363,7 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
       conversationId: callState.conversationId,
       type: callState.callType || "audio",
     });
+    void dismissCallSystemNotification(callState.channelName);
     dispatch(resetCall());
   }, [callState, dispatch, socket]);
 

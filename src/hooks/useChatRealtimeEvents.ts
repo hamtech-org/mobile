@@ -1,5 +1,9 @@
 import { useEffect, useRef } from "react";
+import { Alert } from "react-native";
+import { router } from "expo-router";
 import type { Socket } from "socket.io-client";
+
+import { env } from "@/config/env";
 
 import { chatApi, CHAT_MESSAGES_QUERY_LIMIT } from "@/store/api/chatApi";
 import { groupApi } from "@/store/api/endpoints/groupApi";
@@ -27,6 +31,12 @@ import { store, type AppDispatch } from "@/store/store";
 import type { ChatFrameBannerVariant } from "@/store/slices/chatSlice";
 import type { IConversation, IMessage } from "@/types/chat.types";
 import { toast } from "@/utils/appToast";
+import { isSocketLocalNotificationEnabled } from "@/utils/localSystemNotification";
+import {
+  presentChatMessageNotification,
+  presentGroupActivityNotification,
+} from "@/utils/notificationPresenters";
+import { resolveChatSenderAvatarUrl } from "@/utils/notificationAvatar";
 import { formatChatPreviewLine, getMessageTypeLabel } from "@/utils/messageDisplay";
 import { sortConversationsForSidebar } from "@/utils/conversationListSort";
 import {
@@ -50,6 +60,7 @@ interface UseChatRealtimeEventsParams {
 }
 
 const TYPING_INDICATOR_IDLE_MS = 2500;
+const SYSTEM_NOTIFICATION_DEDUPE_MS = 3500;
 
 function normalizeIso(at?: string | null): string {
   if (at && !Number.isNaN(new Date(at).getTime())) return at;
@@ -83,6 +94,25 @@ function groupUpdateNoticeText(
   if (nameChanged && name) return `${who} đã đổi tên nhóm thành "${name}"`;
   if (avatarChanged) return `${who} đã cập nhật ảnh đại diện nhóm`;
   return null;
+}
+
+function messageMentionsViewer(msg: IMessage, viewerName?: string | null): boolean {
+  if (msg.type !== "text") return false;
+  const raw = String(msg.content ?? "").toLocaleLowerCase("vi-VN");
+  if (!raw.includes("@")) return false;
+
+  const displayName = viewerName?.trim() ?? "";
+  const parts = displayName.split(/\s+/).filter(Boolean);
+  const candidates = new Set<string>();
+  if (displayName) candidates.add(displayName);
+  if (parts.length > 0) candidates.add(parts[0]);
+  if (parts.length > 1) candidates.add(parts[parts.length - 1]);
+
+  for (const candidate of candidates) {
+    const token = `@${candidate}`.toLocaleLowerCase("vi-VN");
+    if (token.length > 1 && raw.includes(token)) return true;
+  }
+  return false;
 }
 
 /** Đã có pill system trong khung chat — không banner trùng (web `useChatGroupFrameNotices`). */
@@ -193,6 +223,7 @@ export function useChatRealtimeEvents({
   const recentMessageSocketRef = useRef<Map<string, number>>(new Map());
   const frameBannerDedupeMapRef = useRef<Map<string, number>>(new Map());
   const conversationsRefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const systemNotificationDedupeMapRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
     activeConvRef.current = activeConversationId;
@@ -232,6 +263,7 @@ export function useChatRealtimeEvents({
     };
 
     const frameDedupe = frameBannerDedupeMapRef.current;
+    const systemDedupe = systemNotificationDedupeMapRef.current;
 
     const emitFrameBanner = (
       dedupeKey: string,
@@ -263,6 +295,41 @@ export function useChatRealtimeEvents({
           ...(pid ? { pollId: pid } : {}),
         }),
       );
+    };
+
+    const showGroupSystemNotification = (
+      dedupeKey: string,
+      conversationId: string,
+      _title: string,
+      body: string,
+      opts?: { channel?: "messages" | "social" | "default"; forceInActiveChat?: boolean },
+    ) => {
+      if (!isSocketLocalNotificationEnabled()) return;
+      const gid = conversationId.trim();
+      if (!gid) return;
+      if (!opts?.forceInActiveChat && gid === activeConvRef.current) return;
+      const now = Date.now();
+      const fullKey = `${gid}:${dedupeKey}`;
+      const last = systemDedupe.get(fullKey) ?? 0;
+      if (now - last < SYSTEM_NOTIFICATION_DEDUPE_MS) return;
+      systemDedupe.set(fullKey, now);
+      if (systemDedupe.size > 200) {
+        for (const [k, ts] of systemDedupe.entries()) {
+          if (now - ts > 60_000) systemDedupe.delete(k);
+        }
+      }
+      const convList = conversationApi.endpoints.getConversations.select(undefined)(
+        store.getState(),
+      )?.data as IConversation[] | undefined;
+      const conv = convList?.find((c) => c.conversationId === gid);
+      const rawGroupName = conv?.name?.trim() || "Nhóm chat";
+      const groupName = rawGroupName.startsWith("Nhóm:") ? rawGroupName : `Nhóm: ${rawGroupName}`;
+      presentGroupActivityNotification(gid, body, {
+        groupName,
+        eventKey: dedupeKey,
+        channel: opts?.channel ?? "messages",
+        avatarUrl: conv?.avatar?.trim() || `${env.apiBaseUrl}/chat/conversations/${gid}/avatar`,
+      });
     };
 
     const invalidateGroupData = (
@@ -389,6 +456,7 @@ export function useChatRealtimeEvents({
 
       if (
         msg.type !== "system" &&
+        msg.type !== "call" &&
         viewerId &&
         msg.senderId !== viewerId &&
         msg.conversationId !== activeConvRef.current
@@ -401,7 +469,44 @@ export function useChatRealtimeEvents({
         if (!muted) {
           const sender = msg.senderDisplayName?.trim() || "Tin nhắn mới";
           const preview = listPreview.length > 80 ? `${listPreview.slice(0, 77)}…` : listPreview;
-          toast.info(`${sender}: ${preview}`, 4000);
+          const isGroup = conv?.type === "group";
+          const rawGroupName = isGroup ? conv?.name?.trim() || "chat" : undefined;
+          const groupName = rawGroupName
+            ? rawGroupName.startsWith("Nhóm:")
+              ? rawGroupName
+              : `Nhóm: ${rawGroupName}`
+            : undefined;
+          const messageId = String(msg.messageId ?? "").trim();
+          const notifyOpts = {
+            isGroup,
+            groupName,
+            messageId: messageId || undefined,
+          };
+
+          const senderAvatarUrl = resolveChatSenderAvatarUrl(conv, msg.senderId, msg.senderAvatar);
+          const avatarUrl = isGroup
+            ? conv?.avatar?.trim() ||
+              `${env.apiBaseUrl}/chat/conversations/${msg.conversationId}/avatar`
+            : senderAvatarUrl;
+          const viewerName = store.getState().auth.user?.displayName ?? "";
+          if (isGroup && messageMentionsViewer(msg, viewerName)) {
+            presentChatMessageNotification(
+              sender,
+              `đã nhắc đến bạn: ${preview}`,
+              msg.conversationId,
+              {
+                ...notifyOpts,
+                avatarUrl,
+                senderAvatarUrl,
+              },
+            );
+          } else {
+            presentChatMessageNotification(sender, preview, msg.conversationId, {
+              ...notifyOpts,
+              avatarUrl,
+              senderAvatarUrl,
+            });
+          }
         }
       }
 
@@ -447,6 +552,12 @@ export function useChatRealtimeEvents({
             if (!pollToastDedupe.has(dedupeKey)) {
               pollToastDedupe.add(dedupeKey);
               setTimeout(() => pollToastDedupe.delete(dedupeKey), 8000);
+              showGroupSystemNotification(
+                dedupeKey,
+                msg.conversationId,
+                "Thông báo nhóm",
+                banner.text,
+              );
               toast.info(banner.text, 7000);
             }
           } catch {
@@ -571,6 +682,12 @@ export function useChatRealtimeEvents({
         ) as never,
       );
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
+      showGroupSystemNotification(
+        `pin:${payload.messageId}:${payload.isPinned ? "on" : "off"}`,
+        payload.conversationId,
+        "Cập nhật nhóm",
+        payload.isPinned ? "Admin đã ghim một tin nhắn" : "Tin nhắn đã được bỏ ghim",
+      );
     };
 
     const handleReaction = (payload: {
@@ -578,6 +695,10 @@ export function useChatRealtimeEvents({
       conversationId: string;
       reactions: Record<string, string[]>;
     }) => {
+      const viewerId = store.getState().auth.user?.userId ?? "";
+      const cachedMessage = store
+        .getState()
+        .chat.messages[payload.conversationId]?.find((m) => m.messageId === payload.messageId);
       dispatch(messageReacted(payload));
       const mid = String(payload.messageId);
       dispatch(
@@ -593,6 +714,18 @@ export function useChatRealtimeEvents({
           },
         ) as never,
       );
+      const reactedByOther = Object.values(payload.reactions).some((userIds) =>
+        userIds.some((userId) => userId !== viewerId),
+      );
+      if (cachedMessage?.senderId === viewerId && reactedByOther) {
+        showGroupSystemNotification(
+          `reaction:${payload.messageId}`,
+          payload.conversationId,
+          "Tương tác tin nhắn",
+          "Có người đã react tin nhắn của bạn",
+          { channel: "messages" },
+        );
+      }
     };
 
     const handleTyping = (payload: {
@@ -667,6 +800,12 @@ export function useChatRealtimeEvents({
           );
         }
       } else if (noticeText) {
+        showGroupSystemNotification(
+          `group:updated:${conversationId}`,
+          conversationId,
+          "Cập nhật nhóm",
+          noticeText,
+        );
         toast.info(noticeText);
       }
     };
@@ -692,6 +831,12 @@ export function useChatRealtimeEvents({
         undefined,
         "task_assigned",
       );
+      showGroupSystemNotification(
+        `group:settings:${gid}`,
+        gid,
+        "Cập nhật nhóm",
+        "Cài đặt nhóm đã thay đổi",
+      );
     };
 
     const handleGroupPollNew = (payload: Record<string, unknown>) => {
@@ -705,6 +850,12 @@ export function useChatRealtimeEvents({
         "Có bình chọn mới trong nhóm",
         undefined,
         "poll",
+      );
+      showGroupSystemNotification(
+        `group:poll_new:${gid}`,
+        gid,
+        "Bình chọn mới",
+        "Có bình chọn mới trong nhóm",
       );
     };
 
@@ -722,6 +873,12 @@ export function useChatRealtimeEvents({
         "poll",
         1500,
         pollId || undefined,
+      );
+      showGroupSystemNotification(
+        `group:poll_upd:${pollId || gid}`,
+        gid,
+        "Cập nhật bình chọn",
+        "Bình chọn vừa được cập nhật",
       );
     };
 
@@ -766,6 +923,12 @@ export function useChatRealtimeEvents({
         undefined,
         "task_assigned",
       );
+      showGroupSystemNotification(
+        `group:member_joined:${joinedUserId}`,
+        gid,
+        "Cập nhật nhóm",
+        "Có thành viên mới tham gia nhóm",
+      );
     };
 
     const handleGroupMemberLeft = (payload: Record<string, unknown>) => {
@@ -786,6 +949,12 @@ export function useChatRealtimeEvents({
         "Một thành viên vừa rời nhóm",
         leftAt,
         "task_assigned",
+      );
+      showGroupSystemNotification(
+        `group:member_left:${leftUserId}`,
+        gid,
+        "Cập nhật nhóm",
+        "Một thành viên vừa rời nhóm",
       );
     };
 
@@ -811,6 +980,12 @@ export function useChatRealtimeEvents({
         undefined,
         "task_assigned",
       );
+      showGroupSystemNotification(
+        `group:member_removed:${removedUserId}`,
+        gid,
+        "Cập nhật nhóm",
+        "Một thành viên đã bị xóa khỏi nhóm",
+      );
     };
 
     const handleGroupRoleChanged = (payload: Record<string, unknown>) => {
@@ -833,6 +1008,12 @@ export function useChatRealtimeEvents({
         undefined,
         "task_assigned",
       );
+      showGroupSystemNotification(
+        `group:join_req_new:${gid}`,
+        gid,
+        "Yêu cầu tham gia nhóm",
+        "Có yêu cầu tham gia nhóm mới",
+      );
     };
 
     const handleGroupJoinRequestUpdated = (payload: Record<string, unknown>) => {
@@ -845,6 +1026,12 @@ export function useChatRealtimeEvents({
         "Danh sách yêu cầu tham gia đã cập nhật",
         undefined,
         "task_assigned",
+      );
+      showGroupSystemNotification(
+        `group:join_req_upd:${gid}`,
+        gid,
+        "Yêu cầu tham gia nhóm",
+        "Danh sách yêu cầu tham gia đã cập nhật",
       );
     };
 
@@ -859,7 +1046,40 @@ export function useChatRealtimeEvents({
         "task_assigned",
         10_000,
       );
+      showGroupSystemNotification(
+        `group:disbanded:${gid}`,
+        gid,
+        "Cập nhật nhóm",
+        "Nhóm đã bị giải tán",
+        { forceInActiveChat: true },
+      );
       removeConversationFromListCache(gid);
+      dispatch(chatApi.util.invalidateTags(["Conversations"]));
+    };
+
+    const handleConversationDisbanded = (payload: Record<string, unknown>) => {
+      const cid = String(payload?.conversationId ?? "").trim();
+      if (!cid) return;
+
+      if (payload.reason === "community_archived") {
+        Alert.alert("Cộng đồng giải tán", "Cộng đồng liên kết đã bị lưu trữ. Phòng chat đã đóng.", [
+          {
+            text: "OK",
+            onPress: () => {
+              if (cid === activeConvRef.current) {
+                router.replace("/(main)/(chat)");
+              }
+            },
+          },
+        ]);
+      } else {
+        toast.info("Phòng chat đã bị giải tán.", 10_000);
+        if (cid === activeConvRef.current) {
+          router.replace("/(main)/(chat)");
+        }
+      }
+
+      removeConversationFromListCache(cid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
     };
 
@@ -874,6 +1094,9 @@ export function useChatRealtimeEvents({
         "task_assigned",
         10_000,
       );
+      showGroupSystemNotification(`group:deleted:${gid}`, gid, "Cập nhật nhóm", "Nhóm đã bị xóa", {
+        forceInActiveChat: true,
+      });
       removeConversationFromListCache(gid);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
     };
@@ -887,6 +1110,13 @@ export function useChatRealtimeEvents({
       }
       patchConversationMemberCount(gid, payload);
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
+      showGroupSystemNotification(
+        `group:request_approved:${gid}`,
+        gid,
+        "Cập nhật nhóm",
+        "Bạn đã được duyệt vào nhóm",
+        { forceInActiveChat: true },
+      );
       toast.info("Bạn đã được duyệt vào nhóm", 5000);
     };
 
@@ -903,6 +1133,12 @@ export function useChatRealtimeEvents({
       emitFrameBanner(
         `recap:${gid}:${short || "empty"}`,
         gid,
+        short ? `Tóm tắt AI mới: ${short}` : "Có tóm tắt AI mới cho nhóm",
+      );
+      showGroupSystemNotification(
+        `recap:${gid}:${short || "empty"}`,
+        gid,
+        "Tóm tắt AI mới",
         short ? `Tóm tắt AI mới: ${short}` : "Có tóm tắt AI mới cho nhóm",
       );
     };
@@ -954,6 +1190,7 @@ export function useChatRealtimeEvents({
     socket.on("group:join_request_new", handleGroupJoinRequestNew);
     socket.on("group:join_request_updated", handleGroupJoinRequestUpdated);
     socket.on("group:disbanded", handleGroupDisbanded);
+    socket.on("conversation:disbanded", handleConversationDisbanded);
     socket.on("group:deleted", handleGroupDeleted);
     const handleGroupMembershipRevoked = (payload: Record<string, unknown>) => {
       const gid = groupIdFromPayload(payload);
@@ -1005,6 +1242,7 @@ export function useChatRealtimeEvents({
       socket.off("group:join_request_new", handleGroupJoinRequestNew);
       socket.off("group:join_request_updated", handleGroupJoinRequestUpdated);
       socket.off("group:disbanded", handleGroupDisbanded);
+      socket.off("conversation:disbanded", handleConversationDisbanded);
       socket.off("group:deleted", handleGroupDeleted);
       socket.off("group:membership_revoked", handleGroupMembershipRevoked);
       socket.off("group:request_approved", handleGroupRequestApproved);

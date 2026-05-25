@@ -5,5 +5,9 @@ import Constants from "expo-constants";
  * Cần development build: `npx expo run:android` / EAS build.
  */
 export function isRemotePushSupported(): boolean {
-  return Constants.appOwnership !== "expo";
+  const isSupported = Constants.appOwnership !== "expo";
+  console.log(
+    `[PushToken] isRemotePushSupported check: appOwnership=${Constants.appOwnership}, isSupported=${isSupported}`,
+  );
+  return isSupported;
 }
