@@ -13,7 +13,6 @@ import { ReelsStrip } from "@/features/newsfeed/components/ReelsStrip";
 import { PaginatedFeedList } from "@/features/newsfeed/components/PaginatedFeedList";
 import { NotificationBellButton } from "@/components/notifications/NotificationBellButton";
 import { useIconColors } from "@/hooks/useIconColors";
-
 export default function NewsfeedScreen() {
   const { foreground } = useIconColors();
   const router = useRouter();

@@ -1,0 +1,388 @@
+diff --git a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/model/NotificationContent.java b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/model/NotificationContent.java
+index 191b64e..187a96e 100644
+--- a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/model/NotificationContent.java
++++ b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/model/NotificationContent.java
+@@ -37,6 +37,8 @@ import kotlin.coroutines.Continuation;
+  */
+ public class NotificationContent implements Parcelable, Serializable, INotificationContent {
++  private static final String AVATAR_LOG_TAG = "HamtechNotifAvatar";
++
+   private String mTitle;
+   private String mText;
+   private String mSubtitle;
+@@ -100,9 +102,163 @@ public class NotificationContent implements Parcelable, Serializable, INotificat
+     return mSound != null ? mSound.getLastPathSegment() : null;
+   }
+ 
++  @Nullable
++  private String getRemoteImageUrl() {
++    if (mBody == null) {
++      return null;
++    }
++    String[] keys = new String[] { "pushImageUrl", "actorAvatar", "imageUrl" };
++    for (String key : keys) {
++      String value = mBody.optString(key, "");
++      if (value != null && !value.isEmpty() && (value.startsWith("https://") || value.startsWith("http://"))) {
++        return value;
++      }
++    }
++    return null;
++  }
++
++  @Nullable
++  private String getLocalImageUri() {
++    if (mBody == null) {
++      return null;
++    }
++    String value = mBody.optString("localAvatarUri", "");
++    if (value == null || value.isEmpty()) {
++      return null;
++    }
++    if (value.startsWith("file://") || value.startsWith("/")) {
++      return value.startsWith("file://") ? value : "file://" + value;
++    }
++    return null;
++  }
++
++  private boolean hasAvatarBase64() {
++    if (mBody == null) {
++      return false;
++    }
++    String raw = mBody.optString("avatarBase64", "");
++    return raw != null && !raw.isEmpty();
++  }
++
++  @Nullable
++  private Bitmap decodeAvatarBase64() {
++    if (mBody == null) {
++      return null;
++    }
++    String raw = mBody.optString("avatarBase64", "");
++    if (raw == null || raw.isEmpty()) {
++      return null;
++    }
++    try {
++      String base64 = raw;
++      int comma = raw.indexOf(',');
++      if (comma > 0) {
++        base64 = raw.substring(comma + 1);
++      }
++      Log.i(AVATAR_LOG_TAG, "decodeAvatarBase64: length=" + base64.length());
++      byte[] bytes = android.util.Base64.decode(base64, android.util.Base64.DEFAULT);
++      Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
++      Log.i(AVATAR_LOG_TAG, "decodeAvatarBase64: bitmap=" + describeBitmap(bitmap));
++      return bitmap;
++    } catch (Exception e) {
++      Log.e("expo-notifications", "Could not decode avatarBase64", e);
++      return null;
++    }
++  }
++
++  @Nullable
++  private Bitmap loadLocalAvatarBitmap() {
++    String localUri = getLocalImageUri();
++    if (localUri == null) {
++      return null;
++    }
++    try {
++      String path = android.net.Uri.parse(localUri).getPath();
++      if (path == null) {
++        Log.i(AVATAR_LOG_TAG, "loadLocalAvatarBitmap: uri has no path: " + localUri);
++        return null;
++      }
++      java.io.File file = new java.io.File(path);
++      Log.i(AVATAR_LOG_TAG, "loadLocalAvatarBitmap: path=" + path + ", exists=" + file.exists() + ", length=" + file.length());
++      Bitmap bitmap = BitmapFactory.decodeFile(path);
++      Log.i(AVATAR_LOG_TAG, "loadLocalAvatarBitmap: bitmap=" + describeBitmap(bitmap));
++      return bitmap;
++    } catch (Exception e) {
++      Log.e("expo-notifications", "Could not load local notification avatar: " + localUri, e);
++      return null;
++    }
++  }
++
++  @Nullable
++  private Bitmap downloadRemoteImage(@NonNull String imageUrl) {
++    java.net.HttpURLConnection connection = null;
++    try {
++      java.net.URL url = new java.net.URL(imageUrl);
++      connection = (java.net.HttpURLConnection) url.openConnection();
++      connection.setConnectTimeout(8000);
++      connection.setReadTimeout(8000);
++      connection.setDoInput(true);
++      if (imageUrl.contains("ngrok")) {
++        connection.setRequestProperty("ngrok-skip-browser-warning", "true");
++      }
++      connection.connect();
++      int status = connection.getResponseCode();
++      Log.i(AVATAR_LOG_TAG, "downloadRemoteImage: status=" + status + ", url=" + imageUrl);
++      Bitmap bitmap = BitmapFactory.decodeStream(connection.getInputStream());
++      Log.i(AVATAR_LOG_TAG, "downloadRemoteImage: bitmap=" + describeBitmap(bitmap));
++      return bitmap;
++    } catch (Exception e) {
++      Log.e("expo-notifications", "Could not download notification avatar: " + imageUrl, e);
++      return null;
++    } finally {
++      if (connection != null) {
++        connection.disconnect();
++      }
++    }
++  }
++
+   @Nullable
+   @Override
+   public Object getImage(@NonNull Context context, @NonNull Continuation<? super Bitmap> $completion) {
++    Log.i(
++      AVATAR_LOG_TAG,
++      "getImage: title=" + mTitle +
++        ", categoryId=" + mCategoryId +
++        ", localUri=" + getLocalImageUri() +
++        ", hasBase64=" + hasAvatarBase64() +
++        ", remoteUrl=" + getRemoteImageUrl()
++    );
++    Bitmap local = loadLocalAvatarBitmap();
++    if (local != null) {
++      Log.i(AVATAR_LOG_TAG, "getImage: using local bitmap");
++      return local;
++    }
++    Bitmap base64Bitmap = decodeAvatarBase64();
++    if (base64Bitmap != null) {
++      Log.i(AVATAR_LOG_TAG, "getImage: using base64 bitmap");
++      return base64Bitmap;
++    }
++    String remoteImageUrl = getRemoteImageUrl();
++    if (remoteImageUrl != null) {
++      Bitmap remote = downloadRemoteImage(remoteImageUrl);
++      if (remote != null) {
++        Log.i(AVATAR_LOG_TAG, "getImage: using remote bitmap");
++        return remote;
++      }
++    }
+     try {
+       ApplicationInfo ai = context.getPackageManager().getApplicationInfo(context.getPackageName(), PackageManager.GET_META_DATA);
+       if (ai.metaData.containsKey(META_DATA_LARGE_ICON_KEY)) {
+@@ -117,7 +235,7 @@ public class NotificationContent implements Parcelable, Serializable, INotificat
+ 
+   @Override
+   public boolean containsImage() {
+-    return true;
++    boolean result = getRemoteImageUrl() != null || getLocalImageUri() != null || hasAvatarBase64();
++    Log.i(
++      AVATAR_LOG_TAG,
++      "containsImage: result=" + result +
++        ", title=" + mTitle +
++        ", categoryId=" + mCategoryId +
++        ", localUri=" + getLocalImageUri() +
++        ", hasBase64=" + hasAvatarBase64() +
++        ", remoteUrl=" + getRemoteImageUrl()
++    );
++    return result;
+   }
++
++  private static String describeBitmap(@Nullable Bitmap bitmap) {
++    if (bitmap == null) {
++      return "null";
++    }
++    return bitmap.getWidth() + "x" + bitmap.getHeight();
++  }
+ 
+   @Nullable
+diff --git a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/model/NotificationData.kt b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/model/NotificationData.kt
+index 3af254c..bdea256 100644
+--- a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/model/NotificationData.kt
++++ b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/model/NotificationData.kt
+@@ -56,7 +56,7 @@ value class NotificationData(private val data: Map<String, String>) {
+     get() = data["autoDismiss"]?.toBoolean() ?: true
+ 
+   val categoryId: String?
+-    get() = data["categoryId"]
++    get() = data["categoryId"] ?: data["categoryIdentifier"]
+ 
+   val subText: String?
+     get() = data["subtitle"]
+diff --git a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/model/RemoteNotificationContent.kt b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/model/RemoteNotificationContent.kt
+index cdbc237..1619bdf 100644
+--- a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/model/RemoteNotificationContent.kt
++++ b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/model/RemoteNotificationContent.kt
+@@ -22,13 +22,25 @@ class RemoteNotificationContent(private val remoteMessage: RemoteMessage) : INot
+ 
+   private val notificationData = NotificationData(remoteMessage.data)
+ 
++  private fun remoteImageUrl(): android.net.Uri? {
++    remoteMessage.notification?.imageUrl?.let { return it }
++    val keys = listOf("pushImageUrl", "actorAvatar", "imageUrl")
++    for (key in keys) {
++      val url = remoteMessage.data[key]
++      if (!url.isNullOrBlank() && (url.startsWith("https://") || url.startsWith("http://"))) {
++        return android.net.Uri.parse(url)
++      }
++    }
++    return null
++  }
++
+   override suspend fun getImage(context: Context): Bitmap? {
+-    val uri = remoteMessage.notification?.imageUrl
++    val uri = remoteImageUrl()
+     return uri?.let { downloadImage(it) }
+   }
+ 
+   override fun containsImage(): Boolean {
+-    return remoteMessage.notification?.imageUrl != null
++    return remoteImageUrl() != null
+   }
+ 
+   override val title = remoteMessage.notification?.title ?: notificationData.title
+diff --git a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt
+index 610d303..2a0b531 100644
+--- a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt
++++ b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt
+@@ -11,7 +11,9 @@ import android.os.Parcel
+ import android.provider.Settings
+ import android.util.Log
+ import androidx.core.app.NotificationCompat
++import androidx.core.app.Person
+ import androidx.core.app.RemoteInput
++import androidx.core.graphics.drawable.IconCompat
+ import expo.modules.notifications.notifications.SoundResolver
+ import expo.modules.notifications.notifications.enums.NotificationPriority
+ import expo.modules.notifications.notifications.interfaces.INotificationContent
+@@ -100,17 +102,85 @@ open class ExpoNotificationBuilder(
+     builder.setAutoCancel(content.isAutoDismiss)
+     builder.setOngoing(content.isSticky)
+ 
+-    // see "Notification anatomy" https://developer.android.com/develop/ui/views/notifications#Templates
+-    builder.setContentTitle(content.title)
+-    builder.setContentText(content.text)
+-    builder.setSubText(content.subText)
+-    // Sets the text/contentText as the bigText to allow the notification to be expanded and the
+-    // entire text to be viewed.
+-    builder.setStyle(NotificationCompat.BigTextStyle().bigText(content.text))
++    val avatarBitmap: Bitmap? = if (notificationContent.containsImage()) {
++      notificationContent.getImage(context)
++    } else {
++      null
++    }
++
++    val categoryId = content.categoryId
++    val isMessageCategory = categoryId == "hamtech_message"
++    val isCallCategory =
++      categoryId == "hamtech_call_direct" || categoryId == "hamtech_call_group"
++    val useMessagingStyle =
++      isMessageCategory || (categoryId == "hamtech_social" && avatarBitmap != null)
++
++    Log.i(
++      "HamtechNotifAvatar",
++      "build: title=${content.title}, categoryId=$categoryId, containsImage=${notificationContent.containsImage()}, avatarBitmap=${avatarBitmap?.width}x${avatarBitmap?.height}, useMessagingStyle=$useMessagingStyle"
++    )
++
++    if (useMessagingStyle) {
++      val senderName = content.title?.takeIf { it.isNotBlank() } ?: "Tin nhắn mới"
++      val personBuilder = Person.Builder().setName(senderName)
++      if (avatarBitmap != null) {
++        personBuilder.setIcon(IconCompat.createWithBitmap(avatarBitmap))
++      }
++      val person = personBuilder.build()
++      val messagingStyle = NotificationCompat.MessagingStyle(person)
++      val conversationTitle = content.subText
++      if (!conversationTitle.isNullOrBlank()) {
++        messagingStyle.setConversationTitle(conversationTitle)
++      }
++      val stackLines = parseMessagingLinesFromBody(content).take(3)
++      val stackFooter = content.body?.optString("stackFooter", "")?.trim()?.takeIf { it.isNotEmpty() }
++      if (stackLines.isEmpty()) {
++        messagingStyle.addMessage(content.text ?: "", System.currentTimeMillis(), person)
++      } else {
++        for (line in stackLines) {
++          val linePerson =
++            if (!line.senderName.isNullOrBlank()) {
++              Person.Builder().setName(line.senderName).build()
++            } else {
++              person
++            }
++          messagingStyle.addMessage(line.text, line.timestamp, linePerson)
++        }
++        if (!stackFooter.isNullOrBlank()) {
++          messagingStyle.addMessage(stackFooter, System.currentTimeMillis(), person)
++        }
++      }
++      val messageCount = content.body?.optInt("messageCount", stackLines.size) ?: stackLines.size
++      if (messageCount > 1) {
++        builder.setNumber(messageCount)
++      }
++      builder.setStyle(messagingStyle)
++      builder.setContentTitle(senderName)
++      builder.setContentText(
++        when {
++          !stackFooter.isNullOrBlank() -> stackFooter
++          messageCount > 1 -> "$messageCount tin nhắn mới"
++          else -> content.text
++        }
++      )
++      if (!conversationTitle.isNullOrBlank()) {
++        builder.setSubText(conversationTitle)
++      }
++      if (avatarBitmap != null) {
++        builder.setLargeIcon(avatarBitmap)
++      }
++    } else if (isCallCategory) {
++      builder.setContentTitle(content.title)
++      builder.setContentText(content.text)
++      if (!content.subText.isNullOrBlank()) {
++        builder.setSubText(content.subText)
++      }
++      if (avatarBitmap != null) {
++        builder.setLargeIcon(avatarBitmap)
++      }
++    } else {
++      // see "Notification anatomy" https://developer.android.com/develop/ui/views/notifications#Templates
++      builder.setContentTitle(content.title)
++      builder.setContentText(content.text)
++      builder.setSubText(content.subText)
++      builder.setStyle(NotificationCompat.BigTextStyle().bigText(content.text))
++      if (avatarBitmap != null) {
++        builder.setLargeIcon(avatarBitmap)
++      }
++    }
+ 
+     color?.let { builder.color = it.toInt() }
+     notificationContent.badgeCount?.toInt()?.let { builder.setNumber(it) }
+-    notificationContent.categoryId?.let { addActionsToBuilder(builder, it) }
++    categoryId?.let { addActionsToBuilder(builder, it) }
+ 
+     applySoundsAndVibrations(content, builder)
+ 
+@@ -147,11 +196,12 @@ open class ExpoNotificationBuilder(
+       )
+     )
+ 
+-    if (notificationContent.containsImage()) {
+-      val bitmap = notificationContent.getImage(context)
+-      bitmap?.let { builder.setLargeIcon(it) }
+-    } else {
+-      builder.setLargeIcon(largeIcon)
++    if (!useMessagingStyle) {
++      if (avatarBitmap != null) {
++        builder.setLargeIcon(avatarBitmap)
++      } else {
++        builder.setLargeIcon(largeIcon)
++      }
+     }
+     return builder.build()
+   }
++
++  private data class MessagingLine(val text: String, val timestamp: Long, val senderName: String?)
++
++  private fun parseMessagingLinesFromBody(content: INotificationContent): List<MessagingLine> {
++    val body = content.body ?: return emptyList()
++    val raw = body.optJSONArray("messagingLines") ?: return emptyList()
++    val lines = mutableListOf<MessagingLine>()
++    for (i in 0 until raw.length()) {
++      val row = raw.optJSONObject(i) ?: continue
++      val text = row.optString("text", "").trim()
++      if (text.isEmpty()) continue
++      val timestamp = row.optLong("timestamp", System.currentTimeMillis())
++      val senderName = row.optString("senderName", "").trim().takeIf { it.isNotEmpty() }
++      lines.add(MessagingLine(text, timestamp, senderName))
++    }
++    return lines
++  }

@@ -1240,8 +1240,7 @@ export const ChatBubble = ({
     Boolean(isJumpHighlighted) &&
     !jumpHighlightOnPollInline &&
     !jumpHighlightOnMedia &&
-    !isSystemCenter &&
-    message.type !== "call";
+    !isSystemCenter;
 
   const hasPollScheduleBlock =
     (message.type === "poll" || message.type === "schedule") &&

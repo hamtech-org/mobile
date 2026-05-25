@@ -52,7 +52,6 @@ import {
 import { MAX_PINNED_CHATS_TO_TOP } from "@/constants/chatPin";
 import { formatConversationListLastPreview } from "@/utils/conversationListPreview";
 import { sortConversationsForSidebar } from "@/utils/conversationListSort";
-import { NotificationBellButton } from "@/components/notifications/NotificationBellButton";
 import { useDueTaskNotifications } from "@/hooks/useDueTaskNotifications";
 
 type ChatListRow =
@@ -329,7 +328,6 @@ export default function ChatListScreen() {
         >
           <Sparkles size={20} color={primary} strokeWidth={1.9} />
         </Pressable>
-        <NotificationBellButton />
       </View>
 
       <View className="flex-row items-center gap-2 px-4 pb-3">

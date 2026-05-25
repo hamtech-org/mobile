@@ -49,29 +49,30 @@ function parseAcceptedFriends(data: unknown): FriendRow[] {
     const o = data as { friends?: unknown };
     if (Array.isArray(o.friends)) raw = o.friends;
   }
-  return raw
-    .map((item) => {
-      const f = item as {
-        userId?: string;
-        friendId?: string;
-        displayName?: string;
-        avatar?: string | null;
-        contactStatus?: string;
-        status?: string;
-      };
-      const userId = f.userId ?? f.friendId;
-      if (!userId) return null;
-      if (f.contactStatus && f.contactStatus !== "accepted" && f.contactStatus !== "friend") {
-        return null;
-      }
-      return {
-        userId,
-        displayName: f.displayName ?? userId,
-        avatar: f.avatar ?? null,
-      };
-    })
-    .filter((row): row is FriendRow => row !== null)
-    .sort((a, b) => a.displayName.localeCompare(b.displayName, "vi"));
+  return (
+    raw
+      .map((item) => {
+        const f = item as {
+          userId?: string;
+          friendId?: string;
+          displayName?: string;
+          avatar?: string | null;
+          contactStatus?: string;
+          status?: string;
+        };
+        const userId = f.userId ?? f.friendId;
+        if (!userId) return null;
+        if (f.contactStatus && f.contactStatus !== "accepted" && f.contactStatus !== "friend") {
+          return null;
+        }
+        return {
+          userId,
+          displayName: f.displayName ?? userId,
+          avatar: f.avatar ?? null,
+        };
+      })
+      .filter((row) => row !== null) as FriendRow[]
+  ).sort((a, b) => a.displayName.localeCompare(b.displayName, "vi"));
 }
 
 export function ShareGroupJoinLinkPickerModal({

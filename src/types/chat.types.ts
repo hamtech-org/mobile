@@ -93,6 +93,7 @@ export interface IMessage {
   conversationId: string;
   senderId: string;
   senderDisplayName?: string | null;
+  senderAvatar?: string | null;
   position?: "left" | "right" | "center";
   type: MessageType;
   content: string;

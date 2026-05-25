@@ -1,6 +1,7 @@
 import type { IMessage } from "@/types/chat.types";
 import type { AppDispatch } from "@/store/store";
 import { chatApi } from "@/store/api/chatApi";
+import { messageApi } from "@/store/api/endpoints/messageApi";
 import { getSocketClient } from "@/services/socket";
 import { conversationApi } from "@/store/api/endpoints/conversationApi";
 import { clearConversationMessages, setMessageJoinCutoff } from "@/store/slices/chatSlice";
@@ -24,13 +25,13 @@ export function resetConversationMessagesRealtime(
 
   dispatch(clearConversationMessages(cid));
   dispatch(
-    chatApi.util.updateQueryData("getMessages", { conversationId: cid }, (draft) => {
+    messageApi.util.updateQueryData("getMessages", { conversationId: cid }, (draft) => {
       if (!draft) return;
       draft.splice(0, draft.length);
     }),
   );
   void dispatch(
-    chatApi.endpoints.getMessages.initiate(
+    messageApi.endpoints.getMessages.initiate(
       { conversationId: cid },
       { forceRefetch: true, subscribe: true },
     ),
@@ -73,7 +74,7 @@ export function applyKickedFromGroupRealtime(dispatch: AppDispatch, conversation
   dispatch(setMessageJoinCutoff({ conversationId: cid, minCreatedAtMs: null }));
   dispatch(clearConversationMessages(cid));
   dispatch(
-    chatApi.util.updateQueryData("getMessages", { conversationId: cid }, (draft) => {
+    messageApi.util.updateQueryData("getMessages", { conversationId: cid }, (draft) => {
       if (!draft) return;
       draft.splice(0, draft.length);
     }),

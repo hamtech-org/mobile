@@ -64,23 +64,27 @@ export const taskApi = chatApi.injectEndpoints({
         { dispatch, queryFulfilled },
       ) {
         const patchResult = dispatch(
-          chatApi.util.updateQueryData("getTasks", groupId, (draft) => {
-            if (!draft?.data || !Array.isArray(draft.data)) return;
-            const idx = draft.data.findIndex(
-              (row) => String((row as { taskId?: string })?.taskId ?? "") === String(taskId),
-            );
-            if (idx < 0) return;
-            const row = draft.data[idx] as Record<string, unknown>;
-            if (title !== undefined) row.title = title;
-            if (description !== undefined) row.description = description;
-            if (assignees !== undefined) row.assignees = assignees;
-            if (assignToAll !== undefined) {
-              row.assignToAll = assignToAll;
-              row.broadcast = assignToAll;
-            }
-            if (dueDate !== undefined) row.dueDate = dueDate;
-            if (subtasks !== undefined) row.subtasks = subtasks;
-          }),
+          (chatApi.util as any).updateQueryData(
+            "getTasks",
+            groupId,
+            (draft: ApiEnvelope<unknown[]>) => {
+              if (!draft?.data || !Array.isArray(draft.data)) return;
+              const idx = draft.data.findIndex(
+                (row) => String((row as { taskId?: string })?.taskId ?? "") === String(taskId),
+              );
+              if (idx < 0) return;
+              const row = draft.data[idx] as Record<string, unknown>;
+              if (title !== undefined) row.title = title;
+              if (description !== undefined) row.description = description;
+              if (assignees !== undefined) row.assignees = assignees;
+              if (assignToAll !== undefined) {
+                row.assignToAll = assignToAll;
+                row.broadcast = assignToAll;
+              }
+              if (dueDate !== undefined) row.dueDate = dueDate;
+              if (subtasks !== undefined) row.subtasks = subtasks;
+            },
+          ),
         );
         try {
           await queryFulfilled;
