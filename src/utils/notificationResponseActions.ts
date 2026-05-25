@@ -1,13 +1,21 @@
+import * as Notifications from "expo-notifications";
 import { router, type Href } from "expo-router";
+import { Platform } from "react-native";
 
+import { conversationApi } from "@/store/api/endpoints/conversationApi";
 import { messageApi } from "@/store/api/endpoints/messageApi";
+import { userApi } from "@/store/api/userApi";
 import { resetCall, setCallAccepted, setIncomingCall, setReturnTo } from "@/store/slices/callSlice";
 import { store } from "@/store/store";
 import type { CallScope, CallType, IncomingCallData } from "@/types/call.types";
 import type { INotification } from "@/types/notification.types";
 import { getSocketClient, normalizeSocketAuthToken } from "@/services/socket";
+import { toast } from "@/utils/appToast";
+import { clearChatNotificationStack } from "@/utils/chatNotificationStack";
 import { dismissCallSystemNotification } from "@/utils/localSystemNotification";
+import { navigateFromNotification } from "@/utils/notificationNavigation";
 import { NOTIFICATION_ACTION } from "@/utils/notificationRegistry";
+import { buildPatchForMutePayload, describeMuteSuccess } from "@/utils/muteNotifications";
 
 function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -178,6 +186,91 @@ async function handleOpenMessage(data: Record<string, unknown>): Promise<boolean
   return true;
 }
 
+async function dismissNotificationById(data: Record<string, unknown>): Promise<void> {
+  const nid = text(data.notificationId);
+  if (!nid) return;
+  try {
+    await Notifications.dismissNotificationAsync(nid);
+  } catch {
+    /* ignore */
+  }
+  if (Platform.OS === "android") {
+    const { NativeModules } = await import("react-native");
+    const mod = NativeModules.HamtechNotifications as
+      | { dismissNotification?: (id: string) => Promise<boolean> }
+      | undefined;
+    await mod?.dismissNotification?.(nid);
+  }
+}
+
+async function handleMuteOneMinute(data: Record<string, unknown>): Promise<boolean> {
+  const route = text(data.route);
+  const conversationId = text(data.conversationId ?? data.entityId ?? data.id);
+  const notificationId = text(data.notificationId);
+
+  /** Chỉ tin nhắn 1:1 / nhóm — không áp dụng social. */
+  if (route !== "chat" || !conversationId) return false;
+
+  try {
+    await store
+      .dispatch(
+        conversationApi.endpoints.patchConversationPreferences.initiate(
+          buildPatchForMutePayload(conversationId, { kind: "muteFor", muteFor: "1m" }),
+        ),
+      )
+      .unwrap();
+    clearChatNotificationStack(conversationId);
+    toast.info(describeMuteSuccess({ kind: "muteFor", muteFor: "1m" }));
+  } catch {
+    toast.info("Không tắt được thông báo hội thoại");
+    return false;
+  }
+
+  if (notificationId) {
+    await dismissNotificationById({ notificationId });
+  } else {
+    await dismissNotificationById({ notificationId: `chat-${conversationId}` });
+  }
+  return true;
+}
+
+async function handleAcceptFriend(data: Record<string, unknown>): Promise<boolean> {
+  const senderId = text(data.actorId ?? data.senderId ?? data.id);
+  if (!senderId) return false;
+  try {
+    await store.dispatch(userApi.endpoints.acceptFriendRequest.initiate({ senderId })).unwrap();
+    toast.success("Đã chấp nhận lời mời kết bạn");
+    await dismissNotificationById(data);
+    return true;
+  } catch {
+    toast.info("Không chấp nhận được lời mời");
+    return false;
+  }
+}
+
+async function handleDeclineFriend(data: Record<string, unknown>): Promise<boolean> {
+  const senderId = text(data.actorId ?? data.senderId ?? data.id);
+  if (!senderId) return false;
+  try {
+    await store.dispatch(userApi.endpoints.rejectFriendRequest.initiate({ senderId })).unwrap();
+    toast.info("Đã từ chối lời mời kết bạn");
+    await dismissNotificationById(data);
+    return true;
+  } catch {
+    toast.info("Không từ chối được lời mời");
+    return false;
+  }
+}
+
+async function handleViewNotification(data: Record<string, unknown>): Promise<boolean> {
+  const route = text(data.route);
+  const id = text(data.id);
+  if (!route) return false;
+  navigateFromNotification({ route, id, ...data } as INotification["data"]);
+  await dismissNotificationById(data);
+  return true;
+}
+
 export async function handleNotificationResponseAction(response: unknown): Promise<boolean> {
   const action = actionId(response);
   if (!action) return false;
@@ -197,6 +290,18 @@ export async function handleNotificationResponseAction(response: unknown): Promi
   }
   if (action === NOTIFICATION_ACTION.MESSAGE) {
     return handleOpenMessage(data);
+  }
+  if (action === NOTIFICATION_ACTION.MUTE_1M) {
+    return handleMuteOneMinute(data);
+  }
+  if (action === NOTIFICATION_ACTION.ACCEPT) {
+    return handleAcceptFriend(data);
+  }
+  if (action === NOTIFICATION_ACTION.FRIEND_DECLINE) {
+    return handleDeclineFriend(data);
+  }
+  if (action === NOTIFICATION_ACTION.VIEW) {
+    return handleViewNotification(data);
   }
 
   return false;

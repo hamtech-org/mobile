@@ -1,5 +1,4 @@
 import { useEffect, useRef } from "react";
-import { AppState } from "react-native";
 import type { Socket } from "socket.io-client";
 
 import { env } from "@/config/env";
@@ -30,8 +29,11 @@ import { store, type AppDispatch } from "@/store/store";
 import type { ChatFrameBannerVariant } from "@/store/slices/chatSlice";
 import type { IConversation, IMessage } from "@/types/chat.types";
 import { toast } from "@/utils/appToast";
-import { presentChatMessageNotification } from "@/utils/notificationPresenters";
-import { showLocalSystemNotification } from "@/utils/localSystemNotification";
+import { isSocketLocalNotificationEnabled } from "@/utils/localSystemNotification";
+import {
+  presentChatMessageNotification,
+  presentGroupActivityNotification,
+} from "@/utils/notificationPresenters";
 import { resolveChatSenderAvatarUrl } from "@/utils/notificationAvatar";
 import { formatChatPreviewLine, getMessageTypeLabel } from "@/utils/messageDisplay";
 import { sortConversationsForSidebar } from "@/utils/conversationListSort";
@@ -266,10 +268,11 @@ export function useChatRealtimeEvents({
     const showGroupSystemNotification = (
       dedupeKey: string,
       conversationId: string,
-      title: string,
+      _title: string,
       body: string,
       opts?: { channel?: "messages" | "social" | "default"; forceInActiveChat?: boolean },
     ) => {
+      if (!isSocketLocalNotificationEnabled()) return;
       const gid = conversationId.trim();
       if (!gid) return;
       if (!opts?.forceInActiveChat && gid === activeConvRef.current) return;
@@ -283,16 +286,17 @@ export function useChatRealtimeEvents({
           if (now - ts > 60_000) systemDedupe.delete(k);
         }
       }
-      void showLocalSystemNotification({
-        title,
-        body,
-        channel: opts?.channel ?? "social",
-        data: {
-          route: "chat",
-          id: gid,
-          entityType: "chat",
-          entityId: gid,
-        },
+      const convList = conversationApi.endpoints.getConversations.select(undefined)(
+        store.getState(),
+      )?.data as IConversation[] | undefined;
+      const conv = convList?.find((c) => c.conversationId === gid);
+      const rawGroupName = conv?.name?.trim() || "Nhóm chat";
+      const groupName = rawGroupName.startsWith("Nhóm:") ? rawGroupName : `Nhóm: ${rawGroupName}`;
+      presentGroupActivityNotification(gid, body, {
+        groupName,
+        eventKey: dedupeKey,
+        channel: opts?.channel ?? "messages",
+        avatarUrl: conv?.avatar?.trim() || `${env.apiBaseUrl}/chat/conversations/${gid}/avatar`,
       });
     };
 
@@ -442,9 +446,6 @@ export function useChatRealtimeEvents({
             messageId: messageId || undefined,
           };
 
-          // App mở: thông báo local từ socket. App nền: chỉ Expo push (tránh đúp).
-          if (AppState.currentState !== "active") return;
-
           const senderAvatarUrl = resolveChatSenderAvatarUrl(conv, msg.senderId, msg.senderAvatar);
           const avatarUrl = isGroup
             ? conv?.avatar?.trim() ||
@@ -452,25 +453,16 @@ export function useChatRealtimeEvents({
             : senderAvatarUrl;
           const viewerName = store.getState().auth.user?.displayName ?? "";
           if (isGroup && messageMentionsViewer(msg, viewerName)) {
-            void showLocalSystemNotification({
-              title: groupName ?? "Nhóm chat",
-              body: `${sender} đã nhắc đến bạn: ${preview}`,
-              channel: "messages",
-              avatarUrl,
-              data: {
-                route: "chat",
-                id: msg.conversationId,
-                entityType: "chat",
-                entityId: msg.conversationId,
-                messageId: messageId || undefined,
-                actorId: msg.senderId,
-                actorName: sender,
-                actorAvatar: senderAvatarUrl,
-                senderAvatar: senderAvatarUrl,
-                conversationType: "group",
-                conversationName: groupName ?? null,
+            presentChatMessageNotification(
+              sender,
+              `đã nhắc đến bạn: ${preview}`,
+              msg.conversationId,
+              {
+                ...notifyOpts,
+                avatarUrl,
+                senderAvatarUrl,
               },
-            });
+            );
           } else {
             presentChatMessageNotification(sender, preview, msg.conversationId, {
               ...notifyOpts,
@@ -1061,12 +1053,6 @@ export function useChatRealtimeEvents({
 
     const handleGroupRequestRejected = () => {
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
-      void showLocalSystemNotification({
-        title: "Cập nhật nhóm",
-        body: "Yêu cầu tham gia nhóm đã bị từ chối",
-        channel: "social",
-        data: { route: "notifications", id: "group-request-rejected" },
-      });
       toast.info("Yêu cầu tham gia nhóm đã bị từ chối", 5000);
     };
 

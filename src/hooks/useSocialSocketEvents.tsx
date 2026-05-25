@@ -12,9 +12,11 @@ import { chatApi } from "@/store/api/baseChatApi";
 import { notificationApi } from "@/store/api/notificationApi";
 import { userApi } from "@/store/api/userApi";
 import type { INotification } from "@/types/notification.types";
-import { toast } from "@/utils/appToast";
+import { isSocketLocalNotificationEnabled } from "@/utils/localSystemNotification";
 import { showLocalSystemNotification } from "@/utils/localSystemNotification";
 import { getNotificationPresentation } from "@/utils/notificationPresentation";
+import { categoryForNotificationKind } from "@/utils/notificationCategoryActions";
+import { getNotificationSpec, inboxTypeToNotificationKind } from "@/utils/notificationRegistry";
 
 export { navigateFromNotification, openNotificationFromItem } from "@/utils/notificationNavigation";
 
@@ -50,20 +52,26 @@ export function useSocialSocketEvents(): ReactNode {
     const onNotificationNew = (payload: { notification?: INotification; unreadCount?: number }) => {
       if (payload.notification) {
         dispatch(addInboxNotification(payload.notification));
-
-        // Show in-app Toast
-        toast.info(`${payload.notification.title}: ${payload.notification.body}`, 5000);
-
-        // Show System Local Push Notification
-        const presentation = getNotificationPresentation(payload.notification);
-        showLocalSystemNotification({
-          title: presentation.title,
-          body: presentation.body,
-          channel: payload.notification.data.route === "chat" ? "messages" : "social",
-          notificationId: `social-${payload.notification.notificationId || Date.now()}`,
-          avatarUrl: presentation.avatar,
-          data: payload.notification.data,
-        });
+        if (isSocketLocalNotificationEnabled()) {
+          const presentation = getNotificationPresentation(payload.notification);
+          const kind = inboxTypeToNotificationKind(
+            payload.notification.type,
+            payload.notification.data?.route,
+          );
+          const spec = getNotificationSpec(kind);
+          showLocalSystemNotification({
+            title: presentation.title,
+            body: presentation.body,
+            channel: spec.channel,
+            categoryIdentifier: categoryForNotificationKind(kind),
+            notificationId: `social-${payload.notification.notificationId || Date.now()}`,
+            avatarUrl: presentation.avatar,
+            data: {
+              ...payload.notification.data,
+              notificationKind: kind,
+            },
+          });
+        }
       }
       if (typeof payload.unreadCount === "number") {
         dispatch(setInboxUnreadCount(payload.unreadCount));
@@ -82,50 +90,29 @@ export function useSocialSocketEvents(): ReactNode {
       senderName?: string;
       senderAvatar?: string | null;
     }) => {
-      const name = data.senderName?.trim() || "Ai đó";
-
-      // Show in-app Toast
-      toast.info(`${name} đã gửi lời mời kết bạn`);
-
-      // Show System Local Push Notification
-      showLocalSystemNotification({
-        title: name,
-        body: "đã gửi lời mời kết bạn",
-        channel: "social",
-        notificationId: `social-friend-req-${data.senderId || Date.now()}`,
-        avatarUrl: data.senderAvatar,
-        data: {
-          route: "friends",
-          id: String(data.senderId ?? ""),
-          actorId: data.senderId,
-          actorName: name,
-          actorAvatar: data.senderAvatar ?? null,
-        },
-      });
-
+      if (isSocketLocalNotificationEnabled()) {
+        const name = data.senderName?.trim() || "Ai đó";
+        const kind = "friend_request" as const;
+        showLocalSystemNotification({
+          title: name,
+          body: "đã gửi lời mời kết bạn",
+          channel: getNotificationSpec(kind).channel,
+          categoryIdentifier: categoryForNotificationKind(kind),
+          notificationId: `social-friend-req-${data.senderId || Date.now()}`,
+          avatarUrl: data.senderAvatar,
+          data: {
+            route: "friends",
+            id: String(data.senderId ?? ""),
+            actorId: data.senderId,
+            actorName: name,
+            notificationKind: kind,
+          },
+        });
+      }
       invalidateFriendsAndConversations();
     };
 
-    const onFriendAccepted = (data?: {
-      senderId?: string;
-      senderName?: string;
-      senderAvatar?: string | null;
-    }) => {
-      const name = data?.senderName?.trim() || "Bạn bè";
-
-      // Show in-app Toast
-      toast.success("Lời mời kết bạn đã được chấp nhận");
-
-      // Show System Local Push Notification
-      showLocalSystemNotification({
-        title: "Kết bạn",
-        body: `${name} đã chấp nhận lời mời kết bạn`,
-        channel: "social",
-        notificationId: `social-friend-acc-${Date.now()}`,
-        avatarUrl: data?.senderAvatar,
-        data: { route: "friends", id: "" },
-      });
-
+    const onFriendAccepted = () => {
       invalidateFriendsAndConversations();
     };
 
@@ -138,33 +125,32 @@ export function useSocialSocketEvents(): ReactNode {
     };
 
     const onReelNew = () => {
-      // Show in-app Toast
-      toast.info("Có reel mới từ người bạn theo dõi", 4000);
-
-      // Show System Local Push Notification
-      showLocalSystemNotification({
-        title: "HamTech",
-        body: "Có reel mới từ người bạn theo dõi",
-        channel: "social",
-        notificationId: `social-reel-${Date.now()}`,
-        data: { route: "reel", id: "" },
-      });
+      if (isSocketLocalNotificationEnabled()) {
+        const kind = "reel_new" as const;
+        showLocalSystemNotification({
+          title: "HamTech",
+          body: "Có reel mới từ người bạn theo dõi",
+          channel: getNotificationSpec(kind).channel,
+          categoryIdentifier: categoryForNotificationKind(kind),
+          notificationId: `social-reel-${Date.now()}`,
+          data: { route: "reel", id: "", notificationKind: kind },
+        });
+      }
     };
 
     const onLiveStarted = (data: { title?: string }) => {
-      const title = data.title?.trim() || "Bạn bè đang phát live";
-
-      // Show in-app Toast
-      toast.info(`Live: ${title}`, 4000);
-
-      // Show System Local Push Notification
-      showLocalSystemNotification({
-        title: "Live",
-        body: title,
-        channel: "social",
-        notificationId: `social-live-${Date.now()}`,
-        data: { route: "live", id: "" },
-      });
+      if (isSocketLocalNotificationEnabled()) {
+        const title = data.title?.trim() || "Bạn bè đang phát live";
+        const kind = "live_started" as const;
+        showLocalSystemNotification({
+          title: "Live",
+          body: title,
+          channel: getNotificationSpec(kind).channel,
+          categoryIdentifier: categoryForNotificationKind(kind),
+          notificationId: `social-live-${Date.now()}`,
+          data: { route: "live", id: "", notificationKind: kind },
+        });
+      }
     };
 
     const onNewDeviceLogin = (data: { ipAddress?: string }) => {
@@ -180,10 +166,8 @@ export function useSocialSocketEvents(): ReactNode {
     socket.on("friendRequest:accepted", onFriendAccepted);
     socket.on("friendRequest:rejected", invalidateFriends);
     socket.on("friendRequest:sent", invalidateFriends);
-    socket.on("friend:added", invalidateFriendsAndConversations);
-    socket.on("friend:removed", invalidateFriends);
     socket.on("friend:statusChanged", onFriendStatusChanged);
-    socket.on("newsfeed:reel_new", onReelNew);
+    socket.on("reel:new", onReelNew);
     socket.on("live:started", onLiveStarted);
     socket.on("auth:new_device_login", onNewDeviceLogin);
 
@@ -194,10 +178,8 @@ export function useSocialSocketEvents(): ReactNode {
       socket.off("friendRequest:accepted", onFriendAccepted);
       socket.off("friendRequest:rejected", invalidateFriends);
       socket.off("friendRequest:sent", invalidateFriends);
-      socket.off("friend:added", invalidateFriendsAndConversations);
-      socket.off("friend:removed", invalidateFriends);
       socket.off("friend:statusChanged", onFriendStatusChanged);
-      socket.off("newsfeed:reel_new", onReelNew);
+      socket.off("reel:new", onReelNew);
       socket.off("live:started", onLiveStarted);
       socket.off("auth:new_device_login", onNewDeviceLogin);
     };
@@ -210,42 +192,38 @@ export function useSocialSocketEvents(): ReactNode {
       animationType="fade"
       onRequestClose={closeNewDeviceModal}
     >
-      <View className="flex-1 justify-center bg-black/50 px-5">
-        <View className="rounded-2xl border border-border bg-card p-5">
-          <View className="flex-row items-start gap-4">
-            <View className="size-12 items-center justify-center rounded-full bg-primary/10">
-              <Ionicons name="phone-portrait-outline" size={24} color="hsl(var(--primary) / 1)" />
-            </View>
-            <View className="min-w-0 flex-1">
-              <Text className="text-lg font-bold text-foreground">Đăng nhập thiết bị mới</Text>
-              <Text className="mt-2 text-sm leading-5 text-muted-foreground">
-                {newDeviceIp
-                  ? `Phát hiện đăng nhập từ IP ${newDeviceIp}.`
-                  : "Phát hiện đăng nhập từ thiết bị khác."}
-              </Text>
-              <Text className="mt-2 text-xs leading-5 text-muted-foreground">
-                Bạn có thể kiểm tra danh sách thiết bị đăng nhập trong tab Tôi.
-              </Text>
-            </View>
+      <Pressable
+        className="flex-1 items-center justify-center bg-black/50 px-6"
+        onPress={closeNewDeviceModal}
+      >
+        <Pressable
+          className="w-full max-w-sm rounded-2xl bg-background p-5"
+          onPress={(e) => e.stopPropagation()}
+        >
+          <View className="mb-3 flex-row items-center gap-2">
+            <Ionicons name="shield-checkmark-outline" size={22} color="#0068FF" />
+            <Text className="text-lg font-semibold text-foreground">Đăng nhập thiết bị mới</Text>
           </View>
-
-          <View className="mt-5 flex-row gap-3">
+          <Text className="text-sm leading-5 text-muted-foreground">
+            Tài khoản vừa đăng nhập từ thiết bị hoặc trình duyệt khác
+            {newDeviceIp ? ` (IP: ${newDeviceIp})` : ""}.
+          </Text>
+          <View className="mt-4 flex-row gap-2">
             <Pressable
-              onPress={closeNewDeviceModal}
               className="flex-1 items-center rounded-xl bg-muted px-4 py-3 active:opacity-80"
+              onPress={closeNewDeviceModal}
             >
-              <Text className="font-semibold text-foreground">Đã hiểu</Text>
+              <Text className="font-medium text-foreground">Đóng</Text>
             </Pressable>
             <Pressable
+              className="flex-1 items-center rounded-xl bg-primary px-4 py-3 active:opacity-80"
               onPress={openProfileTab}
-              className="flex-1 flex-row items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 active:opacity-80"
             >
-              <Ionicons name="person-outline" size={17} color="#fff" />
-              <Text className="font-semibold text-primary-foreground">Quản lý thiết bị</Text>
+              <Text className="font-medium text-primary-foreground">Xem bảo mật</Text>
             </Pressable>
           </View>
-        </View>
-      </View>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }

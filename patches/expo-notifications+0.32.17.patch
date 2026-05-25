@@ -246,7 +246,7 @@ index 610d303..2a0b531 100644
  import expo.modules.notifications.notifications.SoundResolver
  import expo.modules.notifications.notifications.enums.NotificationPriority
  import expo.modules.notifications.notifications.interfaces.INotificationContent
-@@ -100,17 +102,68 @@ open class ExpoNotificationBuilder(
+@@ -100,17 +102,85 @@ open class ExpoNotificationBuilder(
      builder.setAutoCancel(content.isAutoDismiss)
      builder.setOngoing(content.isSticky)
  
@@ -287,10 +287,37 @@ index 610d303..2a0b531 100644
 +      if (!conversationTitle.isNullOrBlank()) {
 +        messagingStyle.setConversationTitle(conversationTitle)
 +      }
-+      messagingStyle.addMessage(content.text ?: "", System.currentTimeMillis(), person)
++      val stackLines = parseMessagingLinesFromBody(content).take(3)
++      val stackFooter = content.body?.optString("stackFooter", "")?.trim()?.takeIf { it.isNotEmpty() }
++      if (stackLines.isEmpty()) {
++        messagingStyle.addMessage(content.text ?: "", System.currentTimeMillis(), person)
++      } else {
++        for (line in stackLines) {
++          val linePerson =
++            if (!line.senderName.isNullOrBlank()) {
++              Person.Builder().setName(line.senderName).build()
++            } else {
++              person
++            }
++          messagingStyle.addMessage(line.text, line.timestamp, linePerson)
++        }
++        if (!stackFooter.isNullOrBlank()) {
++          messagingStyle.addMessage(stackFooter, System.currentTimeMillis(), person)
++        }
++      }
++      val messageCount = content.body?.optInt("messageCount", stackLines.size) ?: stackLines.size
++      if (messageCount > 1) {
++        builder.setNumber(messageCount)
++      }
 +      builder.setStyle(messagingStyle)
 +      builder.setContentTitle(senderName)
-+      builder.setContentText(content.text)
++      builder.setContentText(
++        when {
++          !stackFooter.isNullOrBlank() -> stackFooter
++          messageCount > 1 -> "$messageCount tin nhắn mới"
++          else -> content.text
++        }
++      )
 +      if (!conversationTitle.isNullOrBlank()) {
 +        builder.setSubText(conversationTitle)
 +      }
@@ -342,3 +369,20 @@ index 610d303..2a0b531 100644
      }
      return builder.build()
    }
++
++  private data class MessagingLine(val text: String, val timestamp: Long, val senderName: String?)
++
++  private fun parseMessagingLinesFromBody(content: INotificationContent): List<MessagingLine> {
++    val body = content.body ?: return emptyList()
++    val raw = body.optJSONArray("messagingLines") ?: return emptyList()
++    val lines = mutableListOf<MessagingLine>()
++    for (i in 0 until raw.length()) {
++      val row = raw.optJSONObject(i) ?: continue
++      val text = row.optString("text", "").trim()
++      if (text.isEmpty()) continue
++      val timestamp = row.optLong("timestamp", System.currentTimeMillis())
++      val senderName = row.optString("senderName", "").trim().takeIf { it.isNotEmpty() }
++      lines.add(MessagingLine(text, timestamp, senderName))
++    }
++    return lines
++  }

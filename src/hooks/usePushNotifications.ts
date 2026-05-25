@@ -1,5 +1,6 @@
+import * as Notifications from "expo-notifications";
 import { useEffect, useRef } from "react";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import { router } from "expo-router";
 
 import { useAppSelector } from "@/hooks/useAppStore";
@@ -13,9 +14,13 @@ import {
   notificationRouteDataFromResponse,
 } from "@/utils/notificationResponseActions";
 import {
+  clearPushTokenRegistered,
   ensureNotificationCategories,
   ensureSystemNotificationChannels,
+  markPushTokenRegistered,
 } from "@/utils/localSystemNotification";
+import { ensureExpoNotificationHandlerInstalled } from "@/utils/notificationExpoHandler";
+import { requestNotificationPermissionAsync } from "@/utils/notificationPermission";
 import { isRemotePushSupported } from "@/utils/pushNotificationsSupport";
 
 console.log("[PushToken] usePushNotifications.ts module loaded globally!");
@@ -24,26 +29,11 @@ async function registerForPushNotificationsAsync(): Promise<string | null> {
   console.log("[PushToken] registerForPushNotificationsAsync invoked");
   if (Platform.OS === "web" || !isRemotePushSupported()) return null;
 
-  const Notifications = await import("expo-notifications");
+  ensureExpoNotificationHandlerInstalled();
 
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge: true,
-      shouldShowBanner: true,
-      shouldShowList: true,
-    }),
-  });
-
-  const { status: existing } = await Notifications.getPermissionsAsync();
-  let finalStatus = existing;
-  if (existing !== "granted") {
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
-  }
-  if (finalStatus !== "granted") {
-    console.log("[PushToken] Notification permission not granted");
+  const granted = await requestNotificationPermissionAsync();
+  if (!granted) {
+    console.warn("[PushToken] Notification permission not granted — không thể đăng ký push token.");
     return null;
   }
 
@@ -93,45 +83,62 @@ export function usePushNotifications(): void {
     console.log(
       `[PushToken] Hook effect triggered. isAuthenticated=${isAuthenticated}, isSupported=${isSupported}`,
     );
-    if (!isAuthenticated || !isSupported) {
+    if (!isAuthenticated) {
+      clearPushTokenRegistered();
+      return;
+    }
+    if (!isSupported) {
       console.log(
-        "[PushToken] Registration skipped: not authenticated or remote push not supported.",
+        "[PushToken] Expo Go / môi trường không hỗ trợ push — dùng banner local từ socket.",
       );
+      clearPushTokenRegistered();
       return;
     }
 
     let cancelled = false;
 
-    void (async () => {
-      try {
-        console.log("[PushToken] Requesting device token from Expo...");
-        const token = await registerForPushNotificationsAsync();
-        console.log(`[PushToken] Expo push token retrieved: ${token}`);
-        if (cancelled) {
-          console.log("[PushToken] Registration cancelled due to unmount.");
-          return;
-        }
-        if (!token) {
-          console.log("[PushToken] No token retrieved from Expo.");
-          return;
-        }
-        registeredTokenRef.current = token;
-        const platform =
-          Platform.OS === "ios" ? "ios" : Platform.OS === "android" ? "android" : "web";
+    const register = () => {
+      void (async () => {
         try {
-          console.log(`[PushToken] Sending token to backend for user. Platform: ${platform}`);
-          await registerToken({ token, platform }).unwrap();
-          console.log("[PushToken] Token registered successfully on backend!");
+          console.log("[PushToken] Requesting device token from Expo...");
+          const token = await registerForPushNotificationsAsync();
+          console.log(`[PushToken] Expo push token retrieved: ${token}`);
+          if (cancelled) {
+            console.log("[PushToken] Registration cancelled due to unmount.");
+            return;
+          }
+          if (!token) {
+            console.log("[PushToken] No token retrieved — fallback banner local từ socket.");
+            clearPushTokenRegistered();
+            return;
+          }
+          registeredTokenRef.current = token;
+          const platform =
+            Platform.OS === "ios" ? "ios" : Platform.OS === "android" ? "android" : "web";
+          try {
+            console.log(`[PushToken] Sending token to backend for user. Platform: ${platform}`);
+            await registerToken({ token, platform }).unwrap();
+            markPushTokenRegistered();
+            console.log("[PushToken] Token registered successfully on backend!");
+          } catch (err) {
+            clearPushTokenRegistered();
+            console.error("[PushToken] Backend token registration failed:", err);
+          }
         } catch (err) {
-          console.error("[PushToken] Backend token registration failed:", err);
+          console.error("[PushToken] Error during push notification registration flow:", err);
         }
-      } catch (err) {
-        console.error("[PushToken] Error during push notification registration flow:", err);
-      }
-    })();
+      })();
+    };
+
+    register();
+    const appStateSub = AppState.addEventListener("change", (state) => {
+      if (state === "active") register();
+    });
 
     return () => {
       cancelled = true;
+      appStateSub.remove();
+      clearPushTokenRegistered();
       const token = registeredTokenRef.current;
       if (token) {
         console.log("[PushToken] Cleaning up and removing token from backend...");
@@ -144,42 +151,40 @@ export function usePushNotifications(): void {
   useEffect(() => {
     if (!isRemotePushSupported()) return;
 
-    let subReceived: { remove: () => void } | undefined;
-    let subResponse: { remove: () => void } | undefined;
     let cancelled = false;
+    ensureExpoNotificationHandlerInstalled();
+
+    const subReceived = Notifications.addNotificationReceivedListener((notification) => {
+      if (__DEV__) {
+        const c = notification.request.content;
+        console.log("[PushToken] Push received:", c.title, c.body, c.data);
+      }
+    });
+
+    const subResponse = Notifications.addNotificationResponseReceivedListener((response) => {
+      void (async () => {
+        try {
+          if (await handleNotificationResponseAction(response)) return;
+        } catch {
+          /* fallback to opening route */
+        }
+        const data = notificationRouteDataFromResponse(response);
+        if (data) navigateFromNotification(data);
+        else router.push("/(main)/(notifications)");
+      })();
+    });
 
     void (async () => {
       try {
-        const Notifications = await import("expo-notifications");
-        if (cancelled) return;
-
-        subReceived = Notifications.addNotificationReceivedListener(() => {
-          /* foreground: socket/toast */
-        });
-
-        subResponse = Notifications.addNotificationResponseReceivedListener((response) => {
-          void (async () => {
-            try {
-              if (await handleNotificationResponseAction(response)) return;
-            } catch {
-              /* fallback to opening route */
-            }
-            const data = notificationRouteDataFromResponse(response);
-            if (data) navigateFromNotification(data);
-            else router.push("/(main)/(notifications)");
-          })();
-        });
-
         const response = await Notifications.getLastNotificationResponseAsync();
-        if (response) {
-          try {
-            if (await handleNotificationResponseAction(response)) return;
-          } catch {
-            /* fallback to opening route */
-          }
-          const data = notificationRouteDataFromResponse(response);
-          if (data) navigateFromNotification(data);
+        if (cancelled || !response) return;
+        try {
+          if (await handleNotificationResponseAction(response)) return;
+        } catch {
+          /* fallback to opening route */
         }
+        const data = notificationRouteDataFromResponse(response);
+        if (data) navigateFromNotification(data);
       } catch {
         /* ignore */
       }
@@ -187,8 +192,8 @@ export function usePushNotifications(): void {
 
     return () => {
       cancelled = true;
-      subReceived?.remove();
-      subResponse?.remove();
+      subReceived.remove();
+      subResponse.remove();
     };
   }, []);
 }

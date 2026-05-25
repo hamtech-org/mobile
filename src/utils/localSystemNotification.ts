@@ -1,17 +1,18 @@
-import { AppState, NativeModules, Platform } from "react-native";
+import * as Notifications from "expo-notifications";
+import { NativeModules, Platform } from "react-native";
 
 import type { INotificationRouteData } from "@/types/notification.types";
+import { ensureExpoNotificationHandlerInstalled } from "@/utils/notificationExpoHandler";
 import { pickActorAvatarFromData } from "@/utils/notificationAvatar";
 import {
   buildAvatarNotificationFieldsSync,
   cacheNotificationAvatarForNative,
   readCachedNotificationAvatarBase64,
 } from "@/utils/notificationAvatarCache";
-import {
-  NOTIFICATION_ACTION,
-  shouldSuppressRemotePushInForeground,
-  type SystemNotificationCategory,
-} from "@/utils/notificationRegistry";
+import { subscribeHamtechNotificationActions } from "@/utils/hamtechNotificationActions";
+import { requestNotificationPermissionAsync } from "@/utils/notificationPermission";
+import { isRemotePushSupported } from "@/utils/pushNotificationsSupport";
+import { NOTIFICATION_ACTION, type SystemNotificationCategory } from "@/utils/notificationRegistry";
 import { sanitizeNotificationText } from "@/utils/systemNotificationLayout";
 
 /** Màu accent giống Zalo trên thanh thông báo Android. */
@@ -21,6 +22,30 @@ const CATEGORY_SOCIAL: SystemNotificationCategory = "hamtech_social";
 
 /** Đánh dấu thông báo tạo từ socket — không trùng với Expo push từ server. */
 export const NOTIFICATION_DELIVERY_SOCKET = "socket";
+/** Đánh dấu banner gộp sau khi nhận Expo push (hiển thị 1 banner / hội thoại). */
+export const NOTIFICATION_DELIVERY_PUSH = "push";
+
+/**
+ * Dev build: ưu tiên Expo push từ server, tắt banner socket (tránh trùng).
+ * Expo Go / chưa đăng ký token: tự bật lại banner local.
+ */
+export const PREFER_REMOTE_PUSH_NOTIFICATIONS = true;
+
+let pushTokenRegistered = false;
+
+export function markPushTokenRegistered(): void {
+  pushTokenRegistered = true;
+}
+
+export function clearPushTokenRegistered(): void {
+  pushTokenRegistered = false;
+}
+
+export function isSocketLocalNotificationEnabled(): boolean {
+  if (!isRemotePushSupported()) return true;
+  if (!pushTokenRegistered) return true;
+  return !PREFER_REMOTE_PUSH_NOTIFICATIONS;
+}
 
 const notifiedMessageIds = new Map<string, number>();
 const MESSAGE_NOTIFY_TTL_MS = 60_000;
@@ -40,7 +65,7 @@ export interface LocalSystemNotificationInput {
 
 let channelsReady: Promise<void> | null = null;
 let categoriesReady: Promise<void> | null = null;
-let handlerReady = false;
+let hamtechActionSub: (() => void) | null = null;
 const recentKeys = new Map<string, number>();
 const DEDUPE_MS = 1200;
 
@@ -134,18 +159,7 @@ async function showNativeAvatarNotification(input: {
 
 /** Xin quyền thông báo hệ thống (Android 13+). */
 export async function ensureNotificationPermission(): Promise<boolean> {
-  if (Platform.OS === "web") return false;
-  try {
-    const Notifications = await import("expo-notifications");
-    let { status } = await Notifications.getPermissionsAsync();
-    if (status !== "granted") {
-      const req = await Notifications.requestPermissionsAsync();
-      status = req.status;
-    }
-    return status === "granted";
-  } catch {
-    return false;
-  }
+  return requestNotificationPermissionAsync();
 }
 
 /** Đăng ký category + action (Trả lời) — giống Zalo messaging notification. */
@@ -154,13 +168,17 @@ export async function ensureNotificationCategories(): Promise<void> {
 
   categoriesReady = (async () => {
     try {
-      const Notifications = await import("expo-notifications");
       const messageActions = [
         {
           identifier: NOTIFICATION_ACTION.REPLY,
           buttonTitle: "Trả lời",
           options: { opensAppToForeground: false },
           textInput: { submitButtonTitle: "Gửi", placeholder: "Nhập tin nhắn..." },
+        },
+        {
+          identifier: NOTIFICATION_ACTION.MUTE_1M,
+          buttonTitle: "Tắt 1 phút",
+          options: { opensAppToForeground: false },
         },
       ];
       const callActions = [
@@ -187,6 +205,25 @@ export async function ensureNotificationCategories(): Promise<void> {
           options: { opensAppToForeground: true },
         },
       ];
+      const socialFriendActions = [
+        {
+          identifier: NOTIFICATION_ACTION.FRIEND_DECLINE,
+          buttonTitle: "Từ chối",
+          options: { opensAppToForeground: false },
+        },
+        {
+          identifier: NOTIFICATION_ACTION.ACCEPT,
+          buttonTitle: "Chấp nhận",
+          options: { opensAppToForeground: false },
+        },
+      ];
+      const socialViewActions = [
+        {
+          identifier: NOTIFICATION_ACTION.VIEW,
+          buttonTitle: "Xem",
+          options: { opensAppToForeground: true },
+        },
+      ];
       await Notifications.setNotificationCategoryAsync("hamtech_message", messageActions, {
         previewPlaceholder: "Trả lời",
       });
@@ -197,7 +234,17 @@ export async function ensureNotificationCategories(): Promise<void> {
         missedCallActions,
         {},
       );
-      await Notifications.setNotificationCategoryAsync(CATEGORY_SOCIAL, [], {});
+      await Notifications.setNotificationCategoryAsync(
+        "hamtech_social_friend",
+        socialFriendActions,
+        {},
+      );
+      await Notifications.setNotificationCategoryAsync(
+        "hamtech_social_view",
+        socialViewActions,
+        {},
+      );
+      await Notifications.setNotificationCategoryAsync(CATEGORY_SOCIAL, socialViewActions, {});
     } catch {
       /* ignore */
     }
@@ -210,43 +257,13 @@ export async function ensureNotificationCategories(): Promise<void> {
 export async function initSystemNotifications(): Promise<void> {
   if (Platform.OS === "web") return;
   try {
-    const Notifications = await import("expo-notifications");
-    if (!handlerReady) {
-      handlerReady = true;
-      Notifications.setNotificationHandler({
-        handleNotification: async (notification) => {
-          const data = notification.request.content.data as Record<string, unknown> | undefined;
-          const delivery = String(data?.deliverySource ?? "");
-          const route = String(data?.route ?? "");
-          const kind = String(data?.notificationKind ?? "");
-
-          const isForeground = AppState.currentState === "active";
-          const isSocketLocal = delivery === NOTIFICATION_DELIVERY_SOCKET;
-          const suppressRemote =
-            isForeground &&
-            !isSocketLocal &&
-            (shouldSuppressRemotePushInForeground(kind) || (route === "chat" && !kind));
-
-          if (suppressRemote) {
-            return {
-              shouldPlaySound: false,
-              shouldSetBadge: false,
-              shouldShowBanner: false,
-              shouldShowList: false,
-            };
-          }
-
-          return {
-            shouldPlaySound: true,
-            shouldSetBadge: true,
-            shouldShowBanner: true,
-            shouldShowList: true,
-          };
-        },
-      });
-    }
+    ensureExpoNotificationHandlerInstalled();
+    await requestNotificationPermissionAsync();
     await ensureSystemNotificationChannels();
     await ensureNotificationCategories();
+    if (isSocketLocalNotificationEnabled() && !hamtechActionSub) {
+      hamtechActionSub = subscribeHamtechNotificationActions();
+    }
   } catch {
     /* ignore */
   }
@@ -258,7 +275,6 @@ export async function ensureSystemNotificationChannels(): Promise<void> {
   if (channelsReady) return channelsReady;
 
   channelsReady = (async () => {
-    const Notifications = await import("expo-notifications");
     await Notifications.setNotificationChannelAsync("messages", {
       name: "Tin nhắn",
       description: "Tin nhắn 1-1 và nhóm",
@@ -304,8 +320,12 @@ export async function ensureSystemNotificationChannels(): Promise<void> {
  */
 export async function showLocalSystemNotification(
   input: LocalSystemNotificationInput,
+  options?: { fromRemotePush?: boolean },
 ): Promise<void> {
   if (Platform.OS === "web") return;
+  if (!options?.fromRemotePush && !isSocketLocalNotificationEnabled()) return;
+
+  const channel: SystemNotificationChannel = input.channel ?? "default";
 
   const messageId = String(input.data?.messageId ?? input.notificationId ?? "").replace(
     /^msg-/,
@@ -317,7 +337,6 @@ export async function showLocalSystemNotification(
   if (isDuplicate(dedupeKey)) return;
 
   try {
-    const channel: SystemNotificationChannel = input.channel ?? "default";
     const channelId =
       channel === "messages"
         ? "messages"
@@ -337,6 +356,9 @@ export async function showLocalSystemNotification(
     const categoryIdentifier = categoryForChannel(channel, input.categoryIdentifier);
     if (categoryIdentifier) {
       notificationData.categoryIdentifier = categoryIdentifier;
+    }
+    if (input.notificationId) {
+      notificationData.notificationId = input.notificationId;
     }
     const subtitle = input.subtitle?.trim() || undefined;
     const avatarSource = input.avatarUrl ?? pickActorAvatarFromData(notificationData);
@@ -365,11 +387,12 @@ export async function showLocalSystemNotification(
 
     const granted = await ensureNotificationPermission();
     if (!granted) {
-      console.log("[LocalNotif] Notification permission not granted.");
+      console.warn(
+        "[LocalNotif] Notification permission not granted — bật trong Cài đặt > Ứng dụng > HamTech > Thông báo.",
+      );
       return;
     }
 
-    const Notifications = await import("expo-notifications");
     await ensureSystemNotificationChannels();
     await ensureNotificationCategories();
 
@@ -383,15 +406,38 @@ export async function showLocalSystemNotification(
     });
     if (displayedByNative) return;
 
+    const messageCount =
+      typeof notificationData.messageCount === "number" && notificationData.messageCount > 1
+        ? notificationData.messageCount
+        : undefined;
+    const messagingLines = notificationData.messagingLines;
+    const stackFooter =
+      typeof notificationData.stackFooter === "string" ? notificationData.stackFooter.trim() : "";
+    const stackedBody =
+      Array.isArray(messagingLines) && messagingLines.length > 0
+        ? [
+            ...messagingLines.map((line) => {
+              const row = line as { senderName?: string; text?: string };
+              const t = String(row.text ?? "").trim();
+              const s = String(row.senderName ?? "").trim();
+              return s && !t.startsWith(`${s}:`) ? `${s}: ${t}` : t;
+            }),
+            ...(stackFooter ? [stackFooter] : []),
+          ]
+            .filter(Boolean)
+            .join("\n")
+        : null;
+
     await Notifications.scheduleNotificationAsync({
       identifier: input.notificationId,
       content: {
         title,
-        body: body || title,
+        body: stackedBody || body || title,
         ...(subtitle ? { subtitle } : {}),
         categoryIdentifier,
         data: notificationData,
         sound: "default",
+        ...(messageCount ? { badge: messageCount } : {}),
         ...(Platform.OS === "android"
           ? {
               channelId,
@@ -418,7 +464,6 @@ export async function dismissCallSystemNotification(channelName: string): Promis
   if (Platform.OS === "web") return;
   try {
     await hamtechNotifications?.dismissNotification?.(`call-${channelName}`);
-    const Notifications = await import("expo-notifications");
     await Notifications.dismissNotificationAsync(`call-${channelName}`);
   } catch {
     /* ignore */

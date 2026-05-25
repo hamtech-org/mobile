@@ -8,7 +8,9 @@ export type SystemNotificationCategory =
   | "hamtech_call_direct"
   | "hamtech_call_group"
   | "hamtech_call_missed"
-  | "hamtech_social";
+  | "hamtech_social"
+  | "hamtech_social_friend"
+  | "hamtech_social_view";
 
 export type NotificationKind =
   | "chat_message"
@@ -28,6 +30,14 @@ export const NOTIFICATION_ACTION = {
   DECLINE: "decline",
   CALLBACK: "callback",
   MESSAGE: "message",
+  /** Tắt thông báo hội thoại / social trong 1 phút */
+  MUTE_1M: "mute_1m",
+  /** Mở nội dung (bài, reel, live, hộp thông báo) */
+  VIEW: "view",
+  /** Chấp nhận lời mời kết bạn */
+  ACCEPT: "accept",
+  /** Từ chối lời mời kết bạn */
+  FRIEND_DECLINE: "friend_decline",
 } as const;
 
 export type NotificationActionId = (typeof NOTIFICATION_ACTION)[keyof typeof NOTIFICATION_ACTION];
@@ -92,45 +102,45 @@ const SPECS: Record<NotificationKind, NotificationKindSpec> = {
     kind: "inbox_social",
     label: "Hộp thông báo - xã hội",
     channel: "social",
-    categoryId: "hamtech_social",
+    categoryId: "hamtech_social_view",
     interaction: "view",
-    behaviorHint: "Chạm mở bài/reel/live/hồ sơ",
+    behaviorHint: "Xem",
     suppressRemoteWhenForeground: true,
   },
   friend_request: {
     kind: "friend_request",
     label: "Lời mời kết bạn",
     channel: "social",
-    categoryId: "hamtech_social",
-    interaction: "view",
-    behaviorHint: "Chạm mở Danh bạ",
+    categoryId: "hamtech_social_friend",
+    interaction: "reply",
+    behaviorHint: "Chấp nhận / Từ chối",
     suppressRemoteWhenForeground: true,
   },
   friend_accepted: {
     kind: "friend_accepted",
     label: "Chấp nhận kết bạn",
     channel: "social",
-    categoryId: "hamtech_social",
+    categoryId: "hamtech_social_view",
     interaction: "view",
-    behaviorHint: "Chạm mở Danh bạ",
+    behaviorHint: "Xem",
     suppressRemoteWhenForeground: true,
   },
   reel_new: {
     kind: "reel_new",
     label: "Reel mới",
     channel: "social",
-    categoryId: "hamtech_social",
+    categoryId: "hamtech_social_view",
     interaction: "view",
-    behaviorHint: "Chạm mở tab Reels",
+    behaviorHint: "Xem",
     suppressRemoteWhenForeground: true,
   },
   live_started: {
     kind: "live_started",
     label: "Livestream",
     channel: "social",
-    categoryId: "hamtech_social",
+    categoryId: "hamtech_social_view",
     interaction: "view",
-    behaviorHint: "Chạm mở Live",
+    behaviorHint: "Xem",
     suppressRemoteWhenForeground: true,
   },
 };

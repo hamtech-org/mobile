@@ -36,7 +36,7 @@ import {
   dismissCallSystemNotification,
   showIncomingCallSystemNotification,
 } from "@/utils/notificationPresenters";
-import { showLocalSystemNotification } from "@/utils/localSystemNotification";
+import { isSocketLocalNotificationEnabled } from "@/utils/localSystemNotification";
 
 import { useSocketContext } from "./SocketContext";
 import { CallContext, type CallContextValue } from "./callContext.shared";
@@ -121,7 +121,9 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
       const payload = data as IncomingCallData;
       dispatch(setReturnTo(pathname));
       dispatch(setIncomingCall(payload));
-      showIncomingCallSystemNotification(payload);
+      if (isSocketLocalNotificationEnabled()) {
+        showIncomingCallSystemNotification(payload);
+      }
     };
 
     const onAccepted = () => {
@@ -135,20 +137,6 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
       const st = store.getState().call;
       if (ch) void dismissCallSystemNotification(ch);
       void playCuocGoiNhoTone();
-      if (st.conversationId) {
-        void showLocalSystemNotification({
-          title: "Cuộc gọi bị từ chối",
-          body: "Người nhận đã từ chối cuộc gọi",
-          channel: "calls",
-          data: {
-            route: "chat",
-            id: st.conversationId,
-            entityType: "chat",
-            entityId: st.conversationId,
-            callStatus: "rejected",
-          },
-        });
-      }
       dispatch(setEndReason("rejected"));
       dispatch(setCallEnded());
     };
@@ -158,20 +146,6 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
       if (st.channelName) void dismissCallSystemNotification(st.channelName);
       if (st.status === "incoming-ringing") {
         dispatch(setEndReason("missed"));
-        if (st.conversationId) {
-          void showLocalSystemNotification({
-            title: "Cuộc gọi nhỡ",
-            body: `${st.callerName ?? "Ai đó"} đã gọi cho bạn`,
-            channel: "calls",
-            data: {
-              route: "chat",
-              id: st.conversationId,
-              entityType: "chat",
-              entityId: st.conversationId,
-              callStatus: "missed",
-            },
-          });
-        }
       }
       dispatch(setCallEnded());
     };
