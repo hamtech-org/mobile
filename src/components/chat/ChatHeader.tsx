@@ -99,6 +99,8 @@ export const ChatHeader = ({
           size="md"
           showOnlineDot={!isGroup && isOnline}
           isGroup={isGroup}
+          groupConversationId={isGroup ? conversation.conversationId : undefined}
+          cacheVersion={isGroup ? conversation.updatedAt : undefined}
         />
         <View className="min-w-0 flex-1">
           <View className="flex-row items-center gap-1">

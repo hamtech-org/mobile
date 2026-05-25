@@ -113,6 +113,10 @@ export const ConversationItem = ({
         size="lg"
         showOnlineDot={conversation.type !== "group" && isOnline}
         isGroup={conversation.type === "group"}
+        groupConversationId={
+          conversation.type === "group" ? conversation.conversationId : undefined
+        }
+        cacheVersion={conversation.type === "group" ? conversation.updatedAt : undefined}
       />
 
       <View className="min-h-[44px] flex-1 justify-between gap-0.5">

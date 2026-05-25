@@ -120,6 +120,17 @@ export function bulletinPinnedPreviewLine(msg: IMessage, viewerUserId: string): 
   const pollQ = pollQuestionFromPinnedMessage(msg);
   if (pollQ) return pollQ;
   const raw = String(msg.content ?? "").trim();
+  if (msg.type === "system") {
+    const line = formatSystemLastMessagePreview(
+      raw,
+      msg.senderId,
+      viewerUserId,
+      msg.senderDisplayName,
+    );
+    if (line) return line;
+    const plain = formatChatPreviewLine(msg, viewerUserId);
+    return plain || "Thông báo nhóm";
+  }
   if (raw.startsWith("{")) {
     const line = formatSystemLastMessagePreview(
       raw,

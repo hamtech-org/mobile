@@ -1,5 +1,7 @@
-import { Image, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import { Image, StyleSheet, Text, View } from "react-native";
 
+import { resolveGroupAvatarDisplayUrl } from "@/utils/groupAvatarUrl";
 import { normalizeMediaUrl } from "@/utils/url";
 
 // Kích thước avatar — map sang NativeWind size classes
@@ -15,6 +17,10 @@ interface AvatarProps {
   showOnlineDot?: boolean;
   /** Chế độ group: hiển thị chữ G thay vì ký tự đầu */
   isGroup?: boolean;
+  /** Mốc đổi ảnh (vd. `conversation.updatedAt`) — bust cache avatar nhóm. */
+  cacheVersion?: string | null;
+  /** Bắt buộc khi `isGroup` — resolve URL media theo thiết bị hiện tại. */
+  groupConversationId?: string | null;
 }
 
 const SIZE_CLASS: Record<AvatarSize, string> = {
@@ -23,6 +29,14 @@ const SIZE_CLASS: Record<AvatarSize, string> = {
   md: "size-10",
   lg: "size-14",
   xl: "size-24",
+};
+
+const SIZE_PX: Record<AvatarSize, number> = {
+  xs: 24,
+  sm: 32,
+  md: 40,
+  lg: 56,
+  xl: 96,
 };
 
 const TEXT_CLASS: Record<AvatarSize, string> = {
@@ -65,23 +79,50 @@ export const Avatar = ({
   size = "md",
   showOnlineDot = false,
   isGroup = false,
+  cacheVersion,
+  groupConversationId,
 }: AvatarProps) => {
   const sizeClass = SIZE_CLASS[size];
   const textClass = TEXT_CLASS[size];
   const dotClass = DOT_CLASS[size];
   const initials = getInitials(name, isGroup);
-  const imageUri = uri ? normalizeMediaUrl(uri) : undefined;
+  const px = SIZE_PX[size];
+  const imageUri = uri
+    ? isGroup
+      ? resolveGroupAvatarDisplayUrl(uri, {
+          conversationId: groupConversationId ?? undefined,
+          updatedAt: cacheVersion,
+        })
+      : (normalizeMediaUrl(uri) ?? uri)
+    : undefined;
+  const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [imageUri]);
+
+  const showImage = Boolean(imageUri) && !imageFailed;
 
   return (
     <View className="relative">
-      {imageUri ? (
-        <Image
-          source={{ uri: imageUri }}
-          className={`${sizeClass} rounded-full bg-muted`}
-          resizeMode="cover"
-        />
+      {showImage ? (
+        <View
+          className={`${sizeClass} overflow-hidden rounded-full bg-muted`}
+          style={{ width: px, height: px }}
+        >
+          <Image
+            key={isGroup ? `${groupConversationId ?? ""}:${imageUri}` : imageUri}
+            source={{ uri: imageUri }}
+            style={StyleSheet.absoluteFillObject}
+            resizeMode="cover"
+            onError={() => setImageFailed(true)}
+          />
+        </View>
       ) : (
-        <View className={`${sizeClass} items-center justify-center rounded-full bg-primary/20`}>
+        <View
+          className={`${sizeClass} items-center justify-center rounded-full bg-primary/20`}
+          style={{ width: px, height: px }}
+        >
           <Text className={`${textClass} font-semibold text-primary`}>{initials}</Text>
         </View>
       )}

@@ -3,6 +3,7 @@ import { chatApi } from "@/store/api/chatApi";
 import { conversationApi } from "@/store/api/endpoints/conversationApi";
 import { bumpGroupBoardRefresh } from "@/store/slices/chatSlice";
 import type { IConversation, IGroupSettings } from "@/types/chat.types";
+import { normalizeGroupAvatarStoredValue } from "@/utils/groupAvatarUrl";
 import { normalizeGroupSettings } from "@/utils/normalizeGroupSettings";
 
 /** Đồng bộ `groupSettings` vào sidebar + query settings (socket / mutation). */
@@ -53,8 +54,8 @@ export function patchGroupProfileInConversationsCache(
   if (!cid) return;
 
   const name = typeof patch.name === "string" && patch.name.trim() ? patch.name.trim() : undefined;
-  const avatar =
-    typeof patch.avatar === "string" && patch.avatar.trim() ? patch.avatar.trim() : undefined;
+  const hasAvatarField = patch.avatar !== undefined && patch.avatar !== null;
+  const avatar = hasAvatarField ? String(patch.avatar).trim() : undefined;
   const memberCount =
     typeof patch.memberCount === "number" && Number.isFinite(patch.memberCount)
       ? patch.memberCount
@@ -66,7 +67,7 @@ export function patchGroupProfileInConversationsCache(
   const leaderId =
     typeof patch.leaderId === "string" && patch.leaderId.trim() ? patch.leaderId.trim() : undefined;
 
-  if (!name && !avatar && memberCount === undefined && !updatedAt && !leaderId) return;
+  if (!name && !hasAvatarField && memberCount === undefined && !updatedAt && !leaderId) return;
 
   dispatch(
     conversationApi.util.updateQueryData(
@@ -76,7 +77,9 @@ export function patchGroupProfileInConversationsCache(
         const c = draft.find((x) => x.conversationId === cid);
         if (!c) return;
         if (name) c.name = name;
-        if (avatar) c.avatar = avatar;
+        if (hasAvatarField) {
+          c.avatar = normalizeGroupAvatarStoredValue(avatar ?? null, cid);
+        }
         if (memberCount !== undefined) c.memberCount = memberCount;
         if (updatedAt) c.updatedAt = updatedAt;
         if (leaderId) c.leaderId = leaderId;

@@ -36,6 +36,27 @@ function formatTargetList(targets: GroupSystemPerson[], currentUserId?: string |
   return `${labels.slice(0, 3).join(", ")} và ${more} người khác`;
 }
 
+export type GroupSystemDisplayCtx = {
+  currentUserId?: string | null;
+  senderId?: string | null;
+  senderDisplayName?: string | null;
+  currentUserDisplayName?: string | null;
+  isOwn?: boolean;
+};
+
+/** JSON nhóm + tin plain text cũ → một dòng hiển thị theo người xem. */
+export function resolveGroupSystemDisplayLine(
+  raw: string,
+  ctx: GroupSystemDisplayCtx,
+): string | null {
+  return (
+    formatGroupSystemChatLine(raw, ctx.currentUserId) ??
+    formatLegacyGroupProfileSystemLine(raw, ctx) ??
+    formatLegacyGroupCreatedSystemLine(raw, ctx) ??
+    formatLegacyGroupJoinedSystemLine(raw, ctx)
+  );
+}
+
 export function formatGroupSystemChatLine(
   raw: string,
   currentUserId?: string | null,
@@ -46,6 +67,10 @@ export function formatGroupSystemChatLine(
     const obj = JSON.parse(trimmed) as GroupSystemPayload;
     const kind = String(obj?.kind ?? "");
 
+    if (kind === "group_created") {
+      const who = labelPerson(obj.actor, currentUserId, "Ai đó");
+      return `${who} đã tạo nhóm mới`;
+    }
     if (kind === "group_member_invited") {
       const who = labelPerson(obj.actor, currentUserId, "Ai đó");
       return `${who} đã mời ${formatTargetList(obj.targets ?? [], currentUserId)} vào nhóm`;
@@ -182,4 +207,44 @@ export function formatLegacyGroupProfileSystemLine(
   const nameTail = trimmed.match(/(?:đã\s+)?đổi tên nhóm(.*)$/i)?.[1] ?? "";
   if (nameTail) return `${who} đã đổi tên nhóm${nameTail}`;
   return null;
+}
+
+/** Tin system plain text trước khi có JSON `group_created`. */
+export function formatLegacyGroupCreatedSystemLine(
+  raw: string,
+  ctx: GroupSystemDisplayCtx,
+): string | null {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed || trimmed.startsWith("{")) return null;
+  if (!/đã\s+tạo\s+nhóm/i.test(trimmed)) return null;
+
+  const isSelf = Boolean(
+    ctx.isOwn || (ctx.currentUserId && ctx.senderId && ctx.senderId === ctx.currentUserId),
+  );
+  if (isSelf) return "Bạn đã tạo nhóm mới";
+  const who =
+    String(ctx.senderDisplayName ?? "").trim() ||
+    trimmed.split(/\s+đã\s+tạo\s+nhóm/i)[0]?.trim() ||
+    "Ai đó";
+  return `${who} đã tạo nhóm mới`;
+}
+
+/** Tin system plain text «X đã tham gia nhóm» (trước JSON `group_member_joined`). */
+export function formatLegacyGroupJoinedSystemLine(
+  raw: string,
+  ctx: GroupSystemDisplayCtx,
+): string | null {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed || trimmed.startsWith("{")) return null;
+  if (!/đã\s+tham\s+gia\s+nhóm/i.test(trimmed)) return null;
+
+  const isSelf = Boolean(
+    ctx.isOwn || (ctx.currentUserId && ctx.senderId && ctx.senderId === ctx.currentUserId),
+  );
+  if (isSelf) return "Bạn đã tham gia nhóm";
+  const who =
+    String(ctx.senderDisplayName ?? "").trim() ||
+    trimmed.split(/\s+đã\s+tham\s+gia\s+nhóm/i)[0]?.trim() ||
+    "Thành viên";
+  return `${who} đã tham gia nhóm`;
 }

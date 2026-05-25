@@ -1,5 +1,6 @@
 import type { IConversation, IGroupMember, IGroupSettings, MemberRole } from "@/types/chat.types";
 import { normalizeGroupSettings, DEFAULT_GROUP_SETTINGS } from "@/utils/normalizeGroupSettings";
+import { normalizeGroupAvatarStoredValue } from "@/utils/groupAvatarUrl";
 import {
   patchGroupProfileInConversationsCache,
   patchGroupSettingsInCaches,
@@ -99,7 +100,9 @@ export const groupApi = chatApi.injectEndpoints({
             const c = draft.find((x) => x.conversationId === groupId);
             if (!c) return;
             if (name !== undefined) c.name = name;
-            if (avatar !== undefined) c.avatar = avatar;
+            if (avatar !== undefined) {
+              c.avatar = normalizeGroupAvatarStoredValue(avatar, groupId);
+            }
           }) as never,
         ) as { undo: () => void };
         try {

@@ -1,8 +1,6 @@
 import type { IMessage } from "@/types/chat.types";
-import {
-  formatGroupSystemChatLine,
-  formatLegacyGroupProfileSystemLine,
-} from "@/utils/groupSystemMessage";
+import { resolveGroupSystemDisplayLine } from "@/utils/groupSystemMessage";
+import { resolveTaskAssigneeDisplayLabel } from "@/utils/taskAssigneeLabel";
 
 /** Tin hệ thống căn giữa (từ socket/API legacy). */
 export function isCenterPositionMessage(message: IMessage): boolean {
@@ -16,6 +14,8 @@ type SystemTask = {
   dueDate?: string;
   note?: string;
   assigneeLabel?: string;
+  assigneeUserIds?: string[];
+  assignToAll?: boolean;
 };
 type SystemPoll = {
   pollId?: string;
@@ -88,13 +88,13 @@ export function preprocessSystemPlainText(
   message: IMessage,
   ctx: SystemMessageFormatContext,
 ): string {
-  const legacyProfile = formatLegacyGroupProfileSystemLine(message.content ?? "", {
+  const groupLine = resolveGroupSystemDisplayLine(message.content ?? "", {
     senderId: message.senderId,
     currentUserId: ctx.currentUserId,
     senderDisplayName: message.senderDisplayName,
     isOwn: ctx.isOwn,
   });
-  if (legacyProfile) return legacyProfile;
+  if (groupLine) return groupLine;
 
   let text = message.content ?? "";
   const trimmed = text.trim();
@@ -128,14 +128,12 @@ export function buildSystemBubbleView(
   ctx: SystemMessageFormatContext,
 ): SystemBubbleView {
   const rawContent = (message.content ?? "").trim();
-  const groupLine =
-    formatGroupSystemChatLine(rawContent, ctx.currentUserId) ??
-    formatLegacyGroupProfileSystemLine(rawContent, {
-      senderId: message.senderId,
-      currentUserId: ctx.currentUserId,
-      senderDisplayName: message.senderDisplayName,
-      isOwn: ctx.isOwn,
-    });
+  const groupLine = resolveGroupSystemDisplayLine(rawContent, {
+    senderId: message.senderId,
+    currentUserId: ctx.currentUserId,
+    senderDisplayName: message.senderDisplayName,
+    isOwn: ctx.isOwn,
+  });
   if (groupLine) {
     return { variant: "text", text: groupLine, rowIcon: systemRowIconForPlainText(groupLine) };
   }
@@ -163,12 +161,23 @@ export function buildSystemBubbleView(
       if (!taskId) {
         return { variant: "text", text: `${who} đã giao việc: ${title}`, rowIcon: "pencil" };
       }
+      const assigneeIds = Array.isArray(obj.task.assigneeUserIds)
+        ? obj.task.assigneeUserIds.map((id) => String(id)).filter(Boolean)
+        : [];
+      const assigneeLabel = resolveTaskAssigneeDisplayLabel({
+        assignToAll: obj.task.assignToAll === true,
+        assigneeIds,
+        memberCount: 0,
+        nameById: new Map<string, string>(),
+        fallbackLabel: String(obj.task.assigneeLabel ?? "cả nhóm"),
+        currentUserId: ctx.currentUserId ?? undefined,
+      });
       return {
         variant: "task_assigned_card",
         taskId,
         title,
         actorLabel: who,
-        assigneeLabel: String(obj.task.assigneeLabel ?? "cả nhóm"),
+        assigneeLabel,
         dueDate: obj.task.dueDate ? String(obj.task.dueDate) : null,
         note: obj.task.note ? String(obj.task.note) : null,
       };
@@ -281,9 +290,13 @@ export function formatSystemLastMessagePreview(
   senderDisplayName?: string | null,
 ): string | null {
   const raw = (content ?? "").trim();
-  if (!raw.startsWith("{")) return null;
-  const groupLine = formatGroupSystemChatLine(raw, currentUserId);
+  const groupLine = resolveGroupSystemDisplayLine(raw, {
+    currentUserId,
+    senderId,
+    senderDisplayName,
+  });
   if (groupLine) return groupLine;
+  if (!raw.startsWith("{")) return null;
   try {
     const obj = JSON.parse(raw) as {
       kind?: string;

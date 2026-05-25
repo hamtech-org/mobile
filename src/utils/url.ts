@@ -33,3 +33,30 @@ export function normalizeMediaUrl(url: string | null | undefined): string | unde
 
   return url;
 }
+
+/** Endpoint avatar nhóm — path cố định, chỉ bust cache tại đây (tránh hỏng URL S3/media có query ký). */
+function isStableGroupAvatarUrl(url: string): boolean {
+  try {
+    const path = url.includes("://") ? new URL(url).pathname : url.split("?")[0];
+    return /\/conversations\/[^/]+\/avatar$/i.test(path);
+  } catch {
+    return /\/conversations\/[^/]+\/avatar(?:\?|$)/i.test(url);
+  }
+}
+
+/**
+ * Thêm query `v=` để ép tải lại ảnh khi URL endpoint không đổi (vd. avatar nhóm `/conversations/:id/avatar`).
+ * Không áp dụng cho URL S3 hoặc media download có chữ ký query — thêm `v` sẽ làm ảnh lỗi.
+ */
+export function withMediaCacheBuster(
+  url: string | null | undefined,
+  version?: string | null,
+): string | undefined {
+  const raw = (url ?? "").trim();
+  if (!raw) return undefined;
+  const normalized = normalizeMediaUrl(raw) ?? raw;
+  const v = (version ?? "").trim();
+  if (!v || !isStableGroupAvatarUrl(normalized)) return normalized;
+  const sep = normalized.includes("?") ? "&" : "?";
+  return `${normalized}${sep}v=${encodeURIComponent(v)}`;
+}
