@@ -2,7 +2,15 @@ diff --git a/node_modules/expo-notifications/android/src/main/java/expo/modules/
 index 191b64e..187a96e 100644
 --- a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/model/NotificationContent.java
 +++ b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/model/NotificationContent.java
-@@ -100,9 +100,127 @@ public class NotificationContent implements Parcelable, Serializable, INotificat
+@@ -37,6 +37,8 @@ import kotlin.coroutines.Continuation;
+  */
+ public class NotificationContent implements Parcelable, Serializable, INotificationContent {
++  private static final String AVATAR_LOG_TAG = "HamtechNotifAvatar";
++
+   private String mTitle;
+   private String mText;
+   private String mSubtitle;
+@@ -100,9 +102,163 @@ public class NotificationContent implements Parcelable, Serializable, INotificat
      return mSound != null ? mSound.getLastPathSegment() : null;
    }
  
@@ -59,8 +67,11 @@ index 191b64e..187a96e 100644
 +      if (comma > 0) {
 +        base64 = raw.substring(comma + 1);
 +      }
++      Log.i(AVATAR_LOG_TAG, "decodeAvatarBase64: length=" + base64.length());
 +      byte[] bytes = android.util.Base64.decode(base64, android.util.Base64.DEFAULT);
-+      return BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
++      Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
++      Log.i(AVATAR_LOG_TAG, "decodeAvatarBase64: bitmap=" + describeBitmap(bitmap));
++      return bitmap;
 +    } catch (Exception e) {
 +      Log.e("expo-notifications", "Could not decode avatarBase64", e);
 +      return null;
@@ -76,9 +87,14 @@ index 191b64e..187a96e 100644
 +    try {
 +      String path = android.net.Uri.parse(localUri).getPath();
 +      if (path == null) {
++        Log.i(AVATAR_LOG_TAG, "loadLocalAvatarBitmap: uri has no path: " + localUri);
 +        return null;
 +      }
-+      return BitmapFactory.decodeFile(path);
++      java.io.File file = new java.io.File(path);
++      Log.i(AVATAR_LOG_TAG, "loadLocalAvatarBitmap: path=" + path + ", exists=" + file.exists() + ", length=" + file.length());
++      Bitmap bitmap = BitmapFactory.decodeFile(path);
++      Log.i(AVATAR_LOG_TAG, "loadLocalAvatarBitmap: bitmap=" + describeBitmap(bitmap));
++      return bitmap;
 +    } catch (Exception e) {
 +      Log.e("expo-notifications", "Could not load local notification avatar: " + localUri, e);
 +      return null;
@@ -98,7 +114,11 @@ index 191b64e..187a96e 100644
 +        connection.setRequestProperty("ngrok-skip-browser-warning", "true");
 +      }
 +      connection.connect();
-+      return BitmapFactory.decodeStream(connection.getInputStream());
++      int status = connection.getResponseCode();
++      Log.i(AVATAR_LOG_TAG, "downloadRemoteImage: status=" + status + ", url=" + imageUrl);
++      Bitmap bitmap = BitmapFactory.decodeStream(connection.getInputStream());
++      Log.i(AVATAR_LOG_TAG, "downloadRemoteImage: bitmap=" + describeBitmap(bitmap));
++      return bitmap;
 +    } catch (Exception e) {
 +      Log.e("expo-notifications", "Could not download notification avatar: " + imageUrl, e);
 +      return null;
@@ -112,18 +132,29 @@ index 191b64e..187a96e 100644
    @Nullable
    @Override
    public Object getImage(@NonNull Context context, @NonNull Continuation<? super Bitmap> $completion) {
++    Log.i(
++      AVATAR_LOG_TAG,
++      "getImage: title=" + mTitle +
++        ", categoryId=" + mCategoryId +
++        ", localUri=" + getLocalImageUri() +
++        ", hasBase64=" + hasAvatarBase64() +
++        ", remoteUrl=" + getRemoteImageUrl()
++    );
 +    Bitmap local = loadLocalAvatarBitmap();
 +    if (local != null) {
++      Log.i(AVATAR_LOG_TAG, "getImage: using local bitmap");
 +      return local;
 +    }
 +    Bitmap base64Bitmap = decodeAvatarBase64();
 +    if (base64Bitmap != null) {
++      Log.i(AVATAR_LOG_TAG, "getImage: using base64 bitmap");
 +      return base64Bitmap;
 +    }
 +    String remoteImageUrl = getRemoteImageUrl();
 +    if (remoteImageUrl != null) {
 +      Bitmap remote = downloadRemoteImage(remoteImageUrl);
 +      if (remote != null) {
++        Log.i(AVATAR_LOG_TAG, "getImage: using remote bitmap");
 +        return remote;
 +      }
 +    }
@@ -135,8 +166,25 @@ index 191b64e..187a96e 100644
    @Override
    public boolean containsImage() {
 -    return true;
-+    return getRemoteImageUrl() != null || getLocalImageUri() != null || hasAvatarBase64();
++    boolean result = getRemoteImageUrl() != null || getLocalImageUri() != null || hasAvatarBase64();
++    Log.i(
++      AVATAR_LOG_TAG,
++      "containsImage: result=" + result +
++        ", title=" + mTitle +
++        ", categoryId=" + mCategoryId +
++        ", localUri=" + getLocalImageUri() +
++        ", hasBase64=" + hasAvatarBase64() +
++        ", remoteUrl=" + getRemoteImageUrl()
++    );
++    return result;
    }
++
++  private static String describeBitmap(@Nullable Bitmap bitmap) {
++    if (bitmap == null) {
++      return "null";
++    }
++    return bitmap.getWidth() + "x" + bitmap.getHeight();
++  }
  
    @Nullable
 diff --git a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/model/NotificationData.kt b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/model/NotificationData.kt
@@ -198,7 +246,7 @@ index 610d303..2a0b531 100644
  import expo.modules.notifications.notifications.SoundResolver
  import expo.modules.notifications.notifications.enums.NotificationPriority
  import expo.modules.notifications.notifications.interfaces.INotificationContent
-@@ -100,17 +102,64 @@ open class ExpoNotificationBuilder(
+@@ -100,17 +102,68 @@ open class ExpoNotificationBuilder(
      builder.setAutoCancel(content.isAutoDismiss)
      builder.setOngoing(content.isSticky)
  
@@ -221,6 +269,11 @@ index 610d303..2a0b531 100644
 +      categoryId == "hamtech_call_direct" || categoryId == "hamtech_call_group"
 +    val useMessagingStyle =
 +      isMessageCategory || (categoryId == "hamtech_social" && avatarBitmap != null)
++
++    Log.i(
++      "HamtechNotifAvatar",
++      "build: title=${content.title}, categoryId=$categoryId, containsImage=${notificationContent.containsImage()}, avatarBitmap=${avatarBitmap?.width}x${avatarBitmap?.height}, useMessagingStyle=$useMessagingStyle"
++    )
 +
 +    if (useMessagingStyle) {
 +      val senderName = content.title?.takeIf { it.isNotBlank() } ?: "Tin nhắn mới"

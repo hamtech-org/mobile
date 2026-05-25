@@ -69,6 +69,17 @@ export function pickActorAvatarFromData(data?: Record<string, unknown> | null): 
   const extra =
     data.extra && typeof data.extra === "object" ? (data.extra as Record<string, unknown>) : {};
   const raw =
-    data.actorAvatar ?? extra.actorAvatar ?? extra.senderAvatar ?? extra.authorAvatar ?? null;
+    data.actorAvatar ??
+    data.senderAvatar ??
+    data.conversationAvatar ??
+    data.groupAvatar ??
+    data.imageUrl ??
+    extra.actorAvatar ??
+    extra.senderAvatar ??
+    extra.authorAvatar ??
+    extra.conversationAvatar ??
+    extra.groupAvatar ??
+    extra.imageUrl ??
+    null;
   return typeof raw === "string" && raw.trim() ? raw.trim() : null;
 }

@@ -1,5 +1,4 @@
 import "../src/theme/global.css";
-import "@/utils/notifeeBackgroundEvents";
 import { Stack } from "expo-router";
 import { Provider } from "react-redux";
 import { GestureHandlerRootView } from "react-native-gesture-handler";

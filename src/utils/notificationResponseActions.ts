@@ -24,9 +24,9 @@ function dataRecord(response: unknown): Record<string, unknown> {
   if (expoData) return expoData;
 
   const detail = objectRecord((response as { detail?: unknown })?.detail);
-  const notifeeNotification = objectRecord(detail?.notification);
-  const notifeeData = objectRecord(notifeeNotification?.data);
-  if (notifeeData) return notifeeData;
+  const nativeNotification = objectRecord(detail?.notification);
+  const nativeData = objectRecord(nativeNotification?.data);
+  if (nativeData) return nativeData;
 
   const directNotification = objectRecord((response as { notification?: unknown })?.notification);
   const directData = objectRecord(directNotification?.data);

@@ -68,3 +68,20 @@ export async function cacheNotificationAvatarForNative(
 
   return undefined;
 }
+
+export async function readCachedNotificationAvatarBase64(
+  localUri?: string | null,
+): Promise<string | undefined> {
+  if (!localUri) return undefined;
+  try {
+    const base64 = await FileSystem.readAsStringAsync(localUri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    // Keep notification extras small enough for Android binder limits.
+    if (!base64 || base64.length > 180_000) return undefined;
+    return base64;
+  } catch (error) {
+    console.warn("[NotificationAvatar] Could not read cached avatar as base64:", error);
+    return undefined;
+  }
+}

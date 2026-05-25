@@ -16,10 +16,6 @@ import {
   ensureNotificationCategories,
   ensureSystemNotificationChannels,
 } from "@/utils/localSystemNotification";
-import {
-  getInitialNotifeeNotificationResponse,
-  subscribeNotifeeForegroundEvents,
-} from "@/utils/notifeeSystemNotification";
 import { isRemotePushSupported } from "@/utils/pushNotificationsSupport";
 
 console.log("[PushToken] usePushNotifications.ts module loaded globally!");
@@ -150,7 +146,6 @@ export function usePushNotifications(): void {
 
     let subReceived: { remove: () => void } | undefined;
     let subResponse: { remove: () => void } | undefined;
-    let unsubscribeNotifee: (() => void) | undefined;
     let cancelled = false;
 
     void (async () => {
@@ -175,19 +170,6 @@ export function usePushNotifications(): void {
           })();
         });
 
-        unsubscribeNotifee = subscribeNotifeeForegroundEvents((response) => {
-          void (async () => {
-            try {
-              if (await handleNotificationResponseAction(response)) return;
-            } catch {
-              /* fallback to opening route */
-            }
-            const data = notificationRouteDataFromResponse(response);
-            if (data) navigateFromNotification(data);
-            else router.push("/(main)/(notifications)");
-          })();
-        });
-
         const response = await Notifications.getLastNotificationResponseAsync();
         if (response) {
           try {
@@ -196,17 +178,6 @@ export function usePushNotifications(): void {
             /* fallback to opening route */
           }
           const data = notificationRouteDataFromResponse(response);
-          if (data) navigateFromNotification(data);
-        }
-
-        const notifeeResponse = await getInitialNotifeeNotificationResponse();
-        if (notifeeResponse) {
-          try {
-            if (await handleNotificationResponseAction(notifeeResponse)) return;
-          } catch {
-            /* fallback to opening route */
-          }
-          const data = notificationRouteDataFromResponse(notifeeResponse);
           if (data) navigateFromNotification(data);
         }
       } catch {
@@ -218,7 +189,6 @@ export function usePushNotifications(): void {
       cancelled = true;
       subReceived?.remove();
       subResponse?.remove();
-      unsubscribeNotifee?.();
     };
   }, []);
 }

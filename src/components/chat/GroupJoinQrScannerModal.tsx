@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Linking, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ArrowLeft, QrCode } from "lucide-react-native";
@@ -24,16 +24,33 @@ export function GroupJoinQrScannerModal({
   const [permission, requestPermission] = useCameraPermissions();
   const [requesting, setRequesting] = useState(false);
   const handledRef = useRef(false);
+  const requestedOnOpenRef = useRef(false);
+
+  const askCameraPermission = useCallback(async () => {
+    if (requesting) return;
+    setRequesting(true);
+    try {
+      const nextPermission = await requestPermission();
+      if (!nextPermission.granted && nextPermission.canAskAgain === false) {
+        toast.error("Vui long bat quyen camera trong Cai dat thiet bi.");
+      }
+    } finally {
+      setRequesting(false);
+    }
+  }, [requestPermission, requesting]);
 
   useEffect(() => {
     if (!visible) {
       handledRef.current = false;
+      requestedOnOpenRef.current = false;
       return;
     }
-    if (permission?.granted || permission?.canAskAgain === false) return;
-    setRequesting(true);
-    void requestPermission().finally(() => setRequesting(false));
-  }, [visible, permission?.granted, permission?.canAskAgain, requestPermission]);
+    if (permission?.granted || permission?.canAskAgain === false || requestedOnOpenRef.current) {
+      return;
+    }
+    requestedOnOpenRef.current = true;
+    void askCameraPermission();
+  }, [visible, permission?.granted, permission?.canAskAgain, askCameraPermission]);
 
   const handleBarcode = useCallback(
     ({ data }: { data: string }) => {
@@ -48,7 +65,7 @@ export function GroupJoinQrScannerModal({
 
       const suffix = extractJoinSuffixFromText(data);
       if (!suffix) {
-        toast.error("Mã QR không hợp lệ - cần QR HamTech hoặc link mời tham gia nhóm");
+        toast.error("Ma QR khong hop le - can QR HamTech hoac link moi tham gia nhom");
         return;
       }
 
@@ -77,31 +94,31 @@ export function GroupJoinQrScannerModal({
           />
         ) : (
           <View style={styles.permissionFallback}>
-            {requesting || !permission ? (
-              <ActivityIndicator size="large" color="#fff" />
-            ) : (
+            <QrCode size={48} color="#fff" strokeWidth={1.5} />
+            <Text style={styles.permissionTitle}>Cần quyền camera</Text>
+            <Text style={styles.permissionHint}>
+              Cho phép truy cập camera để quét mã QR HamTech.
+            </Text>
+            {requesting ? <ActivityIndicator size="small" color="#fff" /> : null}
+            {permission?.canAskAgain === false ? (
               <>
-                <QrCode size={48} color="#fff" strokeWidth={1.5} />
-                <Text style={styles.permissionTitle}>Cần quyền camera</Text>
                 <Text style={styles.permissionHint}>
-                  Cho phép truy cập camera để quét mã QR HamTech.
+                  Cài đặt thiết bị để bật quyền camera cho ứng dụng.
                 </Text>
-                {permission.canAskAgain ? (
-                  <Pressable
-                    style={styles.permissionBtn}
-                    onPress={() => {
-                      setRequesting(true);
-                      void requestPermission().finally(() => setRequesting(false));
-                    }}
-                  >
-                    <Text style={styles.permissionBtnText}>Cho phép camera</Text>
-                  </Pressable>
-                ) : (
-                  <Text style={styles.permissionHint}>
-                    Vào Cài đặt thiết bị để bật quyền camera cho ứng dụng.
-                  </Text>
-                )}
+                <Pressable style={styles.permissionBtn} onPress={() => void Linking.openSettings()}>
+                  <Text style={styles.permissionBtnText}>Mở Cài đặt</Text>
+                </Pressable>
               </>
+            ) : (
+              <Pressable
+                style={[styles.permissionBtn, requesting && styles.permissionBtnDisabled]}
+                onPress={() => void askCameraPermission()}
+                disabled={requesting}
+              >
+                <Text style={styles.permissionBtnText}>
+                  {requesting ? "Đang xin quyền..." : "Cho phép camera"}
+                </Text>
+              </Pressable>
             )}
           </View>
         )}
@@ -112,7 +129,7 @@ export function GroupJoinQrScannerModal({
               style={styles.backBtn}
               onPress={onClose}
               hitSlop={8}
-              accessibilityLabel="Đóng"
+              accessibilityLabel="Dong"
             >
               <ArrowLeft size={22} color="#fff" strokeWidth={2} />
             </Pressable>
@@ -166,6 +183,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#0068FF",
     paddingHorizontal: 20,
     paddingVertical: 12,
+  },
+  permissionBtnDisabled: {
+    opacity: 0.65,
   },
   permissionBtnText: {
     fontSize: 15,
