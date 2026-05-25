@@ -1,10 +1,15 @@
 import { useCallback, useMemo, useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
-import { Bell, BellOff, ChevronRight, Clock, Pin, X } from "lucide-react-native";
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { Ban, Bell, BellOff, ChevronRight, Clock, Pin, X } from "lucide-react-native";
 
 import { useIconColors } from "@/hooks/useIconColors";
 import type { IConversation } from "@/types/chat.types";
 import { usePatchConversationPreferencesMutation } from "@/store/api/chatApi";
+import {
+  useBlockFriendMutation,
+  useGetFriendRequestStatusQuery,
+  useUnblockFriendMutation,
+} from "@/store/api/userApi";
 import { toast } from "@/utils/appToast";
 import {
   buildPatchForMutePayload,
@@ -35,11 +40,18 @@ export function ConversationPersonalSettingsModal({
 }: ConversationPersonalSettingsModalProps) {
   const { foreground, muted, primary } = useIconColors();
   const [patchPrefs] = usePatchConversationPreferencesMutation();
+  const [blockFriend, { isLoading: blockingFriend }] = useBlockFriendMutation();
+  const [unblockFriend, { isLoading: unblockingFriend }] = useUnblockFriendMutation();
   const [muteOpen, setMuteOpen] = useState(false);
   const [muteMode, setMuteMode] = useState<"create" | "edit">("create");
   const [muteSubmitting, setMuteSubmitting] = useState(false);
 
   const scheduledIso = useMemo(() => activeScheduleIso(conversation), [conversation]);
+  const directOtherUserId = conversation.otherUserId?.trim() ?? "";
+  const { data: friendshipStatus } = useGetFriendRequestStatusQuery(directOtherUserId, {
+    skip: !directOtherUserId,
+  });
+  const isBlocked = friendshipStatus === "blocked";
   const isMuted = conversation.isMuted ?? false;
   const isPinned = conversation.isPinnedToTop ?? false;
 
@@ -104,6 +116,50 @@ export function ConversationPersonalSettingsModal({
     setMuteMode("edit");
     setMuteOpen(true);
   }, []);
+
+  const confirmBlockFriend = useCallback(() => {
+    const friendId = conversation.otherUserId?.trim();
+    if (!friendId) {
+      toast.error("Không xác định được người cần chặn");
+      return;
+    }
+
+    Alert.alert(
+      "Chặn bạn bè?",
+      `Lịch sử hội thoại sẽ được giữ nguyên, nhưng hai bên sẽ không thể nhận tin hoặc gọi 1-1 với ${conversation.name ?? "người này"}.`,
+      [
+        { text: "Không", style: "cancel" },
+        {
+          text: "Chặn",
+          style: "destructive",
+          onPress: () => {
+            void blockFriend({ friendId })
+              .unwrap()
+              .then(() => {
+                toast.success("Đã chặn người dùng");
+                onClose();
+              })
+              .catch(() => toast.error("Không thể chặn người dùng"));
+          },
+        },
+      ],
+    );
+  }, [blockFriend, conversation.name, conversation.otherUserId, onClose]);
+
+  const unblockCurrentFriend = useCallback(() => {
+    const friendId = conversation.otherUserId?.trim();
+    if (!friendId) {
+      toast.error("Không xác định được người cần bỏ chặn");
+      return;
+    }
+
+    void unblockFriend({ friendId })
+      .unwrap()
+      .then(() => {
+        toast.success("Đã bỏ chặn người dùng");
+      })
+      .catch(() => toast.error("Không thể bỏ chặn người dùng"));
+  }, [conversation.otherUserId, unblockFriend]);
 
   return (
     <>
@@ -204,6 +260,28 @@ export function ConversationPersonalSettingsModal({
                   </Pressable>
                 </>
               ) : null}
+
+              <Text style={[styles.section, { color: muted }]}>Quyền riêng tư</Text>
+              <Pressable
+                disabled={blockingFriend || unblockingFriend}
+                style={[styles.actionRow, { borderColor: "rgba(239,68,68,0.28)" }]}
+                onPress={isBlocked ? unblockCurrentFriend : confirmBlockFriend}
+              >
+                <Ban size={22} color={isBlocked ? "#059669" : "#ef4444"} strokeWidth={1.75} />
+                <Text
+                  style={[
+                    styles.actionLabel,
+                    { color: isBlocked ? "#059669" : "#ef4444", flex: 1 },
+                  ]}
+                >
+                  {isBlocked ? "Bỏ chặn bạn bè" : "Chặn bạn bè"}
+                </Text>
+                <ChevronRight
+                  size={20}
+                  color={isBlocked ? "#059669" : "#ef4444"}
+                  strokeWidth={1.75}
+                />
+              </Pressable>
             </ScrollView>
           </Pressable>
         </Pressable>

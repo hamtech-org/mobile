@@ -27,7 +27,7 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Ứng dụng cần micro để tham gia cuộc gọi thoại và video.",
-        "NSCameraUsageDescription": "Ứng dụng cần camera cho cuộc gọi video và quét mã QR tham gia nhóm.",
+        "NSCameraUsageDescription": "Ứng dụng cần camera để xác thực khuôn mặt, tham gia cuộc gọi video và quét mã QR tham gia nhóm.",
         "NSPhotoLibraryUsageDescription": "Ứng dụng cần quyền lưu ảnh và video từ tin nhắn vào thư viện.",
         "NSPhotoLibraryAddUsageDescription": "Ứng dụng cần quyền lưu ảnh và video từ tin nhắn vào thư viện.",
         "NSUserNotificationsUsageDescription": "Ứng dụng cần gửi thông báo tin nhắn, lời mời kết bạn và hoạt động mới.",
@@ -92,7 +92,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Cho phép truy cập camera để quét mã QR tham gia nhóm và gọi video.",
+          "cameraPermission": "Cho phép truy cập camera để xác thực khuôn mặt, quét mã QR tham gia nhóm và gọi video.",
           "recordAudioAndroid": false
         }
       ],

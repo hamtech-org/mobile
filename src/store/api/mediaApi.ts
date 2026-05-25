@@ -6,6 +6,7 @@ import { router } from "expo-router";
 import { env } from "@/config/env";
 import { invalidateSessionAfterAuthFailure, refreshAuthSession } from "@/store/api/sessionRefresh";
 import { mediaUploadTypeFromMime } from "@/utils/chatMediaMime";
+import { applyNgrokSkipBrowserWarningHeader, ngrokSkipBrowserWarningHeaders } from "@/utils/ngrok";
 
 export type MediaUploadType = "image" | "video" | "audio" | "file";
 
@@ -63,6 +64,7 @@ export const mediaApi = createApi({
     baseUrl: env.apiBaseUrl,
     timeout: 120_000,
     prepareHeaders: (headers, { getState }) => {
+      applyNgrokSkipBrowserWarningHeader(headers, env.apiBaseUrl);
       const state = getState() as AuthRef;
       const token = state.auth?.accessToken;
       if (token) {
@@ -93,7 +95,10 @@ export const mediaApi = createApi({
             fieldName: "file",
             mimeType,
             parameters: { mediaType, deliveryScope },
-            headers: bearer ? { Authorization: `Bearer ${bearer}` } : {},
+            headers: {
+              ...ngrokSkipBrowserWarningHeaders(url),
+              ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
+            },
           });
 
         try {
@@ -159,7 +164,10 @@ export const mediaApi = createApi({
                 fieldName: "file",
                 mimeType,
                 parameters: { mediaType, deliveryScope },
-                headers: bearer ? { Authorization: `Bearer ${bearer}` } : {},
+                headers: {
+                  ...ngrokSkipBrowserWarningHeaders(url),
+                  ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
+                },
               });
 
             let bearer = readBearer(api);

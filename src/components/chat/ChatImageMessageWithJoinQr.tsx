@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { router } from "expo-router";
 
 import {
@@ -6,8 +6,9 @@ import {
   type ChatImageMessageCardProps,
 } from "@/components/chat/ChatImageMessageCard";
 import { ImageJoinQrJoinBar, ImageJoinQrJoinBarWrap } from "@/components/chat/ImageJoinQrJoinBar";
+import { UserQrProfileModal } from "@/components/social/UserQrProfileModal";
 import { useGroupJoinLinkModalOptional } from "@/contexts/GroupJoinLinkModalContext";
-import { useJoinQrInImage } from "@/hooks/useJoinQrInImage";
+import { useChatQrInImage } from "@/hooks/useChatQrInImage";
 import { getJoinGroupUrl } from "@/utils/joinGroupUrl";
 
 type Props = ChatImageMessageCardProps & {
@@ -17,7 +18,10 @@ type Props = ChatImageMessageCardProps & {
 
 export function ChatImageMessageWithJoinQr({ messageId, scanEnabled, ...imageProps }: Props) {
   const joinLinkModal = useGroupJoinLinkModalOptional();
-  const { joinSuffix } = useJoinQrInImage(imageProps.uri, messageId, scanEnabled);
+  const { qrResult } = useChatQrInImage(imageProps.uri, messageId, scanEnabled);
+  const [userQrOpen, setUserQrOpen] = useState(false);
+  const joinSuffix = qrResult?.kind === "group_join" ? qrResult.suffix : null;
+  const userQr = qrResult?.kind === "user" ? qrResult.user : null;
 
   const openJoinFromQr = useCallback(() => {
     if (!joinSuffix) return;
@@ -32,14 +36,24 @@ export function ChatImageMessageWithJoinQr({ messageId, scanEnabled, ...imagePro
     router.push(`/join/${joinSuffix}`);
   }, [joinLinkModal, joinSuffix]);
 
+  const openUserFromQr = useCallback(() => {
+    if (!userQr) return;
+    setUserQrOpen(true);
+  }, [userQr]);
+
   return (
     <>
       <ChatImageMessageCard {...imageProps} />
-      {joinSuffix ? (
+      {joinSuffix || userQr ? (
         <ImageJoinQrJoinBarWrap>
-          <ImageJoinQrJoinBar onPress={openJoinFromQr} />
+          <ImageJoinQrJoinBar
+            onPress={joinSuffix ? openJoinFromQr : openUserFromQr}
+            label={joinSuffix ? "Quét mã QR tham gia nhóm" : "Xem thông tin người dùng"}
+            accessibilityLabel={joinSuffix ? "Quét mã QR tham gia nhóm" : "Xem QR người dùng"}
+          />
         </ImageJoinQrJoinBarWrap>
       ) : null}
+      <UserQrProfileModal visible={userQrOpen} user={userQr} onClose={() => setUserQrOpen(false)} />
     </>
   );
 }

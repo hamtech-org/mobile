@@ -9,6 +9,8 @@ import {
   useRegisterMutation,
   useVerifyEmailMutation,
   useVerifyLoginOtpMutation,
+  useCreateFaceLivenessSessionMutation,
+  useFaceLoginMutation,
   type AuthTokenResponse,
 } from "@/store/api/authApi";
 import { clearMarkAsReadDedupeCache } from "@/utils/markAsReadSessionDedupe";
@@ -34,6 +36,9 @@ export const useAuth = () => {
   const [verifyEmailMutation, verifyEmailState] = useVerifyEmailMutation();
   const [forgotPasswordMutation, forgotPasswordState] = useForgotPasswordMutation();
   const [resetPasswordMutation, resetPasswordState] = useResetPasswordMutation();
+  const [createFaceLivenessSessionMutation, createFaceLivenessSessionState] =
+    useCreateFaceLivenessSessionMutation();
+  const [faceLoginMutation, faceLoginState] = useFaceLoginMutation();
   const [logoutMutation, logoutState] = useLogoutMutation();
 
   const applyAuthSession = useCallback(
@@ -153,6 +158,28 @@ export const useAuth = () => {
     [resetPasswordMutation, router],
   );
 
+  const createFaceLivenessSession = useCallback(async (): Promise<string | null> => {
+    try {
+      const response = await createFaceLivenessSessionMutation().unwrap();
+      return response.sessionId;
+    } catch {
+      return null;
+    }
+  }, [createFaceLivenessSessionMutation]);
+
+  const loginWithFace = useCallback(
+    async (email: string, livenessSessionId: string, redirectPath?: string): Promise<boolean> => {
+      try {
+        const response = await faceLoginMutation({ email, livenessSessionId }).unwrap();
+        await applyAuthSession(response, { email }, redirectPath);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [applyAuthSession, faceLoginMutation],
+  );
+
   const logout = useCallback(async () => {
     try {
       await logoutMutation({ accessToken }).unwrap();
@@ -172,6 +199,8 @@ export const useAuth = () => {
     verifyEmailState.isLoading ||
     forgotPasswordState.isLoading ||
     resetPasswordState.isLoading ||
+    createFaceLivenessSessionState.isLoading ||
+    faceLoginState.isLoading ||
     logoutState.isLoading;
 
   const errorMessage =
@@ -181,6 +210,8 @@ export const useAuth = () => {
     extractMutationErrorMessage(verifyEmailState.error) ??
     extractMutationErrorMessage(forgotPasswordState.error) ??
     extractMutationErrorMessage(resetPasswordState.error) ??
+    extractMutationErrorMessage(createFaceLivenessSessionState.error) ??
+    extractMutationErrorMessage(faceLoginState.error) ??
     extractMutationErrorMessage(logoutState.error) ??
     null;
 
@@ -191,6 +222,8 @@ export const useAuth = () => {
     verifyRegisterOtp,
     forgotPassword,
     resetPassword,
+    createFaceLivenessSession,
+    loginWithFace,
     logout,
     isLoading,
     errorMessage,

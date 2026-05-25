@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback, useEffect } from "react";
 import { router } from "expo-router";
-import { FlatList, Pressable, Text, View } from "react-native";
+import { Alert, FlatList, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   CloudOff,
@@ -9,6 +9,7 @@ import {
   Pin,
   QrCode,
   Search,
+  Sparkles,
   UserPlus,
   Users,
 } from "lucide-react-native";
@@ -24,12 +25,20 @@ import {
   MuteNotificationsModal,
 } from "@/components/chat";
 import { GroupJoinQrScannerModal } from "@/components/chat/GroupJoinQrScannerModal";
+import { AddFriendModal } from "@/components/social/AddFriendModal";
+import { UserQrProfileModal } from "@/components/social/UserQrProfileModal";
 import { useGroupJoinLinkModal } from "@/contexts/GroupJoinLinkModalContext";
 import { getJoinGroupUrl } from "@/utils/joinGroupUrl";
+import type { UserQrPayload } from "@/utils/userQrPayload";
 import {
   useGetConversationsQuery,
   usePatchConversationPreferencesMutation,
 } from "@/store/api/chatApi";
+import {
+  useBlockFriendMutation,
+  useGetFriendRequestStatusQuery,
+  useUnblockFriendMutation,
+} from "@/store/api/userApi";
 import { useAppSelector } from "@/hooks/useAppStore";
 import { useActiveChatRouteConversationId } from "@/hooks/useActiveChatRouteConversationId";
 import { useIconColors } from "@/hooks/useIconColors";
@@ -60,14 +69,26 @@ export default function ChatListScreen() {
   const activeOpenConversationId = useActiveChatRouteConversationId();
   const { data, isLoading, isError, refetch, isFetching } = useGetConversationsQuery();
   const [patchPrefs] = usePatchConversationPreferencesMutation();
+  const [blockFriend] = useBlockFriendMutation();
+  const [unblockFriend] = useUnblockFriendMutation();
   const [searchText, setSearchText] = useState("");
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
+  const [addFriendOpen, setAddFriendOpen] = useState(false);
   const [qrScannerOpen, setQrScannerOpen] = useState(false);
+  const [scannedUserQr, setScannedUserQr] = useState<UserQrPayload | null>(null);
   const { openGroupJoinLinkModal } = useGroupJoinLinkModal();
   const [muteTarget, setMuteTarget] = useState<IConversation | null>(null);
   const [muteSubmitting, setMuteSubmitting] = useState(false);
   const [mutedExpanded, setMutedExpanded] = useState(false);
   const [quickMenuConversation, setQuickMenuConversation] = useState<IConversation | null>(null);
+  const quickMenuOtherUserId =
+    quickMenuConversation?.type === "direct" ? quickMenuConversation.otherUserId?.trim() : "";
+  const { data: quickMenuFriendshipStatus } = useGetFriendRequestStatusQuery(
+    quickMenuOtherUserId ?? "",
+    {
+      skip: !quickMenuOtherUserId,
+    },
+  );
   const { primary, muted: iconMuted } = useIconColors();
 
   useDueTaskNotifications({
@@ -122,6 +143,57 @@ export default function ChatListScreen() {
     [patchPrefs],
   );
 
+  const handleQuickMenuBlockFriend = useCallback(
+    (item: IConversation) => {
+      const friendId = item.otherUserId?.trim();
+      if (!friendId) {
+        toast.error("Không xác định được người cần chặn");
+        return;
+      }
+
+      Alert.alert(
+        "Chặn bạn bè?",
+        `Lịch sử hội thoại sẽ được giữ nguyên, nhưng hai bên sẽ không thể nhận tin hoặc gọi 1-1 với ${item.name ?? "người này"}.`,
+        [
+          { text: "Không", style: "cancel" },
+          {
+            text: "Chặn",
+            style: "destructive",
+            onPress: () => {
+              void blockFriend({ friendId })
+                .unwrap()
+                .then(async () => {
+                  toast.success("Đã chặn người dùng");
+                  await refetch();
+                })
+                .catch(() => toast.error("Không thể chặn người dùng"));
+            },
+          },
+        ],
+      );
+    },
+    [blockFriend, refetch],
+  );
+
+  const handleQuickMenuUnblockFriend = useCallback(
+    (item: IConversation) => {
+      const friendId = item.otherUserId?.trim();
+      if (!friendId) {
+        toast.error("Không xác định được người cần bỏ chặn");
+        return;
+      }
+
+      void unblockFriend({ friendId })
+        .unwrap()
+        .then(async () => {
+          toast.success("Đã bỏ chặn người dùng");
+          await refetch();
+        })
+        .catch(() => toast.error("Không thể bỏ chặn người dùng"));
+    },
+    [refetch, unblockFriend],
+  );
+
   const openConversationQuickMenu = useCallback((item: IConversation) => {
     setQuickMenuConversation(item);
   }, []);
@@ -137,6 +209,11 @@ export default function ChatListScreen() {
     },
     [openGroupJoinLinkModal],
   );
+
+  const handleQrScannedUser = useCallback((user: UserQrPayload) => {
+    setQrScannerOpen(false);
+    setScannedUserQr(user);
+  }, []);
 
   const { listRows, mutedConversations, mutedUnreadTotal, listableCount, searchOnlyInMuted } =
     useMemo(() => {
@@ -239,8 +316,18 @@ export default function ChatListScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-background" edges={["top"]}>
-      <View className="px-4 pb-2 pt-3">
-        <Text className="text-2xl font-bold tracking-tight text-foreground">Tin nhắn</Text>
+      <View className="flex-row items-center justify-between px-4 pb-2 pt-3">
+        <Text className="min-w-0 flex-1 text-2xl font-bold tracking-tight text-foreground">
+          Tin nhắn
+        </Text>
+        <Pressable
+          className="mr-1 size-10 items-center justify-center rounded-full bg-primary/10 active:opacity-70"
+          hitSlop={6}
+          onPress={() => router.push("/(main)/ai-assistant")}
+          accessibilityLabel="Mở Trợ lý HAMTECH"
+        >
+          <Sparkles size={20} color={primary} strokeWidth={1.9} />
+        </Pressable>
       </View>
 
       <View className="flex-row items-center gap-2 px-4 pb-3">
@@ -258,7 +345,7 @@ export default function ChatListScreen() {
         <Pressable
           className="size-10 shrink-0 items-center justify-center rounded-lg active:bg-muted/60"
           hitSlop={6}
-          onPress={() => toast.info("Thêm bạn — sắp có")}
+          onPress={() => setAddFriendOpen(true)}
           accessibilityLabel="Thêm bạn bè"
         >
           <UserPlus size={20} color={primary} strokeWidth={1.75} />
@@ -393,10 +480,25 @@ export default function ChatListScreen() {
 
       <CreateGroupModal visible={createGroupOpen} onClose={() => setCreateGroupOpen(false)} />
 
+      <AddFriendModal
+        visible={addFriendOpen}
+        onClose={() => setAddFriendOpen(false)}
+        onChanged={async () => {
+          await refetch();
+        }}
+      />
+
       <GroupJoinQrScannerModal
         visible={qrScannerOpen}
         onClose={() => setQrScannerOpen(false)}
         onScannedSuffix={handleQrScannedSuffix}
+        onScannedUser={handleQrScannedUser}
+      />
+
+      <UserQrProfileModal
+        visible={scannedUserQr !== null}
+        user={scannedUserQr}
+        onClose={() => setScannedUserQr(null)}
       />
 
       <ConversationListActionSheet
@@ -405,6 +507,9 @@ export default function ChatListScreen() {
         onTogglePin={handleQuickMenuTogglePin}
         onOpenMutePicker={(item) => setMuteTarget(item)}
         onUnmute={handleQuickMenuUnmute}
+        onBlockFriend={handleQuickMenuBlockFriend}
+        onUnblockFriend={handleQuickMenuUnblockFriend}
+        isBlocked={quickMenuFriendshipStatus === "blocked"}
       />
 
       <MuteNotificationsModal

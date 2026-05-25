@@ -17,6 +17,44 @@ interface AuthStepOneResponse {
   message: string;
 }
 
+interface FaceLivenessStartResponse {
+  sessionId: string;
+}
+
+interface FaceLoginRequest {
+  email: string;
+  livenessSessionId: string;
+}
+
+interface EnableFaceLoginRequest {
+  password: string;
+  livenessSessionId: string;
+}
+
+interface SessionDeviceInfo {
+  userAgent: string;
+  os?: string;
+  browser?: string;
+}
+
+export interface AuthSessionSummary {
+  sessionId: string;
+  deviceInfo: SessionDeviceInfo;
+  ipAddress: string;
+  location: {
+    city: string;
+    region: string;
+    country: string;
+    countryCode: string;
+  } | null;
+  expiresAt: number;
+  isRevoked: boolean;
+  createdAt: string;
+  updatedAt: string;
+  isCurrent: boolean;
+  isActive: boolean;
+}
+
 export interface AuthTokenResponse {
   accessToken: string;
   refreshToken: string;
@@ -56,6 +94,7 @@ interface ApiEnvelope<T> {
 export const authApi = createApi({
   reducerPath: "authApi",
   baseQuery: baseQueryWithReauth,
+  tagTypes: ["AuthSessions"],
   endpoints: (builder) => ({
     login: builder.mutation<AuthStepOneResponse, LoginRequest>({
       query: (body) => ({
@@ -114,6 +153,48 @@ export const authApi = createApi({
       }),
       transformResponse: (response: ApiEnvelope<null>) => ({ message: response.message }),
     }),
+    createFaceLivenessSession: builder.mutation<FaceLivenessStartResponse, void>({
+      query: () => ({
+        url: "/auth/face-liveness/start",
+        method: "POST",
+      }),
+      transformResponse: (response: ApiEnvelope<FaceLivenessStartResponse>) => response.data,
+    }),
+    faceLogin: builder.mutation<AuthTokenResponse, FaceLoginRequest>({
+      query: (body) => ({
+        url: "/auth/face-login",
+        method: "POST",
+        body,
+      }),
+      transformResponse: (response: ApiEnvelope<AuthTokenResponse>) => response.data,
+    }),
+    enableFaceLogin: builder.mutation<ApiEnvelope<null>, EnableFaceLoginRequest>({
+      query: (body) => ({
+        url: "/auth/face-login/enable",
+        method: "POST",
+        body,
+      }),
+    }),
+    disableFaceLogin: builder.mutation<ApiEnvelope<null>, void>({
+      query: () => ({
+        url: "/auth/face-login/disable",
+        method: "DELETE",
+      }),
+    }),
+    getSessions: builder.query<ApiEnvelope<AuthSessionSummary[]>, void>({
+      query: () => ({
+        url: "/auth/sessions",
+        method: "GET",
+      }),
+      providesTags: ["AuthSessions"],
+    }),
+    revokeSession: builder.mutation<ApiEnvelope<null>, string>({
+      query: (sessionId) => ({
+        url: `/auth/sessions/${sessionId}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: ["AuthSessions"],
+    }),
     logout: builder.mutation<{ message: string }, { accessToken?: string | null }>({
       query: ({ accessToken }) => ({
         url: "/auth/logout",
@@ -133,5 +214,11 @@ export const {
   useRefreshTokenMutation,
   useVerifyEmailMutation,
   useResetPasswordMutation,
+  useCreateFaceLivenessSessionMutation,
+  useFaceLoginMutation,
+  useEnableFaceLoginMutation,
+  useDisableFaceLoginMutation,
+  useGetSessionsQuery,
+  useRevokeSessionMutation,
   useLogoutMutation,
 } = authApi;

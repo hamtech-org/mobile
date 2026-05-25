@@ -255,6 +255,7 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
       const detachInitiateListeners = () => {
         socket.off("call:channel-ready", onChannelReady);
         socket.off("call:busy", onBusy);
+        socket.off("call:blocked", onBlocked);
       };
 
       const onBusy = (raw: unknown) => {
@@ -263,6 +264,16 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
         detachInitiateListeners();
         void playCuocGoiNhoTone();
         Alert.alert("Đang bận", "Người nhận đang trong cuộc gọi khác.");
+      };
+
+      const onBlocked = (raw: unknown) => {
+        const p = raw as { conversationId?: string };
+        if (p?.conversationId !== conversationId) return;
+        detachInitiateListeners();
+        Alert.alert(
+          "Khong the goi",
+          "Cuoc goi 1-1 bi chan vi mot trong hai ben da chan nguoi con lai.",
+        );
       };
 
       const onChannelReady = (data: unknown) => {
@@ -290,6 +301,7 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
       };
 
       socket.on("call:busy", onBusy);
+      socket.on("call:blocked", onBlocked);
       socket.on("call:channel-ready", onChannelReady);
       socket.emit("call:initiate", { calleeId, type, conversationId, scope: "direct" });
     },

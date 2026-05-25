@@ -2,9 +2,9 @@ import type { BaseQueryFn, FetchArgs, FetchBaseQueryError } from "@reduxjs/toolk
 import { fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 import { router } from "expo-router";
 
-import { NGROK_SKIP_HEADER } from "@/config/apiRequestHeaders";
 import { env } from "@/config/env";
 import { invalidateSessionAfterAuthFailure, refreshAuthSession } from "@/store/api/sessionRefresh";
+import { applyNgrokSkipBrowserWarningHeader } from "@/utils/ngrok";
 
 type AuthSliceRef = { auth?: { accessToken?: string | null } };
 
@@ -24,9 +24,7 @@ export function createBaseQueryWithReauth(): BaseQueryFn<
   const rawBaseQuery = fetchBaseQuery({
     baseUrl: env.apiBaseUrl,
     prepareHeaders: (headers, { getState }) => {
-      if (env.apiBaseUrl.includes("ngrok-free.dev") || env.apiBaseUrl.includes("ngrok.io")) {
-        headers.set(NGROK_SKIP_HEADER, "true");
-      }
+      applyNgrokSkipBrowserWarningHeader(headers, env.apiBaseUrl);
       const state = getState() as AuthSliceRef;
       const token = state.auth?.accessToken;
       if (token) {
