@@ -10,6 +10,7 @@ import androidx.core.app.RemoteInput
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Build
 import android.util.Base64
@@ -114,7 +115,10 @@ class HamtechNotificationModule(
             if (channelId == "calls") NotificationCompat.PRIORITY_MAX
             else NotificationCompat.PRIORITY_HIGH
           )
-          .setDefaults(NotificationCompat.DEFAULT_SOUND or NotificationCompat.DEFAULT_VIBRATE)
+          .setDefaults(
+            if (channelId == "calls") NotificationCompat.DEFAULT_VIBRATE
+            else NotificationCompat.DEFAULT_SOUND or NotificationCompat.DEFAULT_VIBRATE
+          )
 
       if (!subtitle.isNullOrBlank()) {
         builder.setSubText(subtitle)
@@ -191,7 +195,8 @@ class HamtechNotificationModule(
   private fun ensureChannel(channelId: String) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
     val manager = reactContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    if (manager.getNotificationChannel(channelId) != null) return
+    if (channelId != "calls" && manager.getNotificationChannel(channelId) != null) return
+
     val name =
       when (channelId) {
         "messages" -> "Tin nhan"
@@ -199,6 +204,27 @@ class HamtechNotificationModule(
         "social" -> "Hoat dong"
         else -> "Thong bao"
       }
+
+    if (channelId == "calls") {
+      manager.deleteNotificationChannel("calls")
+      val channel =
+        NotificationChannel("calls", name, NotificationManager.IMPORTANCE_HIGH).apply {
+          val ringtoneAttrs =
+            AudioAttributes.Builder()
+              .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+              .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+              .build()
+          setSound(
+            Uri.parse("android.resource://${reactContext.packageName}/${R.raw.amthanhnhan}"),
+            ringtoneAttrs,
+          )
+          enableVibration(true)
+          vibrationPattern = longArrayOf(0, 400, 200, 400)
+        }
+      manager.createNotificationChannel(channel)
+      return
+    }
+
     val importance =
       if (channelId == "calls") NotificationManager.IMPORTANCE_HIGH
       else NotificationManager.IMPORTANCE_DEFAULT

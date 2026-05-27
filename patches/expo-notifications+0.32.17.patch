@@ -1,8 +1,9 @@
 diff --git a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/model/NotificationContent.java b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/model/NotificationContent.java
-index 191b64e..187a96e 100644
+index 191b64e..9d527a5 100644
 --- a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/model/NotificationContent.java
 +++ b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/model/NotificationContent.java
-@@ -37,6 +37,8 @@ import kotlin.coroutines.Continuation;
+@@ -35,6 +35,8 @@ import kotlin.coroutines.Continuation;
+  * Refactoring this class may require a migration strategy for the data stored in SharedPreferences.
   */
  public class NotificationContent implements Parcelable, Serializable, INotificationContent {
 +  private static final String AVATAR_LOG_TAG = "HamtechNotifAvatar";
@@ -10,7 +11,7 @@ index 191b64e..187a96e 100644
    private String mTitle;
    private String mText;
    private String mSubtitle;
-@@ -100,9 +102,163 @@ public class NotificationContent implements Parcelable, Serializable, INotificat
+@@ -100,9 +102,150 @@ public class NotificationContent implements Parcelable, Serializable, INotificat
      return mSound != null ? mSound.getLastPathSegment() : null;
    }
  
@@ -161,7 +162,7 @@ index 191b64e..187a96e 100644
      try {
        ApplicationInfo ai = context.getPackageManager().getApplicationInfo(context.getPackageName(), PackageManager.GET_META_DATA);
        if (ai.metaData.containsKey(META_DATA_LARGE_ICON_KEY)) {
-@@ -117,7 +235,7 @@ public class NotificationContent implements Parcelable, Serializable, INotificat
+@@ -117,7 +260,24 @@ public class NotificationContent implements Parcelable, Serializable, INotificat
  
    @Override
    public boolean containsImage() {
@@ -177,14 +178,14 @@ index 191b64e..187a96e 100644
 +        ", remoteUrl=" + getRemoteImageUrl()
 +    );
 +    return result;
-   }
++  }
 +
 +  private static String describeBitmap(@Nullable Bitmap bitmap) {
 +    if (bitmap == null) {
 +      return "null";
 +    }
 +    return bitmap.getWidth() + "x" + bitmap.getHeight();
-+  }
+   }
  
    @Nullable
 diff --git a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/model/NotificationData.kt b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/model/NotificationData.kt
@@ -233,7 +234,7 @@ index cdbc237..1619bdf 100644
  
    override val title = remoteMessage.notification?.title ?: notificationData.title
 diff --git a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt
-index 610d303..2a0b531 100644
+index 610d303..d210398 100644
 --- a/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt
 +++ b/node_modules/expo-notifications/android/src/main/java/expo/modules/notifications/notifications/presentation/builders/ExpoNotificationBuilder.kt
 @@ -11,7 +11,9 @@ import android.os.Parcel
@@ -246,7 +247,7 @@ index 610d303..2a0b531 100644
  import expo.modules.notifications.notifications.SoundResolver
  import expo.modules.notifications.notifications.enums.NotificationPriority
  import expo.modules.notifications.notifications.interfaces.INotificationContent
-@@ -100,17 +102,85 @@ open class ExpoNotificationBuilder(
+@@ -100,17 +102,96 @@ open class ExpoNotificationBuilder(
      builder.setAutoCancel(content.isAutoDismiss)
      builder.setOngoing(content.isSticky)
  
@@ -351,7 +352,7 @@ index 610d303..2a0b531 100644
  
      applySoundsAndVibrations(content, builder)
  
-@@ -147,11 +196,12 @@ open class ExpoNotificationBuilder(
+@@ -147,15 +228,33 @@ open class ExpoNotificationBuilder(
        )
      )
  
@@ -369,7 +370,7 @@ index 610d303..2a0b531 100644
      }
      return builder.build()
    }
-+
+ 
 +  private data class MessagingLine(val text: String, val timestamp: Long, val senderName: String?)
 +
 +  private fun parseMessagingLinesFromBody(content: INotificationContent): List<MessagingLine> {
@@ -386,3 +387,7 @@ index 610d303..2a0b531 100644
 +    }
 +    return lines
 +  }
++
+   private fun applySoundsAndVibrations(content: INotificationContent, builder: NotificationCompat.Builder) {
+     val shouldPlaySound = shouldPlaySound()
+     val shouldVibrate = shouldVibrate()
