@@ -12,6 +12,8 @@ export type CallStatus =
 
 export type UpgradeStatus = "none" | "pending-outgoing" | "pending-incoming" | "accepted";
 
+export type CallDeviceAvailability = "available" | "blocked" | "failed" | "unavailable";
+
 export type ActiveGroupCallSession = {
   conversationId: string;
   channelName: string;
@@ -32,6 +34,11 @@ export interface CallState {
   calleeId: string | null;
   isMicOn: boolean;
   isCameraOn: boolean;
+  micAvailability: CallDeviceAvailability;
+  cameraAvailability: CallDeviceAvailability;
+  micErrorMessage: string | null;
+  cameraErrorMessage: string | null;
+  receiveOnly: boolean;
   upgradeStatus: UpgradeStatus;
   isScreenSharing: boolean;
   returnTo: string | null;
