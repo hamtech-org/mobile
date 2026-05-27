@@ -15,6 +15,7 @@ import * as ScreenOrientation from "expo-screen-orientation";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useDispatch, useSelector } from "react-redux";
 import { Audio } from "expo-av";
+import { Camera } from "expo-camera";
 import {
   ChannelMediaOptions,
   ChannelProfileType,
@@ -52,28 +53,121 @@ import { useIconColors } from "@/hooks/useIconColors";
 import { apiClient } from "@/services/api";
 import {
   resetCall,
+  setCameraAvailability,
+  setCameraEnabled,
   setCallConnected,
   setCallEnded,
   setEndReason,
+  setMicAvailability,
+  setMicEnabled,
+  setReceiveOnly,
   setScreenSharing,
 } from "@/store/slices/callSlice";
 import type { AppDispatch, RootState } from "@/store/store";
 import { userIdToAgoraUid } from "@/utils/agoraUid";
 import { GROUP_TILE_GAP_PX, gridColsRows, maxTilesPerPage } from "@/utils/groupCallVideoGrid";
+import type { CallDeviceAvailability } from "@/types/call.types";
 
 function paramOne(v: string | string[] | undefined): string {
   if (v == null) return "";
   return Array.isArray(v) ? (v[0] ?? "") : v;
 }
 
-async function ensureAndroidCallPermissions(video: boolean): Promise<boolean> {
-  if (Platform.OS !== "android") return true;
-  const need: string[] = [PermissionsAndroid.PERMISSIONS.RECORD_AUDIO];
-  if (video) need.push(PermissionsAndroid.PERMISSIONS.CAMERA);
-  const res = await PermissionsAndroid.requestMultiple(need as never);
-  const audioOk = res["android.permission.RECORD_AUDIO"] === PermissionsAndroid.RESULTS.GRANTED;
-  const camOk = !video || res["android.permission.CAMERA"] === PermissionsAndroid.RESULTS.GRANTED;
-  return audioOk && camOk;
+type DeviceProbeResult = {
+  availability: CallDeviceAvailability;
+  errorMessage: string | null;
+  enabled: boolean;
+};
+
+type CallDevicePermissions = {
+  micGranted: boolean;
+  cameraGranted: boolean;
+};
+
+async function requestCallDevicePermissions(input: {
+  needMic: boolean;
+  needCamera: boolean;
+}): Promise<CallDevicePermissions> {
+  if (Platform.OS === "android") {
+    const need: string[] = [];
+    if (input.needMic) need.push(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+    if (input.needCamera) need.push(PermissionsAndroid.PERMISSIONS.CAMERA);
+    if (need.length === 0) {
+      return { micGranted: true, cameraGranted: true };
+    }
+    const res = await PermissionsAndroid.requestMultiple(need as never);
+    return {
+      micGranted:
+        !input.needMic ||
+        res["android.permission.RECORD_AUDIO"] === PermissionsAndroid.RESULTS.GRANTED,
+      cameraGranted:
+        !input.needCamera ||
+        res["android.permission.CAMERA"] === PermissionsAndroid.RESULTS.GRANTED,
+    };
+  }
+
+  let micGranted = true;
+  let cameraGranted = true;
+
+  if (input.needMic) {
+    const micExisting = await Audio.getPermissionsAsync();
+    micGranted = micExisting.granted ? true : (await Audio.requestPermissionsAsync()).granted;
+  }
+
+  if (input.needCamera) {
+    const camExisting = await Camera.getCameraPermissionsAsync();
+    cameraGranted = camExisting.granted
+      ? true
+      : (await Camera.requestCameraPermissionsAsync()).granted;
+  }
+
+  return { micGranted, cameraGranted };
+}
+
+function describeDeviceFailure(kind: "mic" | "camera", error: unknown): DeviceProbeResult {
+  const raw =
+    error instanceof Error ? error.message : typeof error === "string" ? error : "Thiết bị lỗi.";
+  const msg = raw.trim() || "Thiết bị lỗi.";
+  const lowered = msg.toLowerCase();
+
+  if (
+    lowered.includes("permission") ||
+    lowered.includes("denied") ||
+    lowered.includes("not authorized") ||
+    lowered.includes("microphone") ||
+    lowered.includes("camera")
+  ) {
+    return {
+      availability: "blocked",
+      errorMessage:
+        kind === "mic"
+          ? "Không có quyền micro. Bạn chỉ có thể nghe cho đến khi bật lại quyền."
+          : "Không có quyền camera. Bạn sẽ tham gia mà không bật camera.",
+      enabled: false,
+    };
+  }
+
+  if (
+    lowered.includes("not found") ||
+    lowered.includes("unavailable") ||
+    lowered.includes("no device") ||
+    lowered.includes("not readable")
+  ) {
+    return {
+      availability: "unavailable",
+      errorMessage:
+        kind === "mic"
+          ? "Micro không khả dụng trên thiết bị này."
+          : "Camera không khả dụng trên thiết bị này.",
+      enabled: false,
+    };
+  }
+
+  return {
+    availability: "failed",
+    errorMessage: kind === "mic" ? "Không thể bật micro." : "Không thể bật camera.",
+    enabled: false,
+  };
 }
 
 export default function CallAgoraScreen() {
@@ -115,8 +209,14 @@ export default function CallAgoraScreen() {
     callType,
     callScope,
     hostId,
+    callerId,
     isMicOn,
     isCameraOn,
+    micAvailability,
+    cameraAvailability,
+    micErrorMessage,
+    cameraErrorMessage,
+    receiveOnly,
     upgradeStatus,
     returnTo,
     conversationId,
@@ -180,6 +280,43 @@ export default function CallAgoraScreen() {
 
   const registeredHandlerRef = useRef<IRtcEngineEventHandler | null>(null);
   const ringbackRef = useRef<Audio.Sound | null>(null);
+  const rtcJoinedRef = useRef(false);
+  const isMicOnRef = useRef(isMicOn);
+  isMicOnRef.current = isMicOn;
+  const isCameraOnRef = useRef(isCameraOn);
+  isCameraOnRef.current = isCameraOn;
+  const lastDeviceAlertMessageRef = useRef<string | null>(null);
+  const deviceAlertShownRef = useRef(false);
+
+  const applyMicFailure = useCallback(
+    (error: unknown) => {
+      const probe = describeDeviceFailure("mic", error);
+      dispatch(
+        setMicAvailability({
+          availability: probe.availability,
+          errorMessage: probe.errorMessage,
+          forceEnabled: false,
+        }),
+      );
+      return probe;
+    },
+    [dispatch],
+  );
+
+  const applyCameraFailure = useCallback(
+    (error: unknown) => {
+      const probe = describeDeviceFailure("camera", error);
+      dispatch(
+        setCameraAvailability({
+          availability: probe.availability,
+          errorMessage: probe.errorMessage,
+          forceEnabled: false,
+        }),
+      );
+      return probe;
+    },
+    [dispatch],
+  );
 
   useEffect(() => {
     // Cho phép xoay ngang trong màn call (phục vụ xem screen-share/video rõ hơn).
@@ -235,36 +372,13 @@ export default function CallAgoraScreen() {
     };
   }, [resolvedConversationId, currentUserId]);
 
-  useEffect(() => {
-    // Khi voice → video được accept: bật video engine + publish camera.
-    if (isGroup) return;
-    if (upgradeStatus !== "accepted") return;
-    const engine = engineRef.current;
-    if (!engine || !joined) return;
-    const run = async () => {
-      const ok = await ensureAndroidCallPermissions(true);
-      if (!ok) return;
-      try {
-        engine.enableVideo();
-        engine.enableLocalVideo(true);
-        engine.startPreview(VideoSourceType.VideoSourceCameraPrimary);
-        engine.updateChannelMediaOptions({
-          publishCameraTrack: true,
-          publishMicrophoneTrack: true,
-        } as ChannelMediaOptions);
-      } catch {
-        /* ignore */
-      }
-    };
-    void run();
-  }, [isGroup, joined, upgradeStatus]);
-
   const shutdownRtc = useCallback(() => {
     const ch = channelRef.current;
     const conv = conversationIdRef.current;
-    if (isGroupRef.current && ch.startsWith("grp_") && conv) {
+    if (rtcJoinedRef.current && isGroupRef.current && ch.startsWith("grp_") && conv) {
       socketRef.current?.emit("call:group-rtc-left", { channelName: ch, conversationId: conv });
     }
+    rtcJoinedRef.current = false;
     const engine = engineRef.current;
     if (!engine) return;
     try {
@@ -299,6 +413,126 @@ export default function CallAgoraScreen() {
     dispatch(setScreenSharing(false));
   }, [dispatch]);
 
+  const cleanupFailedJoin = useCallback(
+    (message?: string) => {
+      const type = (urlCallType || callType || "audio") as "audio" | "video";
+      if (channelName && resolvedConversationId) {
+        if (!isGroup) {
+          const directPeerId = callerId || calleeId;
+          if (directPeerId) {
+            socketRef.current?.emit("call:end", {
+              channelName,
+              peerId: directPeerId,
+              conversationId: resolvedConversationId,
+              type,
+              durationSec: 0,
+              result: "cancelled",
+            });
+          }
+        } else if (isHost && status === "outgoing-ringing") {
+          socketRef.current?.emit("call:group-missed", {
+            channelName,
+            conversationId: resolvedConversationId,
+            type,
+          });
+        }
+      }
+      shutdownRtc();
+      if (message) {
+        Alert.alert("Lỗi tham gia cuộc gọi", message);
+      }
+      dispatch(setCallEnded());
+    },
+    [
+      calleeId,
+      callType,
+      callerId,
+      channelName,
+      dispatch,
+      isGroup,
+      isHost,
+      resolvedConversationId,
+      shutdownRtc,
+      status,
+      urlCallType,
+    ],
+  );
+
+  const updatePublishOptions = useCallback(
+    (options: ChannelMediaOptions) => {
+      const engine = engineRef.current;
+      if (!engine || !joined) return;
+      try {
+        engine.updateChannelMediaOptions(options);
+      } catch {
+        /* ignore */
+      }
+    },
+    [joined],
+  );
+
+  const enableMicrophoneForCall = useCallback(async (): Promise<boolean> => {
+    const engine = engineRef.current;
+    if (!engine) return false;
+
+    const permission = await requestCallDevicePermissions({
+      needMic: true,
+      needCamera: false,
+    });
+    if (!permission.micGranted) {
+      dispatch(
+        setMicAvailability({
+          availability: "blocked",
+          errorMessage: "Không có quyền micro. Bạn chỉ có thể nghe cho đến khi bật lại quyền.",
+          forceEnabled: false,
+        }),
+      );
+      return false;
+    }
+
+    try {
+      engine.enableAudio();
+      engine.muteLocalAudioStream(false);
+      dispatch(setMicAvailability({ availability: "available", errorMessage: null }));
+      return true;
+    } catch (error) {
+      applyMicFailure(error);
+      return false;
+    }
+  }, [applyMicFailure, dispatch]);
+
+  const enableCameraForCall = useCallback(async (): Promise<boolean> => {
+    const engine = engineRef.current;
+    if (!engine) return false;
+
+    const permission = await requestCallDevicePermissions({
+      needMic: false,
+      needCamera: true,
+    });
+    if (!permission.cameraGranted) {
+      dispatch(
+        setCameraAvailability({
+          availability: "blocked",
+          errorMessage: "Không có quyền camera. Bạn sẽ tham gia mà không bật camera.",
+          forceEnabled: false,
+        }),
+      );
+      return false;
+    }
+
+    try {
+      engine.enableVideo();
+      engine.enableLocalVideo(true);
+      engine.startPreview(VideoSourceType.VideoSourceCameraPrimary);
+      engine.muteLocalVideoStream(false);
+      dispatch(setCameraAvailability({ availability: "available", errorMessage: null }));
+      return true;
+    } catch (error) {
+      applyCameraFailure(error);
+      return false;
+    }
+  }, [applyCameraFailure, dispatch]);
+
   useEffect(() => {
     if (!channelName) {
       goBack();
@@ -316,28 +550,26 @@ export default function CallAgoraScreen() {
     let cancelled = false;
 
     const run = async () => {
-      const ok = await ensureAndroidCallPermissions(joinWithVideo);
-      if (!ok || cancelled) {
-        Alert.alert("Quyền", "Cần quyền micro (và camera nếu gọi video) để tham gia cuộc gọi.");
-        goBack();
-        return;
-      }
-
+      rtcJoinedRef.current = false;
       const engine = createAgoraRtcEngine();
       engineRef.current = engine;
-      engine.initialize({
-        appId,
-        channelProfile: ChannelProfileType.ChannelProfileCommunication,
-      });
-      engine.enableAudio();
-      if (joinWithVideo) {
-        engine.enableVideo();
-        engine.startPreview(VideoSourceType.VideoSourceCameraPrimary);
+      try {
+        engine.initialize({
+          appId,
+          channelProfile: ChannelProfileType.ChannelProfileCommunication,
+        });
+      } catch (error) {
+        if (__DEV__) console.warn("[Agora] initialize failed", error);
+        if (!cancelled) {
+          cleanupFailedJoin("Không thể khởi tạo Agora trên thiết bị này.");
+        }
+        return;
       }
 
       const handler: IRtcEngineEventHandler = {
         onJoinChannelSuccess: () => {
           if (cancelled) return;
+          rtcJoinedRef.current = true;
           setJoined(true);
           dispatch(setCallConnected());
           const ch = channelRef.current;
@@ -418,6 +650,49 @@ export default function CallAgoraScreen() {
       engine.registerEventHandler(handler);
 
       try {
+        const permissions = await requestCallDevicePermissions({
+          needMic: true,
+          needCamera: joinWithVideo,
+        });
+        if (cancelled) return;
+
+        let canPublishMic = permissions.micGranted;
+        let canPublishCamera = joinWithVideo && permissions.cameraGranted;
+
+        if (!permissions.micGranted) {
+          dispatch(
+            setMicAvailability({
+              availability: "blocked",
+              errorMessage: "Không có quyền micro. Bạn sẽ tham gia ở chế độ nghe.",
+              forceEnabled: false,
+            }),
+          );
+          dispatch(setMicEnabled(false));
+          canPublishMic = false;
+        } else if (!(await enableMicrophoneForCall())) {
+          dispatch(setMicEnabled(false));
+          canPublishMic = false;
+        }
+
+        if (joinWithVideo) {
+          if (!permissions.cameraGranted) {
+            dispatch(
+              setCameraAvailability({
+                availability: "blocked",
+                errorMessage: "Không có quyền camera. Bạn sẽ tham gia mà không bật camera.",
+                forceEnabled: false,
+              }),
+            );
+            dispatch(setCameraEnabled(false));
+            canPublishCamera = false;
+          } else if (!(await enableCameraForCall())) {
+            dispatch(setCameraEnabled(false));
+            canPublishCamera = false;
+          }
+        } else {
+          dispatch(setCameraAvailability({ availability: "unavailable", errorMessage: null }));
+        }
+
         const { token, uid } = await fetchAgoraToken(channelName);
         if (cancelled) return;
         setLocalUid(uid);
@@ -425,19 +700,18 @@ export default function CallAgoraScreen() {
         const options = {
           clientRoleType: ClientRoleType.ClientRoleBroadcaster,
           channelProfile: ChannelProfileType.ChannelProfileCommunication,
-          publishMicrophoneTrack: true,
-          publishCameraTrack: joinWithVideo,
+          publishMicrophoneTrack: canPublishMic,
+          publishCameraTrack: canPublishCamera,
           autoSubscribeAudio: true,
           autoSubscribeVideo: true,
         } as ChannelMediaOptions;
 
         engine.joinChannel(token, channelName, uid, options);
+        dispatch(setReceiveOnly(!canPublishMic && !canPublishCamera));
       } catch (e) {
         if (__DEV__) console.warn("[Agora] join failed", e);
         if (!cancelled) {
-          Alert.alert("Lỗi", "Không thể tham gia kênh Agora.");
-          shutdownRtc();
-          goBack();
+          cleanupFailedJoin("Không thể tham gia kênh Agora.");
         }
       }
     };
@@ -448,30 +722,175 @@ export default function CallAgoraScreen() {
       cancelled = true;
       shutdownRtc();
     };
-  }, [appId, channelName, dispatch, fetchAgoraToken, goBack, joinWithVideo, shutdownRtc]);
+  }, [
+    appId,
+    channelName,
+    cleanupFailedJoin,
+    dispatch,
+    enableCameraForCall,
+    enableMicrophoneForCall,
+    fetchAgoraToken,
+    goBack,
+    joinWithVideo,
+    shutdownRtc,
+  ]);
 
   useEffect(() => {
     const engine = engineRef.current;
     if (!engine || !joined) return;
-    engine.muteLocalAudioStream(!isMicOn);
-  }, [isMicOn, joined]);
+    if (!isMicOn) {
+      engine.muteLocalAudioStream(true);
+      updatePublishOptions({
+        publishMicrophoneTrack: false,
+      } as ChannelMediaOptions);
+      return;
+    }
+
+    let cancelled = false;
+    const run = async () => {
+      const micReady = await enableMicrophoneForCall();
+      if (cancelled || !micReady) {
+        dispatch(setMicEnabled(false));
+        return;
+      }
+      updatePublishOptions({
+        publishMicrophoneTrack: true,
+      } as ChannelMediaOptions);
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [dispatch, enableMicrophoneForCall, isMicOn, joined, updatePublishOptions]);
 
   useEffect(() => {
     const engine = engineRef.current;
     if (!engine || !joined || !isVideoCall) return;
     if (localScreenSharing) return;
-    // Không chỉ mute frame (dễ bị "đứng hình" ở remote); publish/unpublish rõ ràng.
-    engine.enableLocalVideo(isCameraOn);
-    engine.muteLocalVideoStream(!isCameraOn);
-    try {
-      engine.updateChannelMediaOptions({
-        publishCameraTrack: isCameraOn,
-        publishMicrophoneTrack: true,
+    if (!isCameraOn) {
+      engine.enableLocalVideo(false);
+      engine.muteLocalVideoStream(true);
+      updatePublishOptions({
+        publishCameraTrack: false,
+        publishMicrophoneTrack: isMicOn && micAvailability === "available",
       } as ChannelMediaOptions);
-    } catch {
-      /* ignore */
+      return;
     }
-  }, [isCameraOn, isVideoCall, joined, localScreenSharing]);
+
+    let cancelled = false;
+    const run = async () => {
+      const cameraReady = await enableCameraForCall();
+      if (cancelled || !cameraReady) {
+        dispatch(setCameraEnabled(false));
+        return;
+      }
+      updatePublishOptions({
+        publishCameraTrack: true,
+        publishMicrophoneTrack: isMicOn && micAvailability === "available",
+      } as ChannelMediaOptions);
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    dispatch,
+    enableCameraForCall,
+    isCameraOn,
+    isMicOn,
+    isVideoCall,
+    joined,
+    localScreenSharing,
+    micAvailability,
+    updatePublishOptions,
+  ]);
+
+  useEffect(() => {
+    // Khi voice → video được accept: bật video engine + publish camera.
+    if (isGroup) return;
+    if (upgradeStatus !== "accepted") return;
+    const engine = engineRef.current;
+    if (!engine || !joined) return;
+    const run = async () => {
+      const cameraReady = await enableCameraForCall();
+      if (!cameraReady) {
+        dispatch(setCameraEnabled(false));
+        return;
+      }
+      updatePublishOptions({
+        publishCameraTrack: true,
+        publishMicrophoneTrack: isMicOn && micAvailability === "available",
+      } as ChannelMediaOptions);
+    };
+    void run();
+  }, [
+    dispatch,
+    enableCameraForCall,
+    isGroup,
+    isMicOn,
+    joined,
+    micAvailability,
+    updatePublishOptions,
+    upgradeStatus,
+  ]);
+
+  useEffect(() => {
+    if (!joined) return;
+    const noMic = !isMicOn || micAvailability !== "available";
+    const noCamera =
+      !isVideoCall || (!localScreenSharing && (!isCameraOn || cameraAvailability !== "available"));
+    dispatch(setReceiveOnly(noMic && noCamera));
+  }, [
+    cameraAvailability,
+    dispatch,
+    isCameraOn,
+    isMicOn,
+    isVideoCall,
+    joined,
+    localScreenSharing,
+    micAvailability,
+  ]);
+
+  const hasRemoteParticipant = isGroup ? remoteUids.length > 0 : peerUid != null;
+
+  const deviceAlertMessage = useMemo(() => {
+    const micIssue =
+      micAvailability !== "available" ? (micErrorMessage ?? "Không thể bật micro.") : null;
+    const cameraIssue =
+      isVideoCall && cameraAvailability !== "available"
+        ? (cameraErrorMessage ?? "Không thể bật camera.")
+        : null;
+
+    if (micIssue && cameraIssue) {
+      return "Thiết bị không dùng được micro/camera. Bạn đã vào cuộc gọi ở chế độ chỉ nghe/xem.";
+    }
+
+    return micIssue ?? cameraIssue;
+  }, [cameraAvailability, cameraErrorMessage, isVideoCall, micAvailability, micErrorMessage]);
+
+  useEffect(() => {
+    deviceAlertShownRef.current = false;
+    lastDeviceAlertMessageRef.current = null;
+  }, [channelName]);
+
+  useEffect(() => {
+    if (status === "ended") {
+      deviceAlertShownRef.current = false;
+      lastDeviceAlertMessageRef.current = null;
+    }
+  }, [status]);
+
+  useEffect(() => {
+    if (!joined || status !== "connected" || !hasRemoteParticipant || !deviceAlertMessage) {
+      return;
+    }
+    if (deviceAlertShownRef.current && lastDeviceAlertMessageRef.current === deviceAlertMessage) {
+      return;
+    }
+    deviceAlertShownRef.current = true;
+    lastDeviceAlertMessageRef.current = deviceAlertMessage;
+    Alert.alert("Thiết bị cuộc gọi", deviceAlertMessage);
+  }, [deviceAlertMessage, hasRemoteParticipant, joined, status]);
 
   useEffect(() => {
     if (status !== "ended") return;
@@ -629,9 +1048,9 @@ export default function CallAgoraScreen() {
         engine.stopScreenCapture();
         engine.updateChannelMediaOptions({
           publishScreenCaptureVideo: false,
-          publishCameraTrack: isCameraOn,
+          publishCameraTrack: isCameraOnRef.current,
         } as ChannelMediaOptions);
-        if (isCameraOn) {
+        if (isCameraOnRef.current) {
           engine.startPreview(VideoSourceType.VideoSourceCameraPrimary);
         }
       } catch (e) {
@@ -673,7 +1092,7 @@ export default function CallAgoraScreen() {
     }
     setLocalScreenSharing(true);
     dispatch(setScreenSharing(true));
-  }, [dispatch, isCameraOn, isVideoCall, joined, localScreenSharing]);
+  }, [dispatch, isVideoCall, joined, localScreenSharing]);
 
   const statusLabel =
     status === "outgoing-ringing"
@@ -693,6 +1112,23 @@ export default function CallAgoraScreen() {
                     ? "Đang bận"
                     : "Kết thúc"
               : "";
+
+  const deviceStatusHint = useMemo(() => {
+    const parts: string[] = [];
+    if (receiveOnly) parts.push("Đang ở chế độ chỉ nghe/xem.");
+    if (micAvailability !== "available" && micErrorMessage) parts.push(micErrorMessage);
+    if (isVideoCall && cameraAvailability !== "available" && cameraErrorMessage) {
+      parts.push(cameraErrorMessage);
+    }
+    return parts[0] ?? null;
+  }, [
+    cameraAvailability,
+    cameraErrorMessage,
+    isVideoCall,
+    micAvailability,
+    micErrorMessage,
+    receiveOnly,
+  ]);
 
   const calleeLabel = useMemo(() => {
     const raw = (calleeId || "").trim();
@@ -795,33 +1231,40 @@ export default function CallAgoraScreen() {
     <SafeAreaView className="flex-1 bg-neutral-950" edges={["top", "bottom"]}>
       <View className="flex-1 px-3 pt-2">
         {!uiHidden ? (
-          <View className="mb-2 flex-row items-center justify-between">
-            <Text className="text-sm text-white/80">{statusLabel}</Text>
-            {isGroup && isVideoCall ? (
-              <View className="flex-row items-center gap-2">
-                <Pressable
-                  onPress={() => setParticipantsOpen(true)}
-                  className="flex-row items-center gap-1 rounded-lg bg-white/10 px-2 py-1"
-                >
-                  <LayoutGrid size={16} color={primary} />
-                  <Text className="text-xs text-white">Danh sách</Text>
-                </Pressable>
-                {isLandscape ? (
+          <View className="mb-2 gap-2">
+            <View className="flex-row items-center justify-between">
+              <Text className="text-sm text-white/80">{statusLabel}</Text>
+              {isGroup && isVideoCall ? (
+                <View className="flex-row items-center gap-2">
                   <Pressable
-                    onPress={() => setUiHidden(true)}
-                    className="rounded-lg bg-white/10 px-2 py-1"
+                    onPress={() => setParticipantsOpen(true)}
+                    className="flex-row items-center gap-1 rounded-lg bg-white/10 px-2 py-1"
                   >
-                    <Text className="text-xs text-white">Ẩn chức năng</Text>
+                    <LayoutGrid size={16} color={primary} />
+                    <Text className="text-xs text-white">Danh sách</Text>
                   </Pressable>
-                ) : null}
+                  {isLandscape ? (
+                    <Pressable
+                      onPress={() => setUiHidden(true)}
+                      className="rounded-lg bg-white/10 px-2 py-1"
+                    >
+                      <Text className="text-xs text-white">Ẩn chức năng</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              ) : isLandscape ? (
+                <Pressable
+                  onPress={() => setUiHidden(true)}
+                  className="rounded-lg bg-white/10 px-2 py-1"
+                >
+                  <Text className="text-xs text-white">Ẩn chức năng</Text>
+                </Pressable>
+              ) : null}
+            </View>
+            {deviceStatusHint ? (
+              <View className="self-start rounded-xl border border-amber-400/30 bg-amber-500/10 px-3 py-2">
+                <Text className="text-xs text-amber-100">{deviceStatusHint}</Text>
               </View>
-            ) : isLandscape ? (
-              <Pressable
-                onPress={() => setUiHidden(true)}
-                className="rounded-lg bg-white/10 px-2 py-1"
-              >
-                <Text className="text-xs text-white">Ẩn chức năng</Text>
-              </Pressable>
             ) : null}
           </View>
         ) : (
@@ -1026,7 +1469,11 @@ export default function CallAgoraScreen() {
             <Pressable
               onPress={onToggleMic}
               className={`h-14 w-14 items-center justify-center rounded-full border ${
-                isMicOn ? "border-white/80 bg-white/10" : "border-red-600 bg-red-600"
+                micAvailability !== "available"
+                  ? "border-amber-500 bg-amber-600"
+                  : isMicOn
+                    ? "border-white/80 bg-white/10"
+                    : "border-red-600 bg-red-600"
               } active:opacity-70`}
             >
               {isMicOn ? <Mic size={26} color="#fff" /> : <MicOff size={26} color="#fff" />}
@@ -1037,9 +1484,11 @@ export default function CallAgoraScreen() {
                   onPress={onToggleCamera}
                   disabled={localScreenSharing}
                   className={`h-14 w-14 items-center justify-center rounded-full border ${
-                    isCameraOn && !localScreenSharing
-                      ? "border-white/80 bg-white/10"
-                      : "border-red-600 bg-red-600"
+                    cameraAvailability !== "available"
+                      ? "border-amber-500 bg-amber-600"
+                      : isCameraOn && !localScreenSharing
+                        ? "border-white/80 bg-white/10"
+                        : "border-red-600 bg-red-600"
                   } ${localScreenSharing ? "opacity-50" : ""} active:opacity-70`}
                 >
                   {isCameraOn && !localScreenSharing ? (

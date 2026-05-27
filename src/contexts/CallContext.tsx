@@ -141,8 +141,21 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
       dispatch(setCallEnded());
     };
 
-    const onEnded = () => {
+    const onEnded = (data: unknown) => {
+      const payload = data as {
+        channelName?: string;
+        conversationId?: string;
+      };
       const st = store.getState().call;
+      if (st.status === "idle") return;
+      if (payload.channelName && st.channelName && st.channelName !== payload.channelName) return;
+      if (
+        payload.conversationId &&
+        st.conversationId &&
+        st.conversationId !== payload.conversationId
+      ) {
+        return;
+      }
       if (st.channelName) void dismissCallSystemNotification(st.channelName);
       if (st.status === "incoming-ringing") {
         dispatch(setEndReason("missed"));
