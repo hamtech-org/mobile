@@ -1,6 +1,6 @@
 import { conversationApi } from "@/store/api/endpoints/conversationApi";
 import { store } from "@/store/store";
-import type { IncomingCallData } from "@/types/call.types";
+import type { CallScope, IncomingCallData } from "@/types/call.types";
 import { fetchSenderAvatarUrl, resolveChatSenderAvatarUrl } from "@/utils/notificationAvatar";
 import { pushChatNotificationStack, type ChatMessagingLine } from "@/utils/chatNotificationStack";
 import {
@@ -202,6 +202,55 @@ export function presentChatNotificationFromRemotePush(content: {
   return true;
 }
 
+function incomingCallPayloadFromPushData(
+  data: Record<string, unknown>,
+  fallbackTitle?: string | null,
+): (IncomingCallData & { callerAvatar?: string | null }) | null {
+  const channelName = String(data.channelName ?? data.entityId ?? data.id ?? "").trim();
+  const conversationId = String(data.conversationId ?? "").trim();
+  const callerId = String(data.callerId ?? "").trim();
+  if (!channelName || !conversationId || !callerId) return null;
+
+  const type = String(data.callType) === "video" ? "video" : "audio";
+  const scope: CallScope = String(data.callScope) === "group" ? "group" : "direct";
+  const callerAvatar =
+    typeof data.callerAvatar === "string"
+      ? data.callerAvatar
+      : typeof data.actorAvatar === "string"
+        ? data.actorAvatar
+        : typeof data.avatarUrl === "string"
+          ? data.avatarUrl
+          : null;
+
+  return {
+    channelName,
+    conversationId,
+    callerId,
+    callerName: String(data.callerName ?? fallbackTitle ?? "").trim() || "Cuộc gọi đến",
+    type,
+    scope,
+    hostId: String(data.hostId ?? callerId).trim() || callerId,
+    ...(typeof data.sessionId === "string" ? { sessionId: data.sessionId } : {}),
+    ...(callerAvatar ? { callerAvatar } : {}),
+  };
+}
+
+/** Expo push cuộc gọi (app nền) → banner native Trả lời/Từ chối + chuông kênh calls. */
+export function presentCallNotificationFromRemotePush(content: {
+  title?: string | null;
+  body?: string | null;
+  data?: Record<string, unknown>;
+}): boolean {
+  const data = content.data ?? {};
+  if (String(data.route ?? "") !== "call") return false;
+
+  const payload = incomingCallPayloadFromPushData(data, content.title);
+  if (!payload) return false;
+
+  showIncomingCallSystemNotification(payload, { fromRemotePush: true });
+  return true;
+}
+
 export function presentChatMessageNotification(
   senderName: string,
   preview: string,
@@ -242,12 +291,18 @@ export function presentGroupActivityNotification(
   });
 }
 
-export function showIncomingCallSystemNotification(payload: IncomingCallData): void {
+export function showIncomingCallSystemNotification(
+  payload: IncomingCallData & { callerAvatar?: string | null },
+  options?: { fromRemotePush?: boolean },
+): void {
   const groupName = payload.scope === "group" ? resolveGroupName(payload.conversationId) : null;
   const layout = buildCallNotificationLayout(payload, groupName);
+  const deliverySource = options?.fromRemotePush
+    ? NOTIFICATION_DELIVERY_PUSH
+    : NOTIFICATION_DELIVERY_SOCKET;
 
   void (async () => {
-    const payloadWithAvatar = payload as IncomingCallData & { callerAvatar?: string | null };
+    const payloadWithAvatar = payload;
     let avatarUrl: string | null = payloadWithAvatar.callerAvatar?.trim() || null;
     const conv = conversationApi.endpoints.getConversations
       .select(undefined)(store.getState())
@@ -265,28 +320,37 @@ export function showIncomingCallSystemNotification(payload: IncomingCallData): v
     const kind: NotificationKind =
       layout.callScope === "group" ? "chat_call_group" : "chat_call_direct";
     const spec = getNotificationSpec(kind);
-    void showLocalSystemNotification({
-      title: layout.title,
-      body: layout.body,
-      subtitle: layout.subtitle,
-      channel: spec.channel,
-      categoryIdentifier: spec.categoryId,
-      notificationId: layout.notificationId,
-      avatarUrl,
-      data: baseData(kind, "call", payload.channelName, {
-        deepLink: "/call",
-        entityType: "call",
-        entityId: payload.channelName,
-        conversationId: payload.conversationId,
-        callScope: layout.callScope,
-        channelName: payload.channelName,
-        callType: payload.type,
-        callStatus: "incoming",
-        callerId: payload.callerId,
-        callerName: payload.callerName,
-        hostId: payload.hostId,
-      }),
-    });
+    void showLocalSystemNotification(
+      {
+        title: layout.title,
+        body: layout.body,
+        subtitle: layout.subtitle,
+        channel: spec.channel,
+        categoryIdentifier: spec.categoryId,
+        notificationId: layout.notificationId,
+        avatarUrl,
+        data: baseData(
+          kind,
+          "call",
+          payload.channelName,
+          {
+            deepLink: "/call",
+            entityType: "call",
+            entityId: payload.channelName,
+            conversationId: payload.conversationId,
+            callScope: layout.callScope,
+            channelName: payload.channelName,
+            callType: payload.type,
+            callStatus: "incoming",
+            callerId: payload.callerId,
+            callerName: payload.callerName,
+            hostId: payload.hostId,
+          },
+          deliverySource,
+        ),
+      },
+      { fromRemotePush: options?.fromRemotePush },
+    );
   })();
 }
 

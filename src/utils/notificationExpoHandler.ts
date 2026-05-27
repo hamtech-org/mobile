@@ -5,7 +5,10 @@ import {
   isSocketLocalNotificationEnabled,
   NOTIFICATION_DELIVERY_SOCKET,
 } from "@/utils/localSystemNotification";
-import { presentChatNotificationFromRemotePush } from "@/utils/notificationPresenters";
+import {
+  presentCallNotificationFromRemotePush,
+  presentChatNotificationFromRemotePush,
+} from "@/utils/notificationPresenters";
 import { shouldSuppressRemotePushInForeground } from "@/utils/notificationRegistry";
 
 let handlerInstalled = false;
@@ -18,10 +21,29 @@ export function ensureExpoNotificationHandlerInstalled(): void {
   Notifications.setNotificationHandler({
     handleNotification: async (notification) => {
       const content = notification.request.content;
+      const pushData = content.data as Record<string, unknown> | undefined;
+
+      const callMerged =
+        AppState.currentState !== "active" &&
+        presentCallNotificationFromRemotePush({
+          title: content.title,
+          body: content.body,
+          data: pushData,
+        });
+      if (callMerged) {
+        return {
+          shouldPlaySound: false,
+          shouldSetBadge: true,
+          shouldShowBanner: false,
+          shouldShowList: false,
+          shouldShowAlert: false,
+        };
+      }
+
       const merged = presentChatNotificationFromRemotePush({
         title: content.title,
         body: content.body,
-        data: content.data as Record<string, unknown> | undefined,
+        data: pushData,
       });
       if (merged) {
         return {

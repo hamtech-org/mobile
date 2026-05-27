@@ -8,3 +8,5 @@
 
 Giữ nguyên tên file để code không cần sửa.
 
+**Android notification (khi thoát app):** copy `amThanhNhan.mp3` sang `android/app/src/main/res/raw/amthanhnhan.mp3` (chữ thường) trước khi build APK.
+

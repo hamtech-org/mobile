@@ -12,6 +12,10 @@ import {
 import { subscribeHamtechNotificationActions } from "@/utils/hamtechNotificationActions";
 import { requestNotificationPermissionAsync } from "@/utils/notificationPermission";
 import { isRemotePushSupported } from "@/utils/pushNotificationsSupport";
+import {
+  CALL_NOTIFICATION_SOUND,
+  CALLS_NOTIFICATION_CHANNEL_ID,
+} from "@/utils/notificationConstants";
 import { NOTIFICATION_ACTION, type SystemNotificationCategory } from "@/utils/notificationRegistry";
 import { sanitizeNotificationText } from "@/utils/systemNotificationLayout";
 
@@ -275,6 +279,12 @@ export async function ensureSystemNotificationChannels(): Promise<void> {
   if (channelsReady) return channelsReady;
 
   channelsReady = (async () => {
+    try {
+      await Notifications.deleteNotificationChannelAsync(CALLS_NOTIFICATION_CHANNEL_ID);
+    } catch {
+      /* ignore — channel may not exist */
+    }
+
     await Notifications.setNotificationChannelAsync("messages", {
       name: "Tin nhắn",
       description: "Tin nhắn 1-1 và nhóm",
@@ -285,13 +295,13 @@ export async function ensureSystemNotificationChannels(): Promise<void> {
       enableVibrate: true,
       showBadge: true,
     });
-    await Notifications.setNotificationChannelAsync("calls", {
+    await Notifications.setNotificationChannelAsync(CALLS_NOTIFICATION_CHANNEL_ID, {
       name: "Cuộc gọi",
       description: "Cuộc gọi đến 1-1 và nhóm",
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 400, 200, 400],
       lightColor: ZALO_ACCENT,
-      sound: "default",
+      sound: CALL_NOTIFICATION_SOUND,
       enableVibrate: true,
     });
     await Notifications.setNotificationChannelAsync("social", {
@@ -341,7 +351,7 @@ export async function showLocalSystemNotification(
       channel === "messages"
         ? "messages"
         : channel === "calls"
-          ? "calls"
+          ? CALLS_NOTIFICATION_CHANNEL_ID
           : channel === "social"
             ? "social"
             : "default";
@@ -436,7 +446,7 @@ export async function showLocalSystemNotification(
         ...(subtitle ? { subtitle } : {}),
         categoryIdentifier,
         data: notificationData,
-        sound: "default",
+        sound: channel === "calls" ? CALL_NOTIFICATION_SOUND : "default",
         ...(messageCount ? { badge: messageCount } : {}),
         ...(Platform.OS === "android"
           ? {

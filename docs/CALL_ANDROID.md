@@ -22,6 +22,19 @@
 - Cần **bản build có native**; đã khai báo quyền/foreground service trong cấu hình Expo; sau khi đổi native, chạy lại **prebuild** hoặc build EAS.
 - Kiểm tra trên thiết bị thật: bật “Share màn hình” trong màn hình gọi, bên còn lại thấy nguồn video từ màn hình.
 
+## Cuộc gọi đến khi thoát app (push + chuông)
+
+- Cần **APK build thật** (không Expo Go) và **FCM / Expo push** đã cấu hình (EAS credentials, `google-services.json`).
+- Chuông notification dùng file **`amThanhNhan.mp3`**:
+  - Trong app (modal): `mobile/assets/ringtones/amThanhNhan.mp3`
+  - Kênh Android: `mobile/android/app/src/main/res/raw/amthanhnhan.mp3` (copy từ asset; tên chữ thường)
+- Sau khi đổi âm kênh `calls`, nếu vẫn nghe chuông cũ: **gỡ cài app** hoặc xóa data rồi cài lại APK.
+- Đăng nhập → cho phép thông báo → thoát/kill app → người khác gọi → kiểm tra:
+  - Có notification + chuông `amThanhNhan`
+  - Nút **Trả lời** / **Từ chối**
+  - **Trả lời** mở `/call` (`CallAgoraScreen`) — 1-1 audio/video và group
+- Khi app đang mở: vẫn dùng `IncomingCallModal` + chuông in-app (push call bị ẩn trùng).
+
 ## Checklist kiểm thử tối thiểu (LAN)
 
 - [ ] Gọi 1-1: âm thanh, bật/tắt mic
@@ -30,6 +43,7 @@
 - [ ] Tắt / mở camera, mic từng bên; kết thúc cuộc; rời nhóm
 - [ ] **Một thiết bị Android** share màn hình, ít nhất **một người** xem được
 - [ ] Lỗi thường gặp: token hết hạn, sai URL API/socket, firewall chặn port trên PC
+- [ ] Kill app → gọi đến → push + chuông → Trả lời → vào màn call
 
 ## Troubleshooting nhanh
 
