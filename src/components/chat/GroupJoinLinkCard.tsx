@@ -84,7 +84,7 @@ export function GroupJoinLinkCard({ payload }: GroupJoinLinkCardProps) {
               size="lg"
               isGroup
               groupConversationId={conversationId}
-              cacheVersion={liveConversation?.updatedAt}
+              cacheVersion={String(liveConversation?.memberCount ?? "")}
             />
             <View className="min-w-0 flex-1">
               <Text className="text-[15px] font-bold text-slate-900" numberOfLines={2}>

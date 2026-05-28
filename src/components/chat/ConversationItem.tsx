@@ -116,7 +116,9 @@ export const ConversationItem = ({
         groupConversationId={
           conversation.type === "group" ? conversation.conversationId : undefined
         }
-        cacheVersion={conversation.type === "group" ? conversation.updatedAt : undefined}
+        cacheVersion={
+          conversation.type === "group" ? String(conversation.memberCount ?? "") : undefined
+        }
       />
 
       <View className="min-h-[44px] flex-1 justify-between gap-0.5">
