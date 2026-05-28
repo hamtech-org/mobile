@@ -1,23 +1,78 @@
-import { buildAppMediaDownloadUrl, parseMediaIdFromStoredUrl } from "@/utils/chatMediaDownload";
-import { normalizeMediaUrl } from "@/utils/url";
+import { env } from "@/config/env";
 
-/** Path avatar nhóm / media download nội bộ — được phép thêm `?v=` (không có chữ ký query). */
-function isGroupAvatarCacheBustable(url: string): boolean {
+const MEDIA_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function absoluteApiUrl(pathOrUrl: string): string {
+  const raw = pathOrUrl.trim();
+  if (!raw) return "";
+  if (/^https?:\/\//i.test(raw)) return raw;
+
+  const base = env.apiBaseUrl.replace(/\/+$/, "");
+  const path = raw.startsWith("/") ? raw : `/${raw}`;
+
+  let basePath = "";
   try {
-    const path = url.includes("://") ? new URL(url).pathname : url.split("?")[0];
-    if (/\/conversations\/[^/]+\/avatar$/i.test(path)) return true;
-    return /\/media\/[0-9a-f-]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/download$/i.test(
-      path,
-    );
+    basePath = new URL(base).pathname.replace(/\/+$/, "");
   } catch {
-    return (
-      /\/conversations\/[^/]+\/avatar(?:\?|$)/i.test(url) ||
-      /\/media\/[0-9a-f-]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/download/i.test(url)
+    basePath = base.replace(/^https?:\/\/[^/]+/i, "").replace(/\/+$/, "");
+  }
+
+  const normalizedPath =
+    basePath && path.toLowerCase().startsWith(`${basePath.toLowerCase()}/`)
+      ? path.slice(basePath.length)
+      : path;
+
+  return `${base}${normalizedPath}`;
+}
+
+function parseGroupAvatarMediaId(urlStr: string): string | null {
+  const trimmed = urlStr.trim();
+  if (!trimmed || /\/conversations\/[^/]+\/avatar/i.test(trimmed)) return null;
+  if (MEDIA_UUID_RE.test(trimmed)) return trimmed;
+  try {
+    const u = /^https?:\/\//i.test(trimmed)
+      ? new URL(trimmed)
+      : new URL(trimmed, "http://local.invalid");
+    const path = u.pathname.replace(/\/+$/, "");
+    const app = path.match(
+      /\/media\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/(?:download|thumbnail)$/i,
     );
+    if (app?.[1]) return app[1];
+    const object = path.match(
+      /\/(?:chat|public)\/[^/]+\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/(?:original|thumb)\b/i,
+    );
+    return object?.[1] ?? null;
+  } catch {
+    return null;
   }
 }
 
-/** Bust cache ảnh nhóm khi `updatedAt` đổi (URL endpoint hoặc media id có thể giữ nguyên). */
+function buildGroupAvatarMediaUrl(mediaId: string): string {
+  return absoluteApiUrl(`/media/${mediaId}/download`);
+}
+
+function resolveGroupAvatarFetchUrl(storedUrl: string): string {
+  const trimmed = storedUrl.trim();
+  if (!trimmed) return "";
+  if (/^(?:file|content|blob|data):/i.test(trimmed)) return trimmed;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^\/?api\//i.test(trimmed) || /^\/?(?:chat|media)\//i.test(trimmed)) {
+    return absoluteApiUrl(trimmed);
+  }
+  return absoluteApiUrl(trimmed);
+}
+
+/** Path avatar nhóm ghép mặc định — được phép thêm `?v=` (không có chữ ký query). */
+function isGroupAvatarCacheBustable(url: string): boolean {
+  try {
+    const path = url.includes("://") ? new URL(url).pathname : url.split("?")[0];
+    return /\/conversations\/[^/]+\/avatar$/i.test(path);
+  } catch {
+    return /\/conversations\/[^/]+\/avatar(?:\?|$)/i.test(url);
+  }
+}
+
+/** Bust cache avatar ghép mặc định khi version riêng đổi; không dùng conversation.updatedAt. */
 export function withGroupAvatarCacheBuster(
   url: string | null | undefined,
   version?: string | null,
@@ -40,7 +95,7 @@ export function normalizeGroupAvatarStoredValue(
   const trimmed = (avatar ?? "").trim();
   if (!trimmed) return fallback;
 
-  const mediaId = parseMediaIdFromStoredUrl(trimmed);
+  const mediaId = parseGroupAvatarMediaId(trimmed);
   if (mediaId) return `/api/v1/media/${mediaId}/download`;
 
   let pathOnly = trimmed.split("?")[0];
@@ -59,13 +114,13 @@ export function normalizeGroupAvatarStoredValue(
 /** URL đầy đủ để hiển thị avatar nhóm trên thiết bị hiện tại. */
 export function resolveGroupAvatarDisplayUrl(
   avatar: string | null | undefined,
-  opts?: { conversationId?: string; updatedAt?: string | null },
+  opts?: { conversationId?: string; updatedAt?: string | null; avatarVersion?: string | null },
 ): string | undefined {
   const cid = String(opts?.conversationId ?? "").trim();
   const stored = cid ? normalizeGroupAvatarStoredValue(avatar, cid) : (avatar ?? "").trim();
   if (!stored) return undefined;
 
-  const mediaId = parseMediaIdFromStoredUrl(stored);
-  const base = mediaId ? buildAppMediaDownloadUrl(mediaId) : (normalizeMediaUrl(stored) ?? stored);
-  return withGroupAvatarCacheBuster(base, opts?.updatedAt) ?? base;
+  const mediaId = parseGroupAvatarMediaId(stored);
+  const base = mediaId ? buildGroupAvatarMediaUrl(mediaId) : resolveGroupAvatarFetchUrl(stored);
+  return withGroupAvatarCacheBuster(base, opts?.avatarVersion) ?? base;
 }

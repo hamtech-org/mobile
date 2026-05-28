@@ -4,6 +4,8 @@ import { router } from "expo-router";
 import { useGroupJoinLinkModalOptional } from "@/contexts/GroupJoinLinkModalContext";
 
 import { Avatar } from "@/components/common/Avatar";
+import { useGetConversationsQuery } from "@/store/api/chatApi";
+import { useGetGroupJoinPreviewQuery } from "@/store/api/endpoints/joinApi";
 import {
   joinLinkMessageDomain,
   type GroupJoinLinkMessagePayload,
@@ -19,6 +21,19 @@ type GroupJoinLinkCardProps = {
 export function GroupJoinLinkCard({ payload }: GroupJoinLinkCardProps) {
   const joinLinkModal = useGroupJoinLinkModalOptional();
   const domain = joinLinkMessageDomain(payload.url);
+  const { data: conversations = [] } = useGetConversationsQuery();
+  const { data: preview } = useGetGroupJoinPreviewQuery(payload.suffix, {
+    skip: !payload.suffix,
+  });
+  const conversationId = preview?.conversationId ?? payload.conversationId;
+  const liveConversation = conversations.find((c) => c.conversationId === conversationId);
+  const groupName =
+    liveConversation?.name?.trim() || preview?.name || payload.groupName || "Nhóm chat";
+  const fallbackAvatar = conversationId
+    ? `/api/v1/chat/conversations/${conversationId}/avatar`
+    : null;
+  const groupAvatar =
+    liveConversation?.avatar ?? preview?.avatar ?? payload.groupAvatar ?? fallbackAvatar;
 
   const openLink = () => {
     if (joinLinkModal) {
@@ -63,10 +78,17 @@ export function GroupJoinLinkCard({ payload }: GroupJoinLinkCardProps) {
             </Text>
           </View>
           <View className="flex-row items-start gap-3 px-3 py-3">
-            <Avatar uri={payload.groupAvatar} name={payload.groupName} size="lg" isGroup />
+            <Avatar
+              uri={groupAvatar}
+              name={groupName}
+              size="lg"
+              isGroup
+              groupConversationId={conversationId}
+              cacheVersion={String(liveConversation?.memberCount ?? "")}
+            />
             <View className="min-w-0 flex-1">
               <Text className="text-[15px] font-bold text-slate-900" numberOfLines={2}>
-                {payload.groupName}
+                {groupName}
               </Text>
               <Text className="mt-1.5 text-[13px] leading-snug text-slate-600" numberOfLines={3}>
                 {payload.description ?? "Bấm vào đây để tham gia nhóm trên HamTech"}
