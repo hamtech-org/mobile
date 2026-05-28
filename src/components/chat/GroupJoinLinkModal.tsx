@@ -23,6 +23,7 @@ import {
   useGetGroupJoinPreviewQuery,
   useJoinGroupViaLinkMutation,
 } from "@/store/api/endpoints/joinApi";
+import { useGetConversationsQuery } from "@/store/api/chatApi";
 import { useGroupJoinLinkModal } from "@/contexts/GroupJoinLinkModalContext";
 import { toast } from "@/utils/appToast";
 
@@ -53,10 +54,23 @@ export function GroupJoinLinkModal({ open, data, onClose }: Props) {
   const { data: preview, isLoading: previewLoading } = useGetGroupJoinPreviewQuery(suffix, {
     skip: !open || !suffix,
   });
+  const { data: conversations = [] } = useGetConversationsQuery(undefined, {
+    skip: !open,
+  });
   const [joinViaLink, { isLoading: joining }] = useJoinGroupViaLinkMutation();
-  const groupName = data?.groupName ?? preview?.name ?? "Nhóm chat";
-  const groupAvatar = data?.groupAvatar ?? preview?.avatar;
   const conversationIdForChat = preview?.conversationId ?? data?.conversationId;
+  const liveConversation = conversations.find((c) => c.conversationId === conversationIdForChat);
+  const groupName =
+    liveConversation?.name?.trim() || data?.groupName || preview?.name || "Nhóm chat";
+  const groupAvatar = liveConversation?.avatar ?? data?.groupAvatar ?? preview?.avatar;
+  const currentData = data
+    ? {
+        ...data,
+        groupName,
+        groupAvatar,
+        conversationId: conversationIdForChat ?? data.conversationId,
+      }
+    : null;
   const showMemberBanner = Boolean(preview && !previewLoading && preview.isMember);
   const showMemberCount = Boolean(preview && !previewLoading);
 
@@ -67,9 +81,9 @@ export function GroupJoinLinkModal({ open, data, onClose }: Props) {
   }, [joinUrl]);
 
   const handleShare = useCallback(() => {
-    if (!data) return;
-    openShareGroupJoinLinkPicker(data);
-  }, [data, openShareGroupJoinLinkPicker]);
+    if (!currentData) return;
+    openShareGroupJoinLinkPicker(currentData);
+  }, [currentData, openShareGroupJoinLinkPicker]);
 
   const handleSaveQr = useCallback(() => {
     const svg = qrRef.current;
@@ -150,7 +164,14 @@ export function GroupJoinLinkModal({ open, data, onClose }: Props) {
                 </Text>
               ) : null}
 
-              <Avatar uri={groupAvatar || undefined} name={groupName} size="xl" isGroup />
+              <Avatar
+                uri={groupAvatar || undefined}
+                name={groupName}
+                size="xl"
+                isGroup
+                groupConversationId={conversationIdForChat}
+                cacheVersion={liveConversation?.updatedAt}
+              />
               <Text className="mt-3 text-center text-[18px] font-bold text-slate-900">
                 {groupName}
               </Text>
