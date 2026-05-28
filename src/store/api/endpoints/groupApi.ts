@@ -64,6 +64,13 @@ export interface GroupJoinRequestRow {
 
 type MemberCountPayload = { memberCount?: number } | null;
 
+function buildUpdateGroupBody(req: UpdateGroupRequest): { name?: string; avatar?: string } {
+  const body: { name?: string; avatar?: string } = {};
+  if (req.name !== undefined) body.name = req.name;
+  if (req.avatar !== undefined) body.avatar = req.avatar;
+  return body;
+}
+
 function updateInjectedQueryData(...args: unknown[]): unknown {
   return (
     chatApi.util as unknown as { updateQueryData: (...innerArgs: unknown[]) => unknown }
@@ -85,11 +92,15 @@ export const groupApi = chatApi.injectEndpoints({
     }),
 
     updateGroup: builder.mutation<ApiEnvelope<unknown>, UpdateGroupRequest>({
-      query: ({ groupId, ...body }) => ({
-        url: `/chat/groups/${groupId}`,
-        method: "PUT",
-        body,
-      }),
+      query: (req) => {
+        const groupId = req.groupId;
+        const body = buildUpdateGroupBody(req);
+        return {
+          url: `/chat/groups/${groupId}`,
+          method: "PUT",
+          body,
+        };
+      },
       invalidatesTags: ["Conversations"],
       async onQueryStarted({ groupId, name, avatar }, { dispatch, queryFulfilled }) {
         const optimisticPatch = dispatch(
