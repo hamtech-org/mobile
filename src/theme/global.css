@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Light — Messenger/Zalo inspired */
+    --background: 0 0% 97%;
+    --foreground: 220 25% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 25% 10%;
+    --primary: 214 100% 50%;
+    --primary-foreground: 0 0% 100%;
+    --muted: 220 14% 93%;
+    --muted-foreground: 220 10% 46%;
+    --border: 220 14% 89%;
+    --destructive: 0 84% 60%;
+    --accent: 214 100% 95%;
+  }
+
+  .dark {
+    /* Dark — deep navy như Zalo dark */
+    --background: 224 30% 10%;
+    --foreground: 210 30% 95%;
+    --card: 224 28% 14%;
+    --card-foreground: 210 30% 95%;
+    --primary: 214 100% 58%;
+    --primary-foreground: 0 0% 100%;
+    --muted: 224 25% 18%;
+    --muted-foreground: 220 15% 58%;
+    --border: 224 25% 22%;
+    --destructive: 0 72% 51%;
+    --accent: 214 60% 20%;
+  }
+}
+

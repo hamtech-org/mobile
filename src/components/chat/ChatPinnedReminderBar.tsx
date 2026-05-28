@@ -1,0 +1,261 @@
+import { useCallback, useMemo, useRef, useState, type ReactElement } from "react";
+import { Dimensions, Modal, Pressable, ScrollView, Text, View } from "react-native";
+import {
+  BarChart2,
+  ChevronDown,
+  ChevronUp,
+  FileText,
+  Image as ImageIcon,
+  MessageSquare,
+  MoreHorizontal,
+  Pin,
+  PinOff,
+  Video as VideoIcon,
+} from "lucide-react-native";
+
+import { ChatFileTypeBadge } from "@/components/chat/ChatFileTypeBadge";
+import { PinnedRowPreview } from "@/components/chat/PinnedRowPreview";
+import { resolveChatFileBubbleMeta } from "@/utils/chatMediaDisplay";
+import { useIconColors } from "@/hooks/useIconColors";
+import type { IMessage } from "@/types/chat.types";
+import {
+  pinnedMessageAccent,
+  pinnedMessageKind,
+  pinnedMessageKindTitle,
+  pollQuestionFromPinnedMessage,
+  type PinnedMessageKind,
+} from "@/utils/pinnedMessageDisplay";
+
+const KIND_ICONS: Record<PinnedMessageKind, typeof MessageSquare> = {
+  message: MessageSquare,
+  poll: BarChart2,
+  image: ImageIcon,
+  video: VideoIcon,
+  file: FileText,
+};
+
+interface PinnedRowProps {
+  msg: IMessage;
+  viewerUserId: string;
+  onPress: () => void;
+  onUnpin?: () => void | Promise<void>;
+}
+
+function PinnedRow({ msg, viewerUserId, onPress, onUnpin }: PinnedRowProps): ReactElement {
+  const { muted } = useIconColors();
+  const moreBtnRef = useRef<View>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const pollQuestion = useMemo(() => pollQuestionFromPinnedMessage(msg), [msg]);
+  const kind = pinnedMessageKind(msg);
+  const kindLabel = pinnedMessageKindTitle(msg);
+  const accent = pinnedMessageAccent(msg);
+  const Icon = KIND_ICONS[kind];
+  const fileMeta = kind === "file" ? resolveChatFileBubbleMeta(msg) : null;
+
+  const openMenu = useCallback(() => {
+    moreBtnRef.current?.measureInWindow((x, y, _w, h) => {
+      const screenW = Dimensions.get("window").width;
+      const menuW = 168;
+      const left = Math.max(8, Math.min(x - menuW + 28, screenW - menuW - 8));
+      setMenuPos({ top: y + h + 6, left });
+    });
+  }, []);
+
+  const closeMenu = useCallback(() => setMenuPos(null), []);
+
+  return (
+    <>
+      <View className="flex-row items-stretch gap-2 border-b border-border bg-card">
+        <Pressable
+          className="min-w-0 flex-1 flex-row items-start gap-3 px-3 py-2.5 active:bg-muted/40"
+          onPress={onPress}
+          android_ripple={{ color: "rgba(0,0,0,0.04)" }}
+        >
+          {kind === "file" && fileMeta ? (
+            <ChatFileTypeBadge
+              fileName={fileMeta.fileName}
+              mimeType={fileMeta.mimeType}
+              size="sm"
+            />
+          ) : (
+            <View
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 18,
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: accent,
+              }}
+            >
+              <Icon size={18} color="#fff" strokeWidth={2} />
+            </View>
+          )}
+          <View className="min-w-0 flex-1 overflow-hidden pt-0.5">
+            <Text
+              className="text-[13px] font-bold text-foreground"
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {kindLabel}
+            </Text>
+            <View className="mt-0.5 min-w-0 overflow-hidden">
+              {pollQuestion ? (
+                <Text
+                  className="text-[13px] text-muted-foreground"
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  {pollQuestion}
+                </Text>
+              ) : (
+                <PinnedRowPreview msg={msg} viewerUserId={viewerUserId} mutedColor={muted} />
+              )}
+            </View>
+          </View>
+        </Pressable>
+
+        {onUnpin ? (
+          <View ref={moreBtnRef} collapsable={false} className="items-center justify-center pr-2">
+            <Pressable
+              onPress={openMenu}
+              hitSlop={8}
+              className="h-8 w-8 items-center justify-center rounded-lg active:bg-muted"
+              android_ripple={{ color: "rgba(0,0,0,0.06)", borderless: true }}
+            >
+              <MoreHorizontal size={18} color={muted} />
+            </Pressable>
+          </View>
+        ) : null}
+      </View>
+
+      <Modal
+        visible={menuPos !== null}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={closeMenu}
+      >
+        <Pressable style={{ flex: 1 }} onPress={closeMenu}>
+          {menuPos ? (
+            <View
+              className="overflow-hidden rounded-lg border border-border bg-card"
+              style={{
+                position: "absolute",
+                top: menuPos.top,
+                left: menuPos.left,
+                minWidth: 168,
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.18,
+                shadowRadius: 14,
+                elevation: 8,
+              }}
+              pointerEvents="box-none"
+            >
+              <Pressable
+                onPress={() => {
+                  closeMenu();
+                  void onUnpin?.();
+                }}
+                className="flex-row items-center gap-2 px-3 py-2.5 active:bg-muted/60"
+                android_ripple={{ color: "rgba(0,0,0,0.06)" }}
+              >
+                <PinOff size={16} color={muted} />
+                <Text className="text-[13px] text-foreground">Bỏ ghim</Text>
+              </Pressable>
+            </View>
+          ) : null}
+        </Pressable>
+      </Modal>
+    </>
+  );
+}
+
+export interface ChatPinnedReminderBarProps {
+  pinnedMessages: IMessage[];
+  currentUserId: string;
+  onJumpToMessage: (messageId: string) => void;
+  /** Mở menu "Bỏ ghim" cho hàng nếu được cung cấp. */
+  onTogglePin?: (msg: IMessage) => void | Promise<void>;
+}
+
+/**
+ * Thanh "Danh sách ghim" (đồng bộ web `PinnedMessagesBar`):
+ * collapsed → 1 dòng "Danh sách ghim (N)"; expanded → list inline có scroll.
+ */
+export function ChatPinnedReminderBar({
+  pinnedMessages,
+  currentUserId,
+  onJumpToMessage,
+  onTogglePin,
+}: ChatPinnedReminderBarProps): ReactElement | null {
+  const { muted } = useIconColors();
+  const total = pinnedMessages.length;
+  const [expanded, setExpanded] = useState(false);
+
+  if (total === 0) return null;
+
+  if (!expanded) {
+    return (
+      <View className="w-full border-b border-border bg-muted/70">
+        <Pressable
+          className="w-full flex-row items-center gap-2 px-3 py-2.5 active:bg-muted"
+          onPress={() => setExpanded(true)}
+          android_ripple={{ color: "rgba(0,0,0,0.04)" }}
+        >
+          <View
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: 14,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: "#0068FF",
+            }}
+          >
+            <Pin size={14} color="#fff" strokeWidth={2.25} />
+          </View>
+          <Text className="text-[14px] font-semibold text-foreground" numberOfLines={1}>
+            Danh sách ghim ({total})
+          </Text>
+          <View style={{ flex: 1 }} />
+          <Text className="text-[13px] text-muted-foreground">Mở rộng</Text>
+          <ChevronDown size={16} color={muted} />
+        </Pressable>
+      </View>
+    );
+  }
+
+  const listMaxH = Math.min(Dimensions.get("window").height * 0.5, 320);
+
+  return (
+    <View className="w-full border-b border-border bg-card">
+      <View className="flex-row items-center justify-between gap-2 border-b border-border bg-muted/70 px-3 py-2">
+        <Text className="text-[14px] font-bold text-foreground" numberOfLines={1}>
+          Danh sách ghim ({total})
+        </Text>
+        <Pressable
+          className="flex-row items-center gap-1 rounded-md px-1.5 py-1 active:bg-muted"
+          onPress={() => setExpanded(false)}
+          android_ripple={{ color: "rgba(0,0,0,0.06)" }}
+          hitSlop={6}
+        >
+          <Text className="text-[13px] font-medium text-muted-foreground">Thu gọn</Text>
+          <ChevronUp size={16} color={muted} />
+        </Pressable>
+      </View>
+      <ScrollView style={{ maxHeight: listMaxH }} nestedScrollEnabled showsVerticalScrollIndicator>
+        {pinnedMessages.map((msg) => (
+          <PinnedRow
+            key={msg.messageId}
+            msg={msg}
+            viewerUserId={currentUserId}
+            onPress={() => onJumpToMessage(msg.messageId)}
+            onUnpin={onTogglePin ? () => onTogglePin(msg) : undefined}
+          />
+        ))}
+      </ScrollView>
+    </View>
+  );
+}

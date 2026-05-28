@@ -1,0 +1,11 @@
+node_modules/
+.expo/
+dist/
+web-build/
+android/
+ios/
+coverage/
+jest.config.js
+metro.config.js
+babel.config.js
+nativewind-env.d.ts

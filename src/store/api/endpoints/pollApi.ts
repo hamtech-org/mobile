@@ -1,0 +1,83 @@
+import { chatApi, type ApiEnvelope } from "../baseChatApi";
+
+export interface CreatePollRequest {
+  groupId: string;
+  question: string;
+  options: string[];
+  isMultipleChoice?: boolean;
+}
+
+export const pollApi = chatApi.injectEndpoints({
+  endpoints: (builder) => ({
+    getPolls: builder.query<ApiEnvelope<unknown[]>, string>({
+      query: (groupId) => `/chat/groups/${groupId}/polls`,
+      providesTags: (_result, _error, groupId) => [{ type: "Polls", id: groupId }],
+    }),
+
+    createPoll: builder.mutation<ApiEnvelope<unknown>, CreatePollRequest>({
+      query: ({ groupId, ...body }) => ({
+        url: `/chat/groups/${groupId}/polls`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: (_result, _error, { groupId }) => [
+        { type: "Polls", id: groupId },
+        { type: "Messages", id: groupId },
+      ],
+    }),
+
+    votePoll: builder.mutation<
+      ApiEnvelope<unknown>,
+      { groupId: string; pollId: string; optionIndex: number }
+    >({
+      query: ({ groupId, pollId, optionIndex }) => ({
+        url: `/chat/groups/${groupId}/polls/${pollId}/vote`,
+        method: "POST",
+        body: { optionIndex },
+      }),
+      invalidatesTags: (_result, _error, { groupId }) => [{ type: "Polls", id: groupId }],
+    }),
+
+    unvotePoll: builder.mutation<
+      ApiEnvelope<unknown>,
+      { groupId: string; pollId: string; optionIndex: number }
+    >({
+      query: ({ groupId, pollId, optionIndex }) => ({
+        url: `/chat/groups/${groupId}/polls/${pollId}/unvote`,
+        method: "POST",
+        body: { optionIndex },
+      }),
+      invalidatesTags: (_result, _error, { groupId }) => [{ type: "Polls", id: groupId }],
+    }),
+
+    closePoll: builder.mutation<ApiEnvelope<unknown>, { groupId: string; pollId: string }>({
+      query: ({ groupId, pollId }) => ({
+        url: `/chat/groups/${groupId}/polls/${pollId}/close`,
+        method: "POST",
+      }),
+      invalidatesTags: (_result, _error, { groupId }) => [{ type: "Polls", id: groupId }],
+    }),
+
+    addPollOption: builder.mutation<
+      ApiEnvelope<unknown>,
+      { groupId: string; pollId: string; text: string }
+    >({
+      query: ({ groupId, pollId, text }) => ({
+        url: `/chat/groups/${groupId}/polls/${pollId}/options`,
+        method: "POST",
+        body: { text },
+      }),
+      invalidatesTags: (_result, _error, { groupId }) => [{ type: "Polls", id: groupId }],
+    }),
+  }),
+  overrideExisting: true,
+});
+
+export const {
+  useGetPollsQuery,
+  useCreatePollMutation,
+  useVotePollMutation,
+  useUnvotePollMutation,
+  useClosePollMutation,
+  useAddPollOptionMutation,
+} = pollApi;

@@ -1,0 +1,250 @@
+export type GroupSystemPerson = {
+  userId?: string;
+  name?: string;
+};
+
+type GroupSystemPayload = {
+  kind?: string;
+  actor?: GroupSystemPerson;
+  targets?: GroupSystemPerson[];
+  member?: GroupSystemPerson;
+  successor?: GroupSystemPerson;
+  target?: GroupSystemPerson;
+  selfDemote?: boolean;
+  previousName?: string;
+  newName?: string;
+  nameChanged?: boolean;
+  avatarChanged?: boolean;
+};
+
+function labelPerson(
+  person: GroupSystemPerson | undefined,
+  currentUserId?: string | null,
+  fallback = "Thành viên",
+): string {
+  const userId = String(person?.userId ?? "").trim();
+  const name = String(person?.name ?? "").trim();
+  if (currentUserId && userId && userId === currentUserId) return "Bạn";
+  return name || fallback;
+}
+
+function formatTargetList(targets: GroupSystemPerson[], currentUserId?: string | null): string {
+  if (targets.length === 0) return "Thành viên";
+  const labels = targets.map((t) => labelPerson(t, currentUserId));
+  if (labels.length <= 3) return labels.join(", ");
+  const more = labels.length - 3;
+  return `${labels.slice(0, 3).join(", ")} và ${more} người khác`;
+}
+
+export type GroupSystemDisplayCtx = {
+  currentUserId?: string | null;
+  senderId?: string | null;
+  senderDisplayName?: string | null;
+  currentUserDisplayName?: string | null;
+  isOwn?: boolean;
+};
+
+/** JSON nhóm + tin plain text cũ → một dòng hiển thị theo người xem. */
+export function resolveGroupSystemDisplayLine(
+  raw: string,
+  ctx: GroupSystemDisplayCtx,
+): string | null {
+  return (
+    formatGroupSystemChatLine(raw, ctx.currentUserId) ??
+    formatLegacyGroupProfileSystemLine(raw, ctx) ??
+    formatLegacyGroupCreatedSystemLine(raw, ctx) ??
+    formatLegacyGroupJoinedSystemLine(raw, ctx)
+  );
+}
+
+export function formatGroupSystemChatLine(
+  raw: string,
+  currentUserId?: string | null,
+): string | null {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed.startsWith("{")) return null;
+  try {
+    const obj = JSON.parse(trimmed) as GroupSystemPayload;
+    const kind = String(obj?.kind ?? "");
+
+    if (kind === "group_created") {
+      const who = labelPerson(obj.actor, currentUserId, "Ai đó");
+      return `${who} đã tạo nhóm mới`;
+    }
+    if (kind === "group_member_invited") {
+      const who = labelPerson(obj.actor, currentUserId, "Ai đó");
+      return `${who} đã mời ${formatTargetList(obj.targets ?? [], currentUserId)} vào nhóm`;
+    }
+    if (kind === "group_member_joined") {
+      const who = labelPerson(obj.member, currentUserId);
+      return `${who} đã tham gia nhóm`;
+    }
+    if (kind === "group_member_left") {
+      const who = labelPerson(obj.member, currentUserId, "Thành viên");
+      return `${who} đã rời nhóm`;
+    }
+    if (kind === "group_member_removed") {
+      const who = labelPerson(obj.actor, currentUserId, "Ai đó");
+      const targetLabel = formatTargetList(obj.targets ?? [], currentUserId);
+      return `${who} đã mời ${targetLabel} ra khỏi nhóm`;
+    }
+    if (kind === "group_owner_transferred") {
+      const actorId = String(obj.actor?.userId ?? "").trim();
+      const successorId = String(obj.successor?.userId ?? "").trim();
+      const actorLabel = labelPerson(obj.actor, currentUserId, "Ai đó");
+      const successorLabel = labelPerson(obj.successor, currentUserId, "Thành viên");
+      if (currentUserId && actorId && actorId === currentUserId) {
+        return `Bạn đã chuyển quyền trưởng nhóm cho ${successorLabel}`;
+      }
+      if (currentUserId && successorId && successorId === currentUserId) {
+        return `${actorLabel} đã chuyển quyền trưởng nhóm cho bạn`;
+      }
+      return `${actorLabel} đã chuyển quyền trưởng nhóm cho ${successorLabel}`;
+    }
+    if (kind === "group_owner_assigned") {
+      const successorId = String(obj.successor?.userId ?? "").trim();
+      const successorLabel = labelPerson(obj.successor, currentUserId, "Thành viên");
+      if (currentUserId && successorId && successorId === currentUserId) {
+        return "Bạn là trưởng nhóm mới";
+      }
+      return `${successorLabel} là trưởng nhóm mới`;
+    }
+    if (kind === "group_admin_promoted") {
+      const actorId = String(obj.actor?.userId ?? "").trim();
+      const targetId = String(obj.target?.userId ?? "").trim();
+      const actorLabel = labelPerson(obj.actor, currentUserId, "Ai đó");
+      const targetLabel = labelPerson(obj.target, currentUserId, "Thành viên");
+      if (currentUserId && actorId && actorId === currentUserId) {
+        return `Bạn đã bổ nhiệm ${targetLabel} làm phó nhóm`;
+      }
+      if (currentUserId && targetId && targetId === currentUserId) {
+        return `${actorLabel} đã bổ nhiệm bạn làm phó nhóm`;
+      }
+      return `${actorLabel} đã bổ nhiệm ${targetLabel} làm phó nhóm`;
+    }
+    if (kind === "group_admin_demoted") {
+      if (obj.selfDemote) {
+        const who = labelPerson(obj.actor, currentUserId, "Ai đó");
+        return `${who} đã từ chức phó nhóm`;
+      }
+      const actorId = String(obj.actor?.userId ?? "").trim();
+      const targetId = String(obj.target?.userId ?? "").trim();
+      const actorLabel = labelPerson(obj.actor, currentUserId, "Ai đó");
+      const targetLabel = labelPerson(obj.target, currentUserId, "Thành viên");
+      if (currentUserId && actorId && actorId === currentUserId) {
+        return `Bạn đã hạ ${targetLabel} xuống thành viên`;
+      }
+      if (currentUserId && targetId && targetId === currentUserId) {
+        return `${actorLabel} đã hạ bạn xuống thành viên`;
+      }
+      return `${actorLabel} đã hạ ${targetLabel} xuống thành viên`;
+    }
+    if (kind === "group_profile_updated") {
+      const who = labelPerson(obj.actor, currentUserId, "Ai đó");
+      const nameChanged = obj.nameChanged === true;
+      const avatarChanged = obj.avatarChanged === true;
+      const newName = String(obj.newName ?? "").trim();
+      const previousName = String(obj.previousName ?? "").trim();
+      if (nameChanged && avatarChanged) {
+        if (newName) {
+          return `${who} đã đổi tên nhóm thành "${newName}" và cập nhật ảnh đại diện nhóm`;
+        }
+        return `${who} đã cập nhật thông tin nhóm`;
+      }
+      if (nameChanged) {
+        if (previousName && newName && previousName !== newName) {
+          return `${who} đã đổi tên nhóm từ '${previousName}' thành '${newName}'`;
+        }
+        if (newName) return `${who} đã đổi tên nhóm thành '${newName}'`;
+        return `${who} đã đổi tên nhóm`;
+      }
+      if (avatarChanged) return `${who} đã cập nhật ảnh đại diện nhóm`;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function formatLegacyGroupProfileSystemLine(
+  raw: string,
+  ctx: {
+    senderId?: string | null;
+    currentUserId?: string | null;
+    currentUserDisplayName?: string | null;
+    senderDisplayName?: string | null;
+    isOwn?: boolean;
+  },
+): string | null {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed || trimmed.startsWith("{")) return null;
+
+  const actorName =
+    trimmed.split(/\s+(?:đã\s+)?đổi tên nhóm/i)[0]?.trim() ||
+    trimmed.split(/\s+đã cập nhật ảnh đại diện nhóm/i)[0]?.trim() ||
+    "";
+  const normalizeName = (value?: string | null) =>
+    String(value ?? "")
+      .trim()
+      .replace(/\s+/g, " ")
+      .toLocaleLowerCase("vi-VN");
+  const viewerName = normalizeName(ctx.currentUserDisplayName);
+  const isSelfByName = Boolean(
+    viewerName &&
+    (normalizeName(actorName) === viewerName ||
+      normalizeName(ctx.senderDisplayName) === viewerName),
+  );
+  const isSelf = Boolean(
+    ctx.isOwn ||
+    (ctx.currentUserId && ctx.senderId && ctx.senderId === ctx.currentUserId) ||
+    isSelfByName,
+  );
+  const who = isSelf ? "Bạn" : String(ctx.senderDisplayName ?? "").trim() || actorName || "Ai đó";
+
+  if (trimmed.includes("đã cập nhật ảnh đại diện nhóm")) {
+    return `${who} đã cập nhật ảnh đại diện nhóm`;
+  }
+  const nameTail = trimmed.match(/(?:đã\s+)?đổi tên nhóm(.*)$/i)?.[1] ?? "";
+  if (nameTail) return `${who} đã đổi tên nhóm${nameTail}`;
+  return null;
+}
+
+/** Tin system plain text trước khi có JSON `group_created`. */
+export function formatLegacyGroupCreatedSystemLine(
+  raw: string,
+  ctx: GroupSystemDisplayCtx,
+): string | null {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed || trimmed.startsWith("{")) return null;
+  if (!/đã\s+tạo\s+nhóm/i.test(trimmed)) return null;
+
+  const isSelf = Boolean(
+    ctx.isOwn || (ctx.currentUserId && ctx.senderId && ctx.senderId === ctx.currentUserId),
+  );
+  if (isSelf) return "Bạn đã tạo nhóm mới";
+  const who =
+    String(ctx.senderDisplayName ?? "").trim() ||
+    trimmed.split(/\s+đã\s+tạo\s+nhóm/i)[0]?.trim() ||
+    "Ai đó";
+  return `${who} đã tạo nhóm mới`;
+}
+
+/** Tin system plain text «X đã tham gia nhóm» (trước JSON `group_member_joined`). */
+export function formatLegacyGroupJoinedSystemLine(
+  raw: string,
+  ctx: GroupSystemDisplayCtx,
+): string | null {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed || trimmed.startsWith("{")) return null;
+  if (!/đã\s+tham\s+gia\s+nhóm/i.test(trimmed)) return null;
+
+  const isSelf = Boolean(
+    ctx.isOwn || (ctx.currentUserId && ctx.senderId && ctx.senderId === ctx.currentUserId),
+  );
+  if (isSelf) return "Bạn đã tham gia nhóm";
+  const who =
+    String(ctx.senderDisplayName ?? "").trim() ||
+    trimmed.split(/\s+đã\s+tham\s+gia\s+nhóm/i)[0]?.trim() ||
+    "Thành viên";
+  return `${who} đã tham gia nhóm`;
+}
