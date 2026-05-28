@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactElement, type ReactNode } from "react";
+import { useCallback, useEffect, useState, useRef, type ReactElement, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -25,6 +25,7 @@ import * as Clipboard from "expo-clipboard";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import EmojiPicker, { EmojiType } from "rn-emoji-keyboard";
+import { Audio } from "expo-av";
 
 import { AiQuickRepliesMobile } from "@/components/chat/AiQuickRepliesMobile";
 import {
@@ -55,6 +56,7 @@ type VoiceUiState = "idle" | "active-ui" | "cancelled-ui";
 interface ChatInputProps {
   onSend: (content: string) => void | Promise<void>;
   onSendMedia?: (attachments: PendingAttachment[], caption: string) => void | Promise<void>;
+  onSendVoice?: (uri: string, duration: number) => void | Promise<void>;
   replyingTo?: IMessage | null;
   currentUserId?: string;
   onClearReply?: () => void;
@@ -74,6 +76,7 @@ interface ChatInputProps {
 export const ChatInput = ({
   onSend,
   onSendMedia,
+  onSendVoice,
   replyingTo,
   currentUserId = "",
   onClearReply,
@@ -90,30 +93,104 @@ export const ChatInput = ({
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const [showAiQuickReplies, setShowAiQuickReplies] = useState(true);
   const [aiReplyLoading, setAiReplyLoading] = useState(false);
-  const [voiceUiState, setVoiceUiState] = useState<VoiceUiState>("idle");
   const [isUploading, setIsUploading] = useState(false);
   const { muted, primary, foreground } = useIconColors();
+  const placeholder = conversationName ? `Nhập tin nhắn đến ${conversationName}` : "Nhập tin nhắn";
   const hasText = content.trim().length > 0;
   const hasSendable = hasText || pendingAttachments.length > 0;
   const inputDisabled = !activeConversationId || isUploading;
 
-  const placeholder = conversationName
-    ? `Nhập tin nhắn tới ${conversationName}...`
-    : activeConversationId
-      ? "Nhập tin nhắn..."
-      : "Chọn hội thoại để nhắn tin";
+  // ─── Logic ghi âm Voice (expo-av) ───
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const startRecording = async () => {
+    try {
+      const permission = await Audio.requestPermissionsAsync();
+      if (permission.status !== "granted") {
+        toast.error("Cần quyền truy cập microphone để ghi âm.");
+        return;
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const { recording: newRecording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY,
+      );
+
+      setRecording(newRecording);
+      setIsRecording(true);
+      setRecordingDuration(0);
+
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration((prev) => {
+          if (prev >= 300) {
+            // 5 phút
+            void stopRecording(true);
+            return prev;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+    } catch (err) {
+      console.error("Lỗi bắt đầu ghi âm:", err);
+      toast.error("Không thể khởi động ghi âm.");
+    }
+  };
+
+  const stopRecording = async (shouldSend: boolean) => {
+    if (!recording) return;
+
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+
+    setIsRecording(false);
+    setRecording(null);
+
+    try {
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      const durationAtStop = recordingDuration;
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+      });
+
+      if (shouldSend && uri) {
+        if (durationAtStop < 1) {
+          toast.warning("Tin nhắn thoại quá ngắn.");
+          return;
+        }
+        setIsUploading(true);
+        try {
+          if (onSendVoice) {
+            await onSendVoice(uri, durationAtStop);
+          }
+        } catch (err) {
+          console.error("Gửi voice tin thất bại:", err);
+        } finally {
+          setIsUploading(false);
+        }
+      }
+    } catch (err) {
+      console.error("Lỗi dừng ghi âm:", err);
+    }
+  };
 
   useEffect(() => {
-    if (voiceUiState !== "active-ui") return;
-    const t = setTimeout(() => setVoiceUiState("cancelled-ui"), 1200);
-    return () => clearTimeout(t);
-  }, [voiceUiState]);
-
-  useEffect(() => {
-    if (voiceUiState !== "cancelled-ui") return;
-    const t = setTimeout(() => setVoiceUiState("idle"), 900);
-    return () => clearTimeout(t);
-  }, [voiceUiState]);
+    return () => {
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     setPendingAttachments([]);
@@ -311,7 +388,11 @@ export const ChatInput = ({
 
   const handleVoiceUiClick = () => {
     if (inputDisabled) return;
-    setVoiceUiState((prev) => (prev === "active-ui" ? "idle" : "active-ui"));
+    if (isRecording) {
+      void stopRecording(false);
+    } else {
+      void startRecording();
+    }
   };
 
   const handleAiReplySuggest = async () => {
@@ -436,18 +517,11 @@ export const ChatInput = ({
         </ToolbarIcon>
         <ToolbarIcon
           onPress={handleVoiceUiClick}
-          accessibilityLabel="Voice preview"
+          accessibilityLabel="Voice recording"
           disabled={inputDisabled}
+          active={isRecording}
         >
-          {voiceUiState === "active-ui" ? (
-            <ActivityIndicator size="small" color={primary} />
-          ) : (
-            <Mic
-              size={20}
-              color={voiceUiState === "cancelled-ui" ? "#f97316" : muted}
-              strokeWidth={2}
-            />
-          )}
+          <Mic size={20} color={isRecording ? "#ef4444" : muted} strokeWidth={2} />
         </ToolbarIcon>
 
         <View style={styles.toolbarDivider} />
@@ -497,42 +571,75 @@ export const ChatInput = ({
         </View>
       ) : null}
 
-      <View style={styles.composeRow}>
-        <View style={styles.inputBox}>
-          <TextInput
-            placeholder={placeholder}
-            placeholderTextColor={muted}
-            value={content}
-            onChangeText={handleTextChange}
-            multiline
-            editable={!inputDisabled}
-            style={styles.textInput}
-          />
+      {isRecording ? (
+        <View style={styles.recordRow}>
+          <View style={styles.recordLeft}>
+            <View style={styles.recordDot} />
+            <Text style={styles.recordText}>ĐANG GHI ÂM...</Text>
+          </View>
+          <Text style={styles.recordTimer}>
+            {Math.floor(recordingDuration / 60)}:
+            {(recordingDuration % 60).toString().padStart(2, "0")}
+          </Text>
+          <View style={styles.recordRight}>
+            <Pressable
+              onPress={() => void stopRecording(false)}
+              style={styles.recordBtnCancel}
+              accessibilityLabel="Hủy ghi âm"
+            >
+              <X size={18} color="#ef4444" strokeWidth={2.5} />
+            </Pressable>
+            <Pressable
+              onPress={() => void stopRecording(true)}
+              style={[styles.recordBtnSend, { backgroundColor: primary }]}
+              accessibilityLabel="Gửi tin nhắn thoại"
+            >
+              <SendHorizontal size={18} color="#fff" strokeWidth={2} />
+            </Pressable>
+          </View>
         </View>
-        {hasSendable ? (
-          <Pressable
-            onPress={() => void handleSend()}
-            disabled={inputDisabled}
-            style={[styles.sendBtn, { backgroundColor: primary }, inputDisabled && styles.disabled]}
-            accessibilityLabel="Gửi tin nhắn"
-          >
-            {isUploading ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <SendHorizontal size={20} color="#fff" strokeWidth={2} />
-            )}
-          </Pressable>
-        ) : (
-          <Pressable
-            onPress={() => void Promise.resolve(onSend("👍")).catch(() => {})}
-            disabled={inputDisabled}
-            style={[styles.likeBtn, inputDisabled && styles.disabled]}
-            accessibilityLabel="Gửi like"
-          >
-            <ThumbsUp size={20} color={primary} strokeWidth={2} />
-          </Pressable>
-        )}
-      </View>
+      ) : (
+        <View style={styles.composeRow}>
+          <View style={styles.inputBox}>
+            <TextInput
+              placeholder={placeholder}
+              placeholderTextColor={muted}
+              value={content}
+              onChangeText={handleTextChange}
+              multiline
+              editable={!inputDisabled}
+              style={styles.textInput}
+            />
+          </View>
+          {hasSendable ? (
+            <Pressable
+              onPress={() => void handleSend()}
+              disabled={inputDisabled}
+              style={[
+                styles.sendBtn,
+                { backgroundColor: primary },
+                inputDisabled && styles.disabled,
+              ]}
+              accessibilityLabel="Gửi tin nhắn"
+            >
+              {isUploading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <SendHorizontal size={20} color="#fff" strokeWidth={2} />
+              )}
+            </Pressable>
+          ) : (
+            <Pressable
+              onPress={() => void Promise.resolve(onSend("👍")).catch(() => {})}
+              disabled={inputDisabled}
+              style={[styles.likeBtn, inputDisabled && styles.disabled]}
+              accessibilityLabel="Gửi like"
+            >
+              <ThumbsUp size={20} color={primary} strokeWidth={2} />
+            </Pressable>
+          )}
+        </View>
+      )}
 
       {isEmojiPickerOpen ? (
         <EmojiPicker
@@ -641,6 +748,58 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-end",
     gap: 8,
+  },
+  recordRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "rgba(239, 68, 68, 0.05)",
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.2)",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    height: 44,
+    gap: 8,
+  },
+  recordLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  recordDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#ef4444",
+  },
+  recordText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#ef4444",
+    letterSpacing: 0.5,
+  },
+  recordTimer: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#050505",
+    flex: 1,
+    textAlign: "center",
+  },
+  recordRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  recordBtnCancel: {
+    padding: 6,
+  },
+  recordBtnSend: {
+    width: 32,
+    height: 32,
+    borderRadius: 6,
+    alignItems: "center",
+    justifyContent: "center",
   },
   inputBox: {
     flex: 1,
