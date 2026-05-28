@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Pressable, Text, useWindowDimensions, View } from "react-native";
+import { AppState, Pressable, Text, useWindowDimensions, View } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { Ionicons } from "@expo/vector-icons";
 import { useRecordReelViewMutation } from "@/store/api/newsfeedApi";
@@ -37,6 +37,19 @@ export const ReelPlayer = ({ reel, isVisible, height }: Props) => {
       setCaptionExpanded(false);
     }
   }, [isVisible, player]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      if (nextAppState !== "active") {
+        player.pause();
+      } else if (isVisible && !isPaused) {
+        player.play();
+      }
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, [isVisible, isPaused, player]);
 
   useEffect(() => {
     if (!isVisible || viewRecordedRef.current) return;
