@@ -91,7 +91,7 @@ export const Avatar = ({
     ? isGroup
       ? resolveGroupAvatarDisplayUrl(uri, {
           conversationId: groupConversationId ?? undefined,
-          updatedAt: cacheVersion,
+          avatarVersion: cacheVersion,
         })
       : (normalizeMediaUrl(uri) ?? uri)
     : undefined;

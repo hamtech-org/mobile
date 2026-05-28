@@ -307,7 +307,7 @@ export function ShareGroupJoinLinkPickerModal({
                     size="sm"
                     isGroup
                     groupConversationId={c.conversationId}
-                    cacheVersion={c.updatedAt}
+                    cacheVersion={String(c.memberCount ?? "")}
                   />
                   <Text style={[styles.rowTitle, { flex: 1, marginLeft: 12 }]} numberOfLines={1}>
                     {c.name ?? "Hội thoại"}

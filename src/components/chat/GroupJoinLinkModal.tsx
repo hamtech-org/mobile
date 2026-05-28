@@ -170,7 +170,7 @@ export function GroupJoinLinkModal({ open, data, onClose }: Props) {
                 size="xl"
                 isGroup
                 groupConversationId={conversationIdForChat}
-                cacheVersion={liveConversation?.updatedAt}
+                cacheVersion={String(liveConversation?.memberCount ?? "")}
               />
               <Text className="mt-3 text-center text-[18px] font-bold text-slate-900">
                 {groupName}

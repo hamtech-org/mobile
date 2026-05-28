@@ -1395,7 +1395,7 @@ export function GroupManageModal({
               uri={conversation.avatar}
               name={conversation.name}
               conversationId={groupId}
-              cacheVersion={conversation.updatedAt}
+              cacheVersion={String(conversation.memberCount ?? "")}
             />
           </View>
           {canEditGroupProfile && !conversation.groupId ? (
@@ -1689,7 +1689,7 @@ export function GroupManageModal({
               uri={conversation.avatar}
               name={conversation.name}
               conversationId={groupId}
-              cacheVersion={conversation.updatedAt}
+              cacheVersion={String(conversation.memberCount ?? "")}
             />
           </View>
           {canEditGroupProfile ? (
