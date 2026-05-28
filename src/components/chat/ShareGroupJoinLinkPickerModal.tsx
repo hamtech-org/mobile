@@ -9,7 +9,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { Check, Search, Users, X } from "lucide-react-native";
+import { Check, Search, X } from "lucide-react-native";
 
 import { Avatar } from "@/components/common/Avatar";
 import type { GroupJoinLinkModalData } from "@/contexts/GroupJoinLinkModalContext";
@@ -301,9 +301,14 @@ export function ShareGroupJoinLinkPickerModal({
                   <View style={[styles.check, on ? styles.checkOn : null]}>
                     {on ? <Check size={14} color="#fff" strokeWidth={3} /> : null}
                   </View>
-                  <View style={styles.iconWrap}>
-                    <Users size={18} color={Z.primary} />
-                  </View>
+                  <Avatar
+                    uri={c.avatar || undefined}
+                    name={c.name ?? "Nhóm chat"}
+                    size="sm"
+                    isGroup
+                    groupConversationId={c.conversationId}
+                    cacheVersion={c.updatedAt}
+                  />
                   <Text style={[styles.rowTitle, { flex: 1, marginLeft: 12 }]} numberOfLines={1}>
                     {c.name ?? "Hội thoại"}
                   </Text>
@@ -387,14 +392,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   checkOn: { backgroundColor: Z.primary, borderColor: Z.primary },
-  iconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#eff6ff",
-    alignItems: "center",
-    justifyContent: "center",
-  },
   rowTitle: { fontSize: 15, fontWeight: "600", color: "#0f172a" },
   rowSub: { fontSize: 12, color: Z.sub, marginTop: 2 },
   empty: { textAlign: "center", color: Z.sub, marginTop: 32, paddingHorizontal: 16 },
