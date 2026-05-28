@@ -59,10 +59,7 @@ export function BulletinTaskCard({
   const subAssigneeIds = subs
     .map((s) => String((s as { assigneeId?: string }).assigneeId ?? "").trim())
     .filter(Boolean);
-  const assignToAll =
-    Boolean(o.assignToAll) ||
-    Boolean(o.broadcast) ||
-    (assignees.length === 0 && subAssigneeIds.length === 0);
+  const assignToAll = Boolean(o.assignToAll) || Boolean(o.broadcast);
   const uid = String(effectiveUserId ?? "");
   const creatorId = typeof o.creatorId === "string" ? o.creatorId : "";
   const joined = uid ? participants.includes(uid) : false;
@@ -109,7 +106,7 @@ export function BulletinTaskCard({
             <View style={[styles.chip, styles.chipJoined]}>
               <Text style={styles.chipJoinedText}>Bạn đã tham gia</Text>
             </View>
-          ) : joinDeadlinePassed ? (
+          ) : canJoin && joinDeadlinePassed ? (
             <View style={styles.chip}>
               <Text style={styles.chipText}>Chưa tham gia</Text>
             </View>

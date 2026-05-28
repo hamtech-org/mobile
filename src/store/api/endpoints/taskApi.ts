@@ -83,6 +83,7 @@ export const taskApi = chatApi.injectEndpoints({
               }
               if (dueDate !== undefined) row.dueDate = dueDate;
               if (subtasks !== undefined) row.subtasks = subtasks;
+              row.participants = [];
             },
           ),
         );

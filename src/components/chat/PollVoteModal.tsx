@@ -41,6 +41,9 @@ export function PollVoteModal({
 }: PollVoteModalProps) {
   const { muted, primary } = useIconColors();
   const pollBlue = "#2563eb";
+  const canClosePoll =
+    Boolean(onClosePoll && poll && !poll.isClosed) &&
+    String(poll?.creatorId ?? "").trim() === String(currentUserId ?? "").trim();
 
   const total = useMemo(
     () => poll?.options?.reduce((sum, option) => sum + (option.voters?.length ?? 0), 0) ?? 0,
@@ -85,9 +88,9 @@ export function PollVoteModal({
                   <Pin size={18} color={poll.isPinned ? pollBlue : muted} strokeWidth={2} />
                 </Pressable>
               ) : null}
-              {onClosePoll && poll && !poll.isClosed ? (
+              {canClosePoll ? (
                 <Pressable
-                  onPress={() => void onClosePoll(poll.pollId)}
+                  onPress={() => void onClosePoll?.(poll.pollId)}
                   className="h-9 w-9 items-center justify-center rounded-full bg-muted"
                   accessibilityLabel="Khóa bình chọn"
                 >
