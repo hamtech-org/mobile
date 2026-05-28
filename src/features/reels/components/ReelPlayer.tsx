@@ -32,7 +32,7 @@ export const ReelPlayer = ({ reel, isVisible, height }: Props) => {
       watchStartRef.current = Date.now();
     } else {
       player.pause();
-      setIsPaused(true);
+      setIsPaused(false);
       watchStartRef.current = null;
       setCaptionExpanded(false);
     }
