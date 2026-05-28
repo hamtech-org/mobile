@@ -6,6 +6,7 @@ import {
   PermissionsAndroid,
   Platform,
   Pressable,
+  Switch,
   Text,
   useWindowDimensions,
   View,
@@ -83,6 +84,22 @@ type CallDevicePermissions = {
   micGranted: boolean;
   cameraGranted: boolean;
 };
+
+function buildScreenCaptureParams(captureAudio: boolean): ScreenCaptureParameters2 {
+  const cap = new ScreenCaptureParameters2();
+  cap.captureVideo = true;
+  cap.captureAudio = captureAudio;
+  const vp = new ScreenVideoParameters();
+  const dim = new VideoDimensions();
+  // Ưu tiên aspect portrait để web/mobile render không bị crop.
+  dim.width = 720;
+  dim.height = 1280;
+  vp.dimensions = dim;
+  vp.frameRate = 15;
+  vp.contentHint = VideoContentHint.ContentHintDetails;
+  cap.videoParams = vp;
+  return cap;
+}
 
 async function requestCallDevicePermissions(input: {
   needMic: boolean;
@@ -254,6 +271,7 @@ export default function CallAgoraScreen() {
   const [agoraUidToName, setAgoraUidToName] = useState<Map<number, string>>(new Map());
   const [pinnedUid, setPinnedUid] = useState<number | null>(null);
   const [localScreenSharing, setLocalScreenSharing] = useState(false);
+  const [screenAudioOn, setScreenAudioOn] = useState(false);
   const [participantsOpen, setParticipantsOpen] = useState(false);
 
   const [timer, setTimer] = useState(0);
@@ -533,9 +551,20 @@ export default function CallAgoraScreen() {
     }
   }, [applyCameraFailure, dispatch]);
 
+  const cleanupFailedJoinRef = useRef(cleanupFailedJoin);
+  cleanupFailedJoinRef.current = cleanupFailedJoin;
+  const enableMicrophoneForCallRef = useRef(enableMicrophoneForCall);
+  enableMicrophoneForCallRef.current = enableMicrophoneForCall;
+  const enableCameraForCallRef = useRef(enableCameraForCall);
+  enableCameraForCallRef.current = enableCameraForCall;
+  const shutdownRtcRef = useRef(shutdownRtc);
+  shutdownRtcRef.current = shutdownRtc;
+  const goBackRef = useRef(goBack);
+  goBackRef.current = goBack;
+
   useEffect(() => {
     if (!channelName) {
-      goBack();
+      goBackRef.current();
       return;
     }
     if (!appId) {
@@ -543,7 +572,7 @@ export default function CallAgoraScreen() {
         "Thiếu cấu hình",
         "Chưa có Agora App ID (expo.extra.agoraAppId hoặc EXPO_PUBLIC_AGORA_APP_ID).",
       );
-      goBack();
+      goBackRef.current();
       return;
     }
 
@@ -561,7 +590,7 @@ export default function CallAgoraScreen() {
       } catch (error) {
         if (__DEV__) console.warn("[Agora] initialize failed", error);
         if (!cancelled) {
-          cleanupFailedJoin("Không thể khởi tạo Agora trên thiết bị này.");
+          cleanupFailedJoinRef.current("Không thể khởi tạo Agora trên thiết bị này.");
         }
         return;
       }
@@ -669,7 +698,7 @@ export default function CallAgoraScreen() {
           );
           dispatch(setMicEnabled(false));
           canPublishMic = false;
-        } else if (!(await enableMicrophoneForCall())) {
+        } else if (!(await enableMicrophoneForCallRef.current())) {
           dispatch(setMicEnabled(false));
           canPublishMic = false;
         }
@@ -685,7 +714,7 @@ export default function CallAgoraScreen() {
             );
             dispatch(setCameraEnabled(false));
             canPublishCamera = false;
-          } else if (!(await enableCameraForCall())) {
+          } else if (!(await enableCameraForCallRef.current())) {
             dispatch(setCameraEnabled(false));
             canPublishCamera = false;
           }
@@ -711,7 +740,7 @@ export default function CallAgoraScreen() {
       } catch (e) {
         if (__DEV__) console.warn("[Agora] join failed", e);
         if (!cancelled) {
-          cleanupFailedJoin("Không thể tham gia kênh Agora.");
+          cleanupFailedJoinRef.current("Không thể tham gia kênh Agora.");
         }
       }
     };
@@ -720,20 +749,9 @@ export default function CallAgoraScreen() {
 
     return () => {
       cancelled = true;
-      shutdownRtc();
+      shutdownRtcRef.current();
     };
-  }, [
-    appId,
-    channelName,
-    cleanupFailedJoin,
-    dispatch,
-    enableCameraForCall,
-    enableMicrophoneForCall,
-    fetchAgoraToken,
-    goBack,
-    joinWithVideo,
-    shutdownRtc,
-  ]);
+  }, [appId, channelName, dispatch, fetchAgoraToken, joinWithVideo]);
 
   useEffect(() => {
     const engine = engineRef.current;
@@ -1048,7 +1066,9 @@ export default function CallAgoraScreen() {
         engine.stopScreenCapture();
         engine.updateChannelMediaOptions({
           publishScreenCaptureVideo: false,
+          publishScreenCaptureAudio: false,
           publishCameraTrack: isCameraOnRef.current,
+          publishMicrophoneTrack: isMicOnRef.current && micAvailability === "available",
         } as ChannelMediaOptions);
         if (isCameraOnRef.current) {
           engine.startPreview(VideoSourceType.VideoSourceCameraPrimary);
@@ -1061,18 +1081,7 @@ export default function CallAgoraScreen() {
       return;
     }
 
-    const cap = new ScreenCaptureParameters2();
-    cap.captureVideo = true;
-    cap.captureAudio = false;
-    const vp = new ScreenVideoParameters();
-    const dim = new VideoDimensions();
-    // Ưu tiên aspect portrait để web/mobile render không bị crop.
-    dim.width = 720;
-    dim.height = 1280;
-    vp.dimensions = dim;
-    vp.frameRate = 15;
-    vp.contentHint = VideoContentHint.ContentHintDetails;
-    cap.videoParams = vp;
+    const cap = buildScreenCaptureParams(screenAudioOn);
 
     const ret = engine.startScreenCapture(cap);
     if (ret !== 0) {
@@ -1085,14 +1094,59 @@ export default function CallAgoraScreen() {
     try {
       engine.updateChannelMediaOptions({
         publishScreenCaptureVideo: true,
+        publishScreenCaptureAudio: screenAudioOn,
         publishCameraTrack: false,
+        publishMicrophoneTrack: isMicOnRef.current && micAvailability === "available",
       } as ChannelMediaOptions);
     } catch (e) {
       if (__DEV__) console.warn("updateChannelMediaOptions screen", e);
     }
+    if (screenAudioOn) {
+      Alert.alert(
+        "Âm thanh hệ thống",
+        "Lưu ý: YouTube/Spotify (DRM) có thể chặn capture âm thanh hệ thống trên Android. Hãy thử phát audio từ file local hoặc app không DRM để kiểm tra.",
+      );
+    }
     setLocalScreenSharing(true);
     dispatch(setScreenSharing(true));
-  }, [dispatch, isVideoCall, joined, localScreenSharing]);
+  }, [dispatch, isVideoCall, joined, localScreenSharing, micAvailability, screenAudioOn]);
+
+  const applyScreenAudioWhileSharing = useCallback(
+    async (next: boolean) => {
+      if (Platform.OS !== "android") return;
+      if (!localScreenSharing) return;
+      const engine = engineRef.current;
+      if (!engine) return;
+      try {
+        engine.stopScreenCapture();
+      } catch {
+        /* ignore */
+      }
+      const cap = buildScreenCaptureParams(next);
+      const ret = engine.startScreenCapture(cap);
+      if (ret !== 0) {
+        Alert.alert("Âm thanh hệ thống", `Không thể bật lại (mã ${String(ret)}).`);
+        return;
+      }
+      try {
+        engine.updateChannelMediaOptions({
+          publishScreenCaptureVideo: true,
+          publishScreenCaptureAudio: next,
+          publishCameraTrack: false,
+          publishMicrophoneTrack: isMicOnRef.current && micAvailability === "available",
+        } as ChannelMediaOptions);
+      } catch {
+        /* ignore */
+      }
+      if (next) {
+        Alert.alert(
+          "Âm thanh hệ thống",
+          "Lưu ý: YouTube/Spotify (DRM) có thể chặn capture âm thanh hệ thống trên Android. Hãy thử file local hoặc app không DRM để kiểm tra.",
+        );
+      }
+    },
+    [localScreenSharing, micAvailability],
+  );
 
   const statusLabel =
     status === "outgoing-ringing"
@@ -1545,6 +1599,19 @@ export default function CallAgoraScreen() {
                 <PhoneOff size={28} color="#fff" />
               </Pressable>
             )}
+          </View>
+        ) : null}
+
+        {Platform.OS === "android" && isVideoCall && joined && localScreenSharing && !uiHidden ? (
+          <View className="mb-3 flex-row items-center justify-center gap-2 rounded-xl bg-black/50 px-3 py-2">
+            <Text className="text-sm text-white">Âm thanh hệ thống</Text>
+            <Switch
+              value={screenAudioOn}
+              onValueChange={(v) => {
+                setScreenAudioOn(v);
+                void applyScreenAudioWhileSharing(v);
+              }}
+            />
           </View>
         ) : null}
       </View>

@@ -345,6 +345,7 @@ export function LiveHostScreen() {
       try {
         engine.updateChannelMediaOptions({
           publishScreenCaptureVideo: true,
+          publishScreenCaptureAudio: withAudio,
           publishCameraTrack: false,
         } as ChannelMediaOptions);
       } catch {
@@ -352,6 +353,12 @@ export function LiveHostScreen() {
       }
       setScreenOn(true);
       setCamOn(false);
+      if (withAudio) {
+        Alert.alert(
+          "Âm thanh hệ thống",
+          "Lưu ý: YouTube/Spotify (DRM) có thể chặn capture âm thanh hệ thống trên Android. Hãy thử phát audio từ file local hoặc app không DRM để kiểm tra.",
+        );
+      }
     },
     [joined],
   );
@@ -545,10 +552,17 @@ export function LiveHostScreen() {
                         try {
                           engine.updateChannelMediaOptions({
                             publishScreenCaptureVideo: true,
+                            publishScreenCaptureAudio: v,
                             publishCameraTrack: false,
                           } as ChannelMediaOptions);
                         } catch {
                           /* ignore */
+                        }
+                        if (v) {
+                          Alert.alert(
+                            "Âm thanh hệ thống",
+                            "Lưu ý: YouTube/Spotify (DRM) có thể chặn capture âm thanh hệ thống trên Android. Hãy thử file local hoặc app không DRM để kiểm tra.",
+                          );
                         }
                       })();
                     }}
