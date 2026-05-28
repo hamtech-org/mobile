@@ -1,6 +1,21 @@
 import { type Href, router } from "expo-router";
 
+import { setIncomingCall, setReturnTo } from "@/store/slices/callSlice";
+import { store } from "@/store/store";
+import type { CallScope, CallType, IncomingCallData } from "@/types/call.types";
 import type { INotification } from "@/types/notification.types";
+import { clearConversationNotificationState } from "@/utils/chatNotificationState";
+
+function openChatConversation(conversationId: string): void {
+  const id = conversationId.trim();
+  if (!id) {
+    router.push("/(main)/(chat)" as Href);
+    return;
+  }
+
+  clearConversationNotificationState(id);
+  router.push(`/(main)/(chat)/${id}` as Href);
+}
 
 function pushCallRoute(data: INotification["data"]): void {
   const channel = String(data.channelName ?? data.entityId ?? data.id ?? "").trim();
@@ -29,9 +44,58 @@ function pushCallRoute(data: INotification["data"]): void {
 }
 
 /** Điều hướng từ notification — hỗ trợ deepLink, entityType, route. */
+function incomingCallPayloadFromNotification(data: INotification["data"]): IncomingCallData | null {
+  const channelName = String(data.channelName ?? data.entityId ?? data.id ?? "").trim();
+  const conversationId = String(data.conversationId ?? data.extra?.conversationId ?? "").trim();
+  const callerId = String(data.callerId ?? data.extra?.callerId ?? "").trim();
+  if (!channelName || !conversationId || !callerId) return null;
+
+  const type: CallType =
+    String(data.callType ?? data.extra?.callType) === "video" ? "video" : "audio";
+  const scope: CallScope =
+    String(data.callScope ?? data.extra?.callScope) === "group" ? "group" : "direct";
+  const callerName = String(data.callerName ?? data.extra?.callerName ?? "").trim();
+  const hostId = String(data.hostId ?? data.extra?.hostId ?? callerId).trim() || callerId;
+  const sessionId = String(data.sessionId ?? data.extra?.sessionId ?? "").trim();
+
+  return {
+    channelName,
+    conversationId,
+    callerId,
+    callerName: callerName || "Cuộc gọi đến",
+    type,
+    scope,
+    hostId,
+    ...(sessionId ? { sessionId } : {}),
+  };
+}
+
+function openIncomingCallModal(data: INotification["data"]): boolean {
+  if (String(data.callStatus ?? data.extra?.callStatus ?? "") !== "incoming") return false;
+
+  const payload = incomingCallPayloadFromNotification(data);
+  if (!payload) return false;
+
+  const currentCall = store.getState().call;
+  const isSameIncomingCall =
+    currentCall.status === "incoming-ringing" &&
+    currentCall.channelName === payload.channelName &&
+    currentCall.conversationId === payload.conversationId;
+  if (isSameIncomingCall) return true;
+
+  if (currentCall.status !== "idle" && currentCall.status !== "ended") return true;
+
+  store.dispatch(setReturnTo("/(main)/(chat)"));
+  store.dispatch(setIncomingCall(payload));
+  router.replace("/(main)/(chat)" as Href);
+  return true;
+}
+
 export function navigateFromNotification(data: INotification["data"]): void {
   setTimeout(() => {
     try {
+      if (openIncomingCallModal(data)) return;
+
       const deepLink = typeof data.deepLink === "string" ? data.deepLink.trim() : "";
       if (deepLink) {
         if (deepLink.startsWith("/(main)")) {
@@ -45,7 +109,7 @@ export function navigateFromNotification(data: INotification["data"]): void {
         }
         if (deepLink.startsWith("/chat/")) {
           const id = deepLink.replace(/^\/chat\//, "").split("?")[0];
-          if (id) router.push(`/(main)/(chat)/${id}` as Href);
+          if (id) openChatConversation(id);
           return;
         }
         if (deepLink.startsWith("/reels/")) {
@@ -80,8 +144,7 @@ export function navigateFromNotification(data: INotification["data"]): void {
         case "chat":
         case "conversation":
         case "message":
-          if (entityId) router.push(`/(main)/(chat)/${entityId}` as Href);
-          else router.push("/(main)/(chat)" as Href);
+          openChatConversation(entityId);
           return;
         case "post":
           router.push("/(main)/(newsfeed)" as Href);
@@ -110,7 +173,7 @@ export function navigateFromNotification(data: INotification["data"]): void {
           return;
         default:
           if (entityId && data.route === "chat") {
-            router.push(`/(main)/(chat)/${entityId}` as Href);
+            openChatConversation(entityId);
           }
           break;
       }
