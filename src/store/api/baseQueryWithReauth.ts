@@ -4,6 +4,7 @@ import { router } from "expo-router";
 
 import { env } from "@/config/env";
 import { invalidateSessionAfterAuthFailure, refreshAuthSession } from "@/store/api/sessionRefresh";
+import { getMobileDeviceInfoHeader } from "@/utils/deviceInfo";
 import { applyNgrokSkipBrowserWarningHeader } from "@/utils/ngrok";
 
 type AuthSliceRef = { auth?: { accessToken?: string | null } };
@@ -25,6 +26,7 @@ export function createBaseQueryWithReauth(): BaseQueryFn<
     baseUrl: env.apiBaseUrl,
     prepareHeaders: (headers, { getState }) => {
       applyNgrokSkipBrowserWarningHeader(headers, env.apiBaseUrl);
+      headers.set("X-Hamtech-Device-Info", getMobileDeviceInfoHeader());
       const state = getState() as AuthSliceRef;
       const token = state.auth?.accessToken;
       if (token) {
