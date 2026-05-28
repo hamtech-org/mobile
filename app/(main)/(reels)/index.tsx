@@ -204,6 +204,7 @@ export default function ReelsFeedScreen() {
           keyExtractor={keyExtractor}
           renderItem={renderItem}
           pagingEnabled
+          disableIntervalMomentum={true}
           showsVerticalScrollIndicator={false}
           snapToInterval={itemHeight}
           snapToAlignment="start"
