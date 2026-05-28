@@ -122,7 +122,6 @@ import {
 } from "@/store/api/chatApi";
 import { CHAT_MESSAGES_QUERY_LIMIT } from "@/store/api/endpoints/messageApi";
 import { useUploadMediaMutation } from "@/store/api/mediaApi";
-import { useSendFriendRequestMutation } from "@/store/api/userApi";
 import { prepareLocalFileForUpload } from "@/utils/uploadAttachment";
 import { toast } from "@/utils/appToast";
 import { apiClient } from "@/services/api";
@@ -466,7 +465,6 @@ export function GroupManageModal({
   const [promoteConfirmOpen, setPromoteConfirmOpen] = useState(false);
   const [promoteTargetMember, setPromoteTargetMember] = useState<IGroupMember | null>(null);
   const [promotePickerOpen, setPromotePickerOpen] = useState(false);
-  const [friendActionUserIds, setFriendActionUserIds] = useState<Record<string, true>>({});
 
   useEffect(() => {
     if (demoteConfirmOpen || kickConfirmOpen || promoteConfirmOpen) {
@@ -509,7 +507,6 @@ export function GroupManageModal({
       setBulletinAddOpen(false);
       setMemberActionMenuUserId(null);
       setPromotePickerOpen(false);
-      setFriendActionUserIds({});
       setAiSummaryOpen(false);
       setAiSummaryLoading(false);
       setAiSummaryResult("");
@@ -589,7 +586,6 @@ export function GroupManageModal({
   const joinLinkModal = useGroupJoinLinkModalOptional();
   const [approveReq] = useApproveGroupRequestMutation();
   const [rejectReq] = useRejectGroupRequestMutation();
-  const [sendFriendReq] = useSendFriendRequestMutation();
   const [uploadMedia, { isLoading: uploadingAvatar }] = useUploadMediaMutation();
   const [deleteTaskMut] = useDeleteTaskMutation();
   const [leaveCommunity] = useLeaveCommunityMutation();
@@ -1936,7 +1932,6 @@ export function GroupManageModal({
           ListEmptyComponent={<Text style={styles.mmListEmpty}>Không có yêu cầu chờ.</Text>}
           renderItem={({ item: r }) => {
             const displayName = requestRowDisplayName(r.userId, r.name, effectiveUserId);
-            const showAddFriend = r.isFriend !== true && !friendActionUserIds[r.userId];
             return (
               <View style={styles.mmPendingCard}>
                 <MemberListAvatar uri={r.avatar} name={displayName} />
@@ -1947,32 +1942,6 @@ export function GroupManageModal({
                   <Text style={styles.mmPendingSubtitle}>{joinRequestSubtitle(r.status)}</Text>
                 </View>
                 <View style={styles.mmPendingActions}>
-                  {showAddFriend ? (
-                    <Pressable
-                      onPress={() => {
-                        void (async () => {
-                          try {
-                            await sendFriendReq({ userId: r.userId }).unwrap();
-                            setFriendActionUserIds((p) => ({ ...p, [r.userId]: true }));
-                            void refetchRequests();
-                            toast.success("Đã kết bạn");
-                          } catch (e: unknown) {
-                            const st =
-                              e && typeof e === "object" && "status" in e
-                                ? (e as { status?: number }).status
-                                : undefined;
-                            if (st === 409) {
-                              setFriendActionUserIds((p) => ({ ...p, [r.userId]: true }));
-                            }
-                            toast.error(st === 409 ? "Đã kết bạn" : "Không thể kết bạn");
-                          }
-                        })();
-                      }}
-                      style={styles.mmPendingBtnFriend}
-                    >
-                      <Text style={styles.mmPendingBtnFriendText}>Kết bạn</Text>
-                    </Pressable>
-                  ) : null}
                   <Pressable
                     onPress={() => {
                       void (async () => {
@@ -4462,13 +4431,6 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     maxWidth: "46%",
   },
-  mmPendingBtnFriend: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    backgroundColor: "rgba(37, 99, 235, 0.1)",
-  },
-  mmPendingBtnFriendText: { fontSize: 12, fontWeight: "800", color: "#1D4ED8" },
   mmPendingBtnReject: {
     paddingVertical: 6,
     paddingHorizontal: 12,
