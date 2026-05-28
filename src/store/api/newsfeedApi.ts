@@ -458,6 +458,15 @@ export const newsfeedApi = createApi({
       invalidatesTags: ["ReelsFeed", "ReelDetail"],
     }),
 
+    shareReel: builder.mutation<null, string>({
+      query: (reelId) => ({
+        url: `/newsfeed/reels/${reelId}/share`,
+        method: "POST",
+      }),
+      transformResponse: () => null,
+      invalidatesTags: (_res, _err, reelId) => ["ReelsFeed", { type: "ReelDetail", id: reelId }],
+    }),
+
     reportReel: builder.mutation<null, { reelId: string } & IReportReelDto>({
       query: ({ reelId, ...body }) => ({
         url: `/newsfeed/reels/${reelId}/report`,
@@ -584,6 +593,7 @@ export const {
   useDeleteReelMutation,
   useRecordReelViewMutation,
   useToggleSaveReelMutation,
+  useShareReelMutation,
   useReportReelMutation,
   useGetReelCommentsQuery,
   useLazyGetReelCommentsQuery,
