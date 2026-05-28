@@ -110,7 +110,7 @@ function callPayloadFromData(data: Record<string, unknown>): IncomingCallData | 
 }
 
 function pushCallScreen(payload: IncomingCallData): void {
-  router.push({
+  router.replace({
     pathname: "/call",
     params: {
       channel: payload.channelName,
