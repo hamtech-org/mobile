@@ -96,24 +96,6 @@ export const userApi = createApi({
       invalidatesTags: ["User"],
     }),
 
-    /** Giống web `MemberManagementModal.addFriend`. */
-    sendFriendRequest: builder.mutation<ApiEnvelope<unknown>, { userId: string }>({
-      query: ({ userId }) => ({
-        url: "/contacts/friends/request",
-        method: "POST",
-        body: { userId },
-      }),
-      invalidatesTags: ["Friend"],
-      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
-        try {
-          await queryFulfilled;
-          dispatch(chatApi.util.invalidateTags(["Conversations"]));
-        } catch {
-          // no-op
-        }
-      },
-    }),
-
     sendUserFriendRequest: builder.mutation<ApiEnvelope<unknown>, { friendId: string }>({
       query: ({ friendId }) => ({
         url: `/users/friends/${friendId}`,
@@ -255,7 +237,6 @@ export const {
   useUpdateProfileMutation,
   useGetFriendsQuery,
   usePostMultipleUsersMutation,
-  useSendFriendRequestMutation,
   useSendUserFriendRequestMutation,
   useCancelFriendRequestMutation,
   useAcceptFriendRequestMutation,

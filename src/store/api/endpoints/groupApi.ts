@@ -60,7 +60,6 @@ export interface GroupJoinRequestRow {
   name: string;
   avatar: string | null;
   status?: string;
-  isFriend?: boolean;
 }
 
 type MemberCountPayload = { memberCount?: number } | null;
@@ -231,7 +230,6 @@ export const groupApi = chatApi.injectEndpoints({
             avatar: o.avatar != null ? String(o.avatar) : null,
           };
           if (o.status != null) row.status = String(o.status);
-          if (typeof o.isFriend === "boolean") row.isFriend = o.isFriend;
           out.push(row);
         }
         return out;
