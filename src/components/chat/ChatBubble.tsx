@@ -94,6 +94,7 @@ import {
 
 import { GroupJoinLinkCard } from "./GroupJoinLinkCard";
 import type { PollVoteModalPoll } from "./PollVoteModal";
+import { VoiceMessagePlayer } from "./VoiceMessagePlayer";
 
 const CHAT_URL_REGEX = /((?:https?:\/\/|www\.)[^\s<>"']+)/gi;
 const TRAILING_URL_PUNCTUATION_REGEX = /[),.!?;:]+$/;
@@ -1377,6 +1378,8 @@ export const ChatBubble = ({
               </Text>
             )}
           />
+        ) : message.type === "voice" && !isDeleted && !isRecalled ? (
+          <VoiceMessagePlayer message={message} isOwn={isOwn} onShowActions={openActionSheet} />
         ) : (
           <Pressable
             onLongPress={openActionSheet}

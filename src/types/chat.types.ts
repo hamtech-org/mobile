@@ -12,7 +12,8 @@ export type MessageType =
   | "location"
   | "poll"
   | "schedule"
-  | "call";
+  | "call"
+  | "voice";
 
 export type MessageStatus = "sent" | "delivered" | "read" | "sending" | "failed";
 export type ConversationType = "direct" | "group";
@@ -109,6 +110,7 @@ export interface IMessage {
   isRecalled: boolean;
   isDeleted?: boolean;
   reactions: Record<string, string[]>;
+  duration?: number | null;
   status: MessageStatus;
   createdAt: string;
 }
