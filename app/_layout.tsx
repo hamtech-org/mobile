@@ -11,12 +11,12 @@ import { CallProvider } from "@/contexts/CallContext";
 import { SocketProvider } from "@/contexts/SocketContext";
 import { ToastHost } from "@/components/common/ToastHost";
 import { store } from "@/store/store";
-import { requestNotificationPermissionAsync } from "@/utils/notificationPermission";
+import { requestStartupPermissionsAsync } from "@/utils/startupPermissions";
 import { View } from "react-native";
 
 export default function RootLayout() {
   useEffect(() => {
-    void requestNotificationPermissionAsync();
+    void requestStartupPermissionsAsync();
   }, []);
 
   return (

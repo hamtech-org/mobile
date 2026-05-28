@@ -716,6 +716,9 @@ function SessionCard({
 }) {
   const status = getSessionStatus(session);
   const canRevoke = session.isActive && !session.isRevoked;
+  const deviceLabel =
+    session.deviceInfo.deviceName || session.deviceInfo.model || session.deviceInfo.browser;
+  const osLabel = [session.deviceInfo.os, session.deviceInfo.osVersion].filter(Boolean).join(" ");
 
   return (
     <View className="rounded-xl border border-border bg-muted/30 p-3">
@@ -725,8 +728,7 @@ function SessionCard({
         </View>
         <View className="min-w-0 flex-1">
           <Text className="font-semibold text-foreground" numberOfLines={1}>
-            {session.deviceInfo.browser || "Trình duyệt"} ·{" "}
-            {session.deviceInfo.os || "Hệ điều hành"}
+            {deviceLabel || "Thiết bị"} · {osLabel || "Hệ điều hành"}
           </Text>
           <View className="mt-2 flex-row flex-wrap gap-2">
             {session.isCurrent ? (
