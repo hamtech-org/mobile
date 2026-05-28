@@ -479,6 +479,42 @@ export default function ChatDetailScreen() {
     Record<string, string[]>
   >({});
 
+  useEffect(() => {
+    setLocalParticipantsByTaskId((prev) => {
+      const entries = Object.entries(prev);
+      if (entries.length === 0) return prev;
+
+      let changed = false;
+      const next = { ...prev };
+      for (const [taskId, localParticipants] of entries) {
+        const serverTask = groupTasksFromApi.find(
+          (t) => String((t as { taskId?: string }).taskId ?? "") === String(taskId),
+        );
+        if (!serverTask) {
+          delete next[taskId];
+          changed = true;
+          continue;
+        }
+
+        const serverParticipants = Array.isArray(
+          (serverTask as { participants?: unknown }).participants,
+        )
+          ? ((serverTask as { participants?: unknown[] }).participants ?? []).map(String)
+          : null;
+        if (!serverParticipants) continue;
+
+        const serverKey = [...serverParticipants].sort().join("\0");
+        const localKey = [...localParticipants.map(String)].sort().join("\0");
+        if (serverKey === localKey) continue;
+
+        if (serverParticipants.length > 0) next[taskId] = serverParticipants;
+        else delete next[taskId];
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [groupTasksFromApi]);
+
   const groupTasks = useMemo((): ChatBubbleGroupExtras["groupTasks"] => {
     if (groupTasksFromApi.length === 0) return groupTasksFromApi;
     const hasAnyOverride = Object.keys(localParticipantsByTaskId).length > 0;

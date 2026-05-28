@@ -623,30 +623,26 @@ function SystemCenterBlock({
   const subAssigneeIds = Array.from(
     new Set(boardSubs.map((s) => String(s?.assigneeId ?? "").trim()).filter(Boolean)),
   );
-  const topIds = boardAssignees.map(String);
-  const labelRaw = String(view.assigneeLabel ?? "");
-  const labelNorm = labelRaw
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-  const labelLooksLikeGroup =
-    labelNorm.includes("ca nhom") || labelNorm.includes("group") || labelNorm.includes("all");
+  const fallbackAssigneeIds = Array.isArray(view.assigneeUserIds)
+    ? view.assigneeUserIds.map(String).filter(Boolean)
+    : [];
+  const topIds = boardAssignees.length > 0 ? boardAssignees.map(String) : fallbackAssigneeIds;
 
   const participants = Array.isArray(t?.participants) ? (t.participants as string[]) : [];
   const joined = groupExtras ? participants.includes(groupExtras.currentUserId) : false;
   const uid = groupExtras?.currentUserId ?? "";
   const isSubtaskAssignee = uid ? subAssigneeIds.includes(String(uid)) : false;
   const isTopLevelAssignee = uid ? topIds.map(String).includes(String(uid)) : false;
-  const explicitAssignToAll = Boolean((t as any)?.assignToAll) || Boolean((t as any)?.broadcast);
-  const hasTopLevelAssignees = topIds.length > 0;
+  const explicitAssignToAll =
+    Boolean((t as any)?.assignToAll) ||
+    Boolean((t as any)?.broadcast) ||
+    Boolean(view.assignToAll) ||
+    Boolean(view.broadcast);
   const hasSubtasksAssignees = subAssigneeIds.length > 0;
   const canJoinThisTask = Boolean(groupExtras)
     ? hasSubtasksAssignees
       ? isSubtaskAssignee
-      : explicitAssignToAll ||
-        (!hasTopLevelAssignees && !hasSubtasksAssignees && labelLooksLikeGroup) ||
-        (!hasTopLevelAssignees && !hasSubtasksAssignees) ||
-        isTopLevelAssignee
+      : explicitAssignToAll || isTopLevelAssignee
     : false;
 
   const dueForJoin =
@@ -700,7 +696,7 @@ function SystemCenterBlock({
     }
   };
 
-  const showJoin = !joined;
+  const showJoin = !joined && canJoinThisTask && !joinDeadlinePassed;
 
   return (
     <View className="my-3 w-full items-center px-4">
@@ -834,7 +830,7 @@ function SystemCenterBlock({
                     Đã tham gia
                   </Text>
                 </View>
-              ) : joinDeadlinePassed ? (
+              ) : canJoinThisTask && joinDeadlinePassed ? (
                 <View className="rounded-full border border-black/5 bg-black/5 px-3 py-1.5 dark:border-white/10 dark:bg-white/10">
                   <Text className="text-[11px] font-bold text-muted-foreground">Chưa tham gia</Text>
                 </View>

@@ -768,15 +768,15 @@ export function useChatRealtimeEvents({
         );
       }
 
+      const profilePatch = profileFromPayload?.patch;
       const hasMemberCountPatch =
-        typeof profileFromPayload?.patch.memberCount === "number" &&
-        Number.isFinite(profileFromPayload.patch.memberCount);
+        typeof profilePatch?.memberCount === "number" && Number.isFinite(profilePatch.memberCount);
       const profileOnlyPatch =
-        Boolean(profileFromPayload) &&
+        Boolean(profilePatch) &&
         !hasMemberCountPatch &&
-        (profileFromPayload.patch.name !== undefined ||
-          profileFromPayload.patch.avatar !== undefined ||
-          profileFromPayload.patch.updatedAt !== undefined);
+        (profilePatch?.name !== undefined ||
+          profilePatch?.avatar !== undefined ||
+          profilePatch?.updatedAt !== undefined);
       if (!profileOnlyPatch) {
         dispatch(chatApi.util.invalidateTags(["Conversations"]));
       }

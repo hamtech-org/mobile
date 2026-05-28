@@ -2254,7 +2254,10 @@ export function GroupManageModal({
       );
       const pollOpen = !p.closed && Boolean(onOpenPollVote);
       const openVote = () => openPollFromBulletin(p.id);
-      const showPollAdminRow = Boolean(onAddPollOption || onClosePoll);
+      const canClosePoll =
+        Boolean(onClosePoll && !p.closed) &&
+        String(creatorId).trim() === String(effectiveUserId ?? "").trim();
+      const showPollAdminRow = Boolean(onAddPollOption || canClosePoll);
       return (
         <View key={key} style={{ marginBottom: 12 }}>
           <View style={styles.bulletinPollCard}>
@@ -2312,9 +2315,9 @@ export function GroupManageModal({
                     <Text style={styles.bulletinPollAdminBtnText}>+ Option</Text>
                   </Pressable>
                 ) : null}
-                {onClosePoll ? (
+                {canClosePoll ? (
                   <Pressable
-                    onPress={() => void onClosePoll(p.id)}
+                    onPress={() => void onClosePoll?.(p.id)}
                     style={styles.bulletinPollAdminBtn}
                   >
                     <Text style={styles.bulletinPollAdminBtnText}>Đóng</Text>

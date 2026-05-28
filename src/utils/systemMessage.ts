@@ -16,6 +16,7 @@ type SystemTask = {
   assigneeLabel?: string;
   assigneeUserIds?: string[];
   assignToAll?: boolean;
+  broadcast?: boolean;
 };
 type SystemPoll = {
   pollId?: string;
@@ -50,6 +51,9 @@ export type SystemBubbleView =
       title: string;
       actorLabel: string;
       assigneeLabel: string;
+      assigneeUserIds: string[];
+      assignToAll: boolean;
+      broadcast: boolean;
       dueDate: string | null;
       note: string | null;
     }
@@ -178,6 +182,9 @@ export function buildSystemBubbleView(
         title,
         actorLabel: who,
         assigneeLabel,
+        assigneeUserIds: assigneeIds,
+        assignToAll: obj.task.assignToAll === true,
+        broadcast: obj.task.broadcast === true,
         dueDate: obj.task.dueDate ? String(obj.task.dueDate) : null,
         note: obj.task.note ? String(obj.task.note) : null,
       };
