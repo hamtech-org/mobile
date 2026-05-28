@@ -13,12 +13,22 @@ import { isRemotePushSupported } from "@/utils/pushNotificationsSupport";
 
 type NotificationResponse = Notifications.NotificationResponse;
 
+function responseKey(response: NotificationResponse): string {
+  const requestId = response.notification.request.identifier;
+  const action = response.actionIdentifier;
+  return `${requestId}:${action}`;
+}
+
 export function useNotificationResponses(): void {
   const isBootstrapping = useAppSelector((state) => state.auth.isBootstrapping);
   const pendingResponseRef = useRef<NotificationResponse | null>(null);
   const handledLastResponseIdRef = useRef<string | null>(null);
 
   const processResponse = useCallback(async (response: NotificationResponse) => {
+    const key = responseKey(response);
+    if (handledLastResponseIdRef.current === key) return;
+    handledLastResponseIdRef.current = key;
+
     try {
       if (await handleNotificationResponseAction(response)) return;
     } catch {
@@ -63,12 +73,6 @@ export function useNotificationResponses(): void {
       try {
         const response = await Notifications.getLastNotificationResponseAsync();
         if (cancelled || !response) return;
-
-        const requestId = response.notification.request.identifier;
-        const action = response.actionIdentifier;
-        const responseKey = `${requestId}:${action}`;
-        if (handledLastResponseIdRef.current === responseKey) return;
-        handledLastResponseIdRef.current = responseKey;
 
         await processResponse(response);
       } catch {
