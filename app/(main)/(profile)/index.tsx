@@ -12,6 +12,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
@@ -374,6 +375,13 @@ export default function ProfileScreen() {
             <Text className="mt-1 text-sm leading-5 text-muted-foreground">
               Chỉnh sửa thông tin cá nhân và tùy chỉnh hồ sơ của bạn.
             </Text>
+            <Pressable
+              onPress={() => router.push(`/(main)/(newsfeed)/user/${user.userId}`)}
+              className="mt-4 flex-row items-center gap-2 self-start rounded-xl border border-border bg-card px-4 py-2.5 active:bg-muted/60"
+            >
+              <Ionicons name="eye-outline" size={18} color={foreground} />
+              <Text className="text-sm font-semibold text-foreground">Xem trang cá nhân</Text>
+            </Pressable>
           </View>
 
           <View className="overflow-hidden rounded-2xl border border-border bg-card">
