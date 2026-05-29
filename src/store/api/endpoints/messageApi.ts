@@ -24,6 +24,7 @@ export interface SendMessageRequest {
   mediaUrl?: string;
   mediaId?: string;
   replyTo?: string;
+  duration?: number;
   /** Chỉ client — preview bubble khi đang gửi media */
   optimisticLocalUri?: string;
   /** Chỉ client — strip khỏi body, dùng cho reply preview trên bubble optimistic */
@@ -96,6 +97,7 @@ function lastMessagePreviewFromArg(arg: SendMessageRequest): string {
   if (arg.type === "image") return "[Ảnh]";
   if (arg.type === "video") return "[Video]";
   if (arg.type === "file") return "[File]";
+  if (arg.type === "voice") return "[Tin nhắn thoại]";
   const raw = (arg.content ?? "").trim();
   if (arg.type === "text") {
     const joinPreview = formatGroupJoinLinkListPreview(raw);
@@ -145,6 +147,7 @@ function buildOptimisticMessage(
     isEdited: false,
     isRecalled: false,
     reactions: {},
+    duration: arg.duration ?? null,
     /** Hiển thị như tin đã gửi — không spinner; lỗi thì undo cache. */
     status: "sent",
     createdAt: new Date().toISOString(),
@@ -207,6 +210,7 @@ function lastMessagePreviewFromMessage(m: IMessage): string {
   if (m.type === "image") return "[Ảnh]";
   if (m.type === "video") return "[Video]";
   if (m.type === "file") return "[File]";
+  if (m.type === "voice") return "[Tin nhắn thoại]";
   return m.content ?? "";
 }
 

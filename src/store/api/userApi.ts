@@ -51,6 +51,20 @@ export interface UserProfile {
   createdAt: string;
 }
 
+export interface PublicUserProfile {
+  userId: string;
+  email?: string | null;
+  displayName: string;
+  avatar: string | null;
+  bio: string | null;
+  phone?: string | null;
+  status?: UserStatus | string | null;
+  lastSeen?: string | null;
+  role?: UserRole | string | null;
+  isVerified?: boolean;
+  createdAt?: string | null;
+}
+
 interface ApiEnvelope<T> {
   success: boolean;
   data: T;
@@ -65,6 +79,12 @@ export const userApi = createApi({
     getProfile: builder.query<ApiEnvelope<UserProfile>, void>({
       query: () => "/users/me",
       providesTags: ["User"],
+    }),
+
+    getUserById: builder.query<PublicUserProfile, string>({
+      query: (userId) => `/users/${encodeURIComponent(userId)}`,
+      transformResponse: (response: ApiEnvelope<PublicUserProfile>) => response.data,
+      providesTags: (_result, _error, userId) => [{ type: "User", id: userId }],
     }),
 
     updateProfile: builder.mutation<ApiEnvelope<UserProfile>, FormData>({
@@ -234,6 +254,7 @@ export const userApi = createApi({
 
 export const {
   useGetProfileQuery,
+  useGetUserByIdQuery,
   useUpdateProfileMutation,
   useGetFriendsQuery,
   usePostMultipleUsersMutation,

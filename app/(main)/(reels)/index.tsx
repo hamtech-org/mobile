@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, StatusBar, Text, View } from "react-native";
 import type { LayoutChangeEvent, ViewToken } from "react-native";
 import { useRouter } from "expo-router";
+import { useIsFocused } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import {
   newsfeedApi,
@@ -26,6 +27,7 @@ export default function ReelsFeedScreen() {
   const router = useRouter();
   const dispatch = useAppDispatch();
   const socket = useSocket();
+  const isFocused = useIsFocused();
   const [visibleIndex, setVisibleIndex] = useState(0);
   const [commentsReelId, setCommentsReelId] = useState<string | null>(null);
   const [itemHeight, setItemHeight] = useState(0);
@@ -160,11 +162,15 @@ export default function ReelsFeedScreen() {
   const renderItem = useCallback(
     ({ item, index }: { item: IReel; index: number }) => (
       <View style={{ height: itemHeight }}>
-        <ReelPlayer reel={item} isVisible={visibleIndex === index} height={itemHeight} />
+        <ReelPlayer
+          reel={item}
+          isVisible={isFocused && visibleIndex === index}
+          height={itemHeight}
+        />
         <ReelActionBar reel={item} onOpenComments={() => setCommentsReelId(item.reelId)} />
       </View>
     ),
-    [visibleIndex, itemHeight],
+    [visibleIndex, itemHeight, isFocused],
   );
 
   const keyExtractor = useCallback((item: IReel) => item.reelId, []);
@@ -198,6 +204,7 @@ export default function ReelsFeedScreen() {
           keyExtractor={keyExtractor}
           renderItem={renderItem}
           pagingEnabled
+          disableIntervalMomentum={true}
           showsVerticalScrollIndicator={false}
           snapToInterval={itemHeight}
           snapToAlignment="start"

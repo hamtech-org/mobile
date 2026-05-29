@@ -116,6 +116,32 @@ export const useChat = () => {
     [sendMessageMutation],
   );
 
+  // ── Gửi tin nhắn thoại (Voice Message) ────────────────────────
+  const sendVoiceMessage = useCallback(
+    async (
+      conversationId: string,
+      mediaId: string,
+      duration: number,
+      replyTo?: string,
+      options?: {
+        optimisticLocalUri?: string;
+        clientReplyToDetails?: IReplyToDetails | null;
+      },
+    ): Promise<void> => {
+      await sendMessageMutation({
+        conversationId,
+        type: "voice",
+        content: "[Tin nhắn thoại]",
+        mediaId,
+        replyTo,
+        duration,
+        optimisticLocalUri: options?.optimisticLocalUri,
+        clientReplyToDetails: options?.clientReplyToDetails,
+      }).unwrap();
+    },
+    [sendMessageMutation],
+  );
+
   // ── Gửi tin nhắn với reply ─────────────────────────────────────────
   const sendReplyMessage = useCallback(
     async (conversationId: string, content: string, replyToMessage: IMessage): Promise<void> => {
@@ -257,6 +283,7 @@ export const useChat = () => {
   return {
     sendMessage,
     sendMediaMessage,
+    sendVoiceMessage,
     sendReplyMessage,
     editMessage,
     recallMessage,

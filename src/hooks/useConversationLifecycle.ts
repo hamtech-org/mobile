@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 
 import { useMarkAsReadMutation } from "@/store/api/chatApi";
+import { clearConversationNotificationState } from "@/utils/chatNotificationState";
 import {
   getLastMarkedMessageIdForConversation,
   setLastMarkedMessageIdForConversation,
@@ -23,7 +24,10 @@ export function useConversationLifecycle({
   const [markAsRead] = useMarkAsReadMutation();
 
   useEffect(() => {
-    if (!conversationId || !latestMessageId) return;
+    if (!conversationId) return;
+    clearConversationNotificationState(conversationId);
+    if (!latestMessageId) return;
+
     const prev = getLastMarkedMessageIdForConversation(conversationId);
     if (prev === latestMessageId) return;
 

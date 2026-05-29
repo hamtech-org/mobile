@@ -11,6 +11,7 @@ import {
   useReactToReelMutation,
   useToggleSaveReelMutation,
   useDeleteReelMutation,
+  useShareReelMutation,
 } from "@/store/api/newsfeedApi";
 import { REACTION_META } from "@/types/reaction.types";
 import type { ReactionType } from "@/types/reaction.types";
@@ -36,6 +37,7 @@ export const ReelActionBar = ({ reel, onOpenComments }: Props) => {
   const [reactToReel] = useReactToReelMutation();
   const [toggleSave] = useToggleSaveReelMutation();
   const [deleteReel] = useDeleteReelMutation();
+  const [shareReel] = useShareReelMutation();
   const currentUserId = useSelector((state: RootState) => state.auth.user?.userId);
   const router = useRouter();
   const isAuthor = reel.author?.userId === currentUserId;
@@ -44,6 +46,7 @@ export const ReelActionBar = ({ reel, onOpenComments }: Props) => {
   const [likeCount, setLikeCount] = useState(totalReactions(reel.reactionsCount));
   const [saved, setSaved] = useState(reel.isSaved ?? false);
   const [saveCount, setSaveCount] = useState(reel.savesCount);
+  const [sharesCount, setSharesCount] = useState(reel.sharesCount);
   const [moreVisible, setMoreVisible] = useState(false);
   const [reportVisible, setReportVisible] = useState(false);
   const [reactionPickerVisible, setReactionPickerVisible] = useState(false);
@@ -106,10 +109,16 @@ export const ReelActionBar = ({ reel, onOpenComments }: Props) => {
   }, [saved, saveCount, reel.reelId, toggleSave]);
 
   const handleShare = useCallback(async () => {
-    await Share.share({
-      message: `${reel.caption ?? "Xem reel này"}\nhttps://zalogram.app/reels/${reel.reelId}`,
-    });
-  }, [reel.reelId, reel.caption]);
+    setSharesCount((c) => c + 1);
+    try {
+      await Share.share({
+        message: `${reel.caption ?? "Xem reel này"}\nhttps://zalogram.app/reels/${reel.reelId}`,
+      });
+      await shareReel(reel.reelId).unwrap();
+    } catch {
+      setSharesCount((c) => Math.max(0, c - 1));
+    }
+  }, [reel.reelId, reel.caption, shareReel]);
 
   const handleDelete = useCallback(() => {
     Alert.alert("Xóa reel", "Bạn có chắc muốn xóa reel này? Hành động không thể hoàn tác.", [
@@ -192,7 +201,7 @@ export const ReelActionBar = ({ reel, onOpenComments }: Props) => {
         {/* Share */}
         <Pressable onPress={() => void handleShare()} className="items-center gap-1" hitSlop={8}>
           <Ionicons name="arrow-redo-outline" size={28} color="#fff" />
-          <Text className="text-xs font-semibold text-white">{formatCount(reel.sharesCount)}</Text>
+          <Text className="text-xs font-semibold text-white">{formatCount(sharesCount)}</Text>
         </Pressable>
 
         {/* More */}

@@ -1,10 +1,14 @@
 import { useCallback, useMemo, useState } from "react";
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
-import { Ban, Bell, BellOff, ChevronRight, Clock, Pin, X } from "lucide-react-native";
+import { router } from "expo-router";
+import { Ban, Bell, BellOff, ChevronRight, Clock, Pin, X, Trash2 } from "lucide-react-native";
 
 import { useIconColors } from "@/hooks/useIconColors";
 import type { IConversation } from "@/types/chat.types";
-import { usePatchConversationPreferencesMutation } from "@/store/api/chatApi";
+import {
+  usePatchConversationPreferencesMutation,
+  useDeleteConversationMutation,
+} from "@/store/api/endpoints/conversationApi";
 import {
   useBlockFriendMutation,
   useGetFriendRequestStatusQuery,
@@ -40,6 +44,7 @@ export function ConversationPersonalSettingsModal({
 }: ConversationPersonalSettingsModalProps) {
   const { foreground, muted, primary } = useIconColors();
   const [patchPrefs] = usePatchConversationPreferencesMutation();
+  const [deleteConversation, { isLoading: deletingConversation }] = useDeleteConversationMutation();
   const [blockFriend, { isLoading: blockingFriend }] = useBlockFriendMutation();
   const [unblockFriend, { isLoading: unblockingFriend }] = useUnblockFriendMutation();
   const [muteOpen, setMuteOpen] = useState(false);
@@ -161,6 +166,35 @@ export function ConversationPersonalSettingsModal({
       .catch(() => toast.error("Không thể bỏ chặn người dùng"));
   }, [conversation.otherUserId, unblockFriend]);
 
+  const confirmDeleteConversation = useCallback(() => {
+    const isDirect = conversation.type === "direct";
+    const title = isDirect ? "Xóa cuộc hội thoại?" : "Xóa lịch sử trò chuyện?";
+    const msg = isDirect
+      ? "Toàn bộ lịch sử tin nhắn sẽ bị xóa ở phía bạn và cuộc hội thoại sẽ ẩn khỏi danh sách."
+      : "Toàn bộ lịch sử tin nhắn của nhóm sẽ bị xóa ở phía bạn và nhóm sẽ ẩn khỏi danh sách.";
+
+    Alert.alert(title, msg, [
+      { text: "Không", style: "cancel" },
+      {
+        text: "Xóa",
+        style: "destructive",
+        onPress: () => {
+          void deleteConversation({
+            conversationId: conversation.conversationId,
+            type: conversation.type as "direct" | "group",
+          })
+            .unwrap()
+            .then(() => {
+              toast.success(isDirect ? "Đã xóa cuộc hội thoại" : "Đã xóa lịch sử trò chuyện");
+              onClose();
+              router.replace("/(main)");
+            })
+            .catch(() => toast.error("Không thể xóa cuộc trò chuyện"));
+        },
+      },
+    ]);
+  }, [deleteConversation, conversation.conversationId, conversation.type, onClose]);
+
   return (
     <>
       <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -262,25 +296,42 @@ export function ConversationPersonalSettingsModal({
               ) : null}
 
               <Text style={[styles.section, { color: muted }]}>Quyền riêng tư</Text>
-              <Pressable
-                disabled={blockingFriend || unblockingFriend}
-                style={[styles.actionRow, { borderColor: "rgba(239,68,68,0.28)" }]}
-                onPress={isBlocked ? unblockCurrentFriend : confirmBlockFriend}
-              >
-                <Ban size={22} color={isBlocked ? "#059669" : "#ef4444"} strokeWidth={1.75} />
-                <Text
+              {conversation.type === "direct" && (
+                <Pressable
+                  disabled={blockingFriend || unblockingFriend}
                   style={[
-                    styles.actionLabel,
-                    { color: isBlocked ? "#059669" : "#ef4444", flex: 1 },
+                    styles.actionRow,
+                    { borderColor: "rgba(239,68,68,0.28)", marginBottom: 10 },
                   ]}
+                  onPress={isBlocked ? unblockCurrentFriend : confirmBlockFriend}
                 >
-                  {isBlocked ? "Bỏ chặn bạn bè" : "Chặn bạn bè"}
+                  <Ban size={22} color={isBlocked ? "#059669" : "#ef4444"} strokeWidth={1.75} />
+                  <Text
+                    style={[
+                      styles.actionLabel,
+                      { color: isBlocked ? "#059669" : "#ef4444", flex: 1 },
+                    ]}
+                  >
+                    {isBlocked ? "Bỏ chặn bạn bè" : "Chặn bạn bè"}
+                  </Text>
+                  <ChevronRight
+                    size={20}
+                    color={isBlocked ? "#059669" : "#ef4444"}
+                    strokeWidth={1.75}
+                  />
+                </Pressable>
+              )}
+
+              <Pressable
+                disabled={deletingConversation}
+                style={[styles.actionRow, { borderColor: "rgba(239,68,68,0.28)" }]}
+                onPress={confirmDeleteConversation}
+              >
+                <Trash2 size={22} color="#ef4444" strokeWidth={1.75} />
+                <Text style={[styles.actionLabel, { color: "#ef4444", flex: 1 }]}>
+                  {conversation.type === "direct" ? "Xóa cuộc hội thoại" : "Xóa lịch sử trò chuyện"}
                 </Text>
-                <ChevronRight
-                  size={20}
-                  color={isBlocked ? "#059669" : "#ef4444"}
-                  strokeWidth={1.75}
-                />
+                <ChevronRight size={20} color="#ef4444" strokeWidth={1.75} />
               </Pressable>
             </ScrollView>
           </Pressable>

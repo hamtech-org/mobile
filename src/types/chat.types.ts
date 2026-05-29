@@ -12,7 +12,8 @@ export type MessageType =
   | "location"
   | "poll"
   | "schedule"
-  | "call";
+  | "call"
+  | "voice";
 
 export type MessageStatus = "sent" | "delivered" | "read" | "sending" | "failed";
 export type ConversationType = "direct" | "group";
@@ -78,6 +79,13 @@ export interface IConversation {
   groupId?: string | null;
   /** Cho biết tính năng chat của cộng đồng liên kết có đang bật không */
   chatEnabled?: boolean;
+  clearedAt?: string | null;
+  clearedAtMs?: number | null;
+  clearedUntilSK?: string | null;
+  revealedAt?: string | null;
+  revealedAtMs?: number | null;
+  conversationListAt?: string | null;
+  conversationListAtMs?: number | null;
 }
 
 export interface IReplyToDetails {
@@ -109,6 +117,7 @@ export interface IMessage {
   isRecalled: boolean;
   isDeleted?: boolean;
   reactions: Record<string, string[]>;
+  duration?: number | null;
   status: MessageStatus;
   createdAt: string;
 }

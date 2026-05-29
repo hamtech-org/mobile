@@ -34,7 +34,13 @@ interface EnableFaceLoginRequest {
 interface SessionDeviceInfo {
   userAgent: string;
   os?: string;
+  osVersion?: string;
   browser?: string;
+  deviceName?: string;
+  model?: string;
+  brand?: string;
+  manufacturer?: string;
+  appClient?: string;
 }
 
 export interface AuthSessionSummary {

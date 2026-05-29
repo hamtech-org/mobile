@@ -1,15 +1,10 @@
 import * as Notifications from "expo-notifications";
-import { NativeModules, Platform } from "react-native";
+import { Platform } from "react-native";
 
 import type { INotificationRouteData } from "@/types/notification.types";
 import { ensureExpoNotificationHandlerInstalled } from "@/utils/notificationExpoHandler";
 import { pickActorAvatarFromData } from "@/utils/notificationAvatar";
-import {
-  buildAvatarNotificationFieldsSync,
-  cacheNotificationAvatarForNative,
-  readCachedNotificationAvatarBase64,
-} from "@/utils/notificationAvatarCache";
-import { subscribeHamtechNotificationActions } from "@/utils/hamtechNotificationActions";
+import { buildAvatarNotificationFieldsSync } from "@/utils/notificationAvatarCache";
 import { requestNotificationPermissionAsync } from "@/utils/notificationPermission";
 import { isRemotePushSupported } from "@/utils/pushNotificationsSupport";
 import {
@@ -69,18 +64,8 @@ export interface LocalSystemNotificationInput {
 
 let channelsReady: Promise<void> | null = null;
 let categoriesReady: Promise<void> | null = null;
-let hamtechActionSub: (() => void) | null = null;
 const recentKeys = new Map<string, number>();
 const DEDUPE_MS = 1200;
-
-type HamtechNotificationsNativeModule = {
-  showAvatarNotification?: (options: Record<string, unknown>) => Promise<boolean>;
-  dismissNotification?: (notificationId: string) => Promise<boolean>;
-};
-
-const hamtechNotifications = NativeModules.HamtechNotifications as
-  | HamtechNotificationsNativeModule
-  | undefined;
 
 function buildDedupeKey(input: LocalSystemNotificationInput): string {
   const route = String(input.data?.route ?? "");
@@ -137,28 +122,6 @@ function enrichNotificationData(
   const merged: Record<string, unknown> = { ...(base ?? {}) };
   const source = avatarUrl ?? pickActorAvatarFromData(merged) ?? null;
   return { ...merged, ...buildAvatarNotificationFieldsSync(source) };
-}
-
-async function showNativeAvatarNotification(input: {
-  notificationId?: string;
-  title: string;
-  body: string;
-  subtitle?: string;
-  channelId: string;
-  data: Record<string, unknown>;
-}): Promise<boolean> {
-  if (Platform.OS !== "android" || !hamtechNotifications?.showAvatarNotification) return false;
-  if (!input.data.localAvatarUri && !input.data.avatarBase64 && !input.data.actorAvatar) {
-    return false;
-  }
-  try {
-    return Boolean(await hamtechNotifications.showAvatarNotification(input));
-  } catch (error) {
-    if (__DEV__) {
-      console.warn("[LocalNotif] native avatar notification failed:", error);
-    }
-    return false;
-  }
 }
 
 /** Xin quyền thông báo hệ thống (Android 13+). */
@@ -265,9 +228,6 @@ export async function initSystemNotifications(): Promise<void> {
     await requestNotificationPermissionAsync();
     await ensureSystemNotificationChannels();
     await ensureNotificationCategories();
-    if (isSocketLocalNotificationEnabled() && !hamtechActionSub) {
-      hamtechActionSub = subscribeHamtechNotificationActions();
-    }
   } catch {
     /* ignore */
   }
@@ -371,25 +331,13 @@ export async function showLocalSystemNotification(
       notificationData.notificationId = input.notificationId;
     }
     const subtitle = input.subtitle?.trim() || undefined;
-    const avatarSource = input.avatarUrl ?? pickActorAvatarFromData(notificationData);
-    const localAvatarUri = await cacheNotificationAvatarForNative(avatarSource);
-    if (localAvatarUri) {
-      notificationData.localAvatarUri = localAvatarUri;
-      const avatarBase64 = await readCachedNotificationAvatarBase64(localAvatarUri);
-      if (avatarBase64) {
-        notificationData.avatarBase64 = avatarBase64;
-      }
-    }
-    if (__DEV__) {
-      console.log("[LocalNotif] avatar payload:", {
-        avatarSource,
-        actorAvatar: notificationData.actorAvatar,
-        imageUrl: notificationData.imageUrl,
-        localAvatarUri,
-        hasAvatarBase64: typeof notificationData.avatarBase64 === "string",
-        categoryIdentifier,
-      });
-    }
+    // if (__DEV__) {
+    //   console.log("[LocalNotif] avatar payload:", {
+    //     actorAvatar: notificationData.actorAvatar,
+    //     imageUrl: notificationData.imageUrl,
+    //     categoryIdentifier,
+    //   });
+    // }
 
     console.log(
       `[LocalNotif] showLocalSystemNotification triggered. Title: "${title}", Body: "${body}", Channel: ${channel}, AvatarUrl: ${input.avatarUrl}`,
@@ -405,16 +353,6 @@ export async function showLocalSystemNotification(
 
     await ensureSystemNotificationChannels();
     await ensureNotificationCategories();
-
-    const displayedByNative = await showNativeAvatarNotification({
-      notificationId: input.notificationId,
-      title,
-      body: body || title,
-      subtitle,
-      channelId,
-      data: notificationData,
-    });
-    if (displayedByNative) return;
 
     const messageCount =
       typeof notificationData.messageCount === "number" && notificationData.messageCount > 1
@@ -473,7 +411,6 @@ export async function showLocalSystemNotification(
 export async function dismissCallSystemNotification(channelName: string): Promise<void> {
   if (Platform.OS === "web") return;
   try {
-    await hamtechNotifications?.dismissNotification?.(`call-${channelName}`);
     await Notifications.dismissNotificationAsync(`call-${channelName}`);
   } catch {
     /* ignore */
