@@ -579,44 +579,6 @@ export const ChatInput = ({
 
   return (
     <View style={styles.root}>
-      {showMentionDropdown && filteredMentionMembers.length > 0 ? (
-        <View style={styles.mentionDropdown}>
-          <ScrollView
-            horizontal={true}
-            showsHorizontalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            style={styles.mentionScroll}
-            contentContainerStyle={styles.mentionScrollContent}
-          >
-            {filteredMentionMembers.map((member) => (
-              <Pressable
-                key={member.userId}
-                onPress={() => handleSelectMention(member)}
-                style={({ pressed }) => [styles.mentionItem, pressed && styles.mentionItemPressed]}
-              >
-                {member.userId === "all" ? (
-                  <View style={styles.mentionAvatarAll}>
-                    <Text style={styles.mentionAvatarAllText}>@</Text>
-                  </View>
-                ) : member.avatar ? (
-                  <Image source={{ uri: member.avatar }} style={styles.mentionAvatar} />
-                ) : (
-                  <View style={styles.mentionAvatarFallback}>
-                    <Text style={styles.mentionAvatarFallbackText}>
-                      {(member.displayName || member.name || "U").slice(0, 1).toUpperCase()}
-                    </Text>
-                  </View>
-                )}
-                <Text style={styles.mentionName} numberOfLines={1}>
-                  {member.userId === "all"
-                    ? "Cả nhóm"
-                    : member.displayName || member.name || "Thành viên"}
-                </Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-        </View>
-      ) : null}
       {replyingTo ? (
         <View style={styles.replyBar}>
           <View style={styles.replyBarText}>
@@ -761,77 +723,123 @@ export const ChatInput = ({
         </View>
       ) : null}
 
-      {isRecording ? (
-        <View style={styles.recordRow}>
-          <View style={styles.recordLeft}>
-            <View style={styles.recordDot} />
-            <Text style={styles.recordText}>ĐANG GHI ÂM...</Text>
+      <View style={styles.composeWrapper}>
+        {showMentionDropdown && filteredMentionMembers.length > 0 ? (
+          <View style={styles.mentionDropdown}>
+            <ScrollView
+              horizontal={false}
+              showsVerticalScrollIndicator={true}
+              keyboardShouldPersistTaps="handled"
+              style={styles.mentionScroll}
+              contentContainerStyle={styles.mentionScrollContent}
+            >
+              {filteredMentionMembers.map((member) => (
+                <Pressable
+                  key={member.userId}
+                  onPress={() => handleSelectMention(member)}
+                  style={({ pressed }) => [
+                    styles.mentionItem,
+                    pressed && styles.mentionItemPressed,
+                  ]}
+                >
+                  <View style={styles.mentionRowContent}>
+                    {member.userId === "all" ? (
+                      <View style={styles.mentionAvatarAll}>
+                        <Text style={styles.mentionAvatarAllText}>@</Text>
+                      </View>
+                    ) : member.avatar ? (
+                      <Image source={{ uri: member.avatar }} style={styles.mentionAvatar} />
+                    ) : (
+                      <View style={styles.mentionAvatarFallback}>
+                        <Text style={styles.mentionAvatarFallbackText}>
+                          {(member.displayName || member.name || "U").slice(0, 1).toUpperCase()}
+                        </Text>
+                      </View>
+                    )}
+                    <Text style={styles.mentionName} numberOfLines={1}>
+                      {member.userId === "all"
+                        ? "Cả nhóm"
+                        : member.displayName || member.name || "Thành viên"}
+                    </Text>
+                  </View>
+                </Pressable>
+              ))}
+            </ScrollView>
           </View>
-          <Text style={styles.recordTimer}>
-            {Math.floor(recordingDuration / 60)}:
-            {(recordingDuration % 60).toString().padStart(2, "0")}
-          </Text>
-          <View style={styles.recordRight}>
-            <Pressable
-              onPress={() => void stopRecording(false)}
-              style={styles.recordBtnCancel}
-              accessibilityLabel="Hủy ghi âm"
-            >
-              <X size={18} color="#ef4444" strokeWidth={2.5} />
-            </Pressable>
-            <Pressable
-              onPress={() => void stopRecording(true)}
-              style={[styles.recordBtnSend, { backgroundColor: primary }]}
-              accessibilityLabel="Gửi tin nhắn thoại"
-            >
-              <SendHorizontal size={18} color="#fff" strokeWidth={2} />
-            </Pressable>
+        ) : null}
+
+        {isRecording ? (
+          <View style={styles.recordRow}>
+            <View style={styles.recordLeft}>
+              <View style={styles.recordDot} />
+              <Text style={styles.recordText}>ĐANG GHI ÂM...</Text>
+            </View>
+            <Text style={styles.recordTimer}>
+              {Math.floor(recordingDuration / 60)}:
+              {(recordingDuration % 60).toString().padStart(2, "0")}
+            </Text>
+            <View style={styles.recordRight}>
+              <Pressable
+                onPress={() => void stopRecording(false)}
+                style={styles.recordBtnCancel}
+                accessibilityLabel="Hủy ghi âm"
+              >
+                <X size={18} color="#ef4444" strokeWidth={2.5} />
+              </Pressable>
+              <Pressable
+                onPress={() => void stopRecording(true)}
+                style={[styles.recordBtnSend, { backgroundColor: primary }]}
+                accessibilityLabel="Gửi tin nhắn thoại"
+              >
+                <SendHorizontal size={18} color="#fff" strokeWidth={2} />
+              </Pressable>
+            </View>
           </View>
-        </View>
-      ) : (
-        <View style={styles.composeRow}>
-          <View style={styles.inputBox}>
-            <TextInput
-              ref={textInputRef}
-              placeholder={placeholder}
-              placeholderTextColor={muted}
-              value={content}
-              onChangeText={handleTextChange}
-              onSelectionChange={(e) => setSelection(e.nativeEvent.selection)}
-              multiline
-              editable={!inputDisabled}
-              style={styles.textInput}
-            />
+        ) : (
+          <View style={styles.composeRow}>
+            <View style={styles.inputBox}>
+              <TextInput
+                ref={textInputRef}
+                placeholder={placeholder}
+                placeholderTextColor={muted}
+                value={content}
+                onChangeText={handleTextChange}
+                onSelectionChange={(e) => setSelection(e.nativeEvent.selection)}
+                multiline
+                editable={!inputDisabled}
+                style={styles.textInput}
+              />
+            </View>
+            {hasSendable ? (
+              <Pressable
+                onPress={() => void handleSend()}
+                disabled={inputDisabled}
+                style={[
+                  styles.sendBtn,
+                  { backgroundColor: primary },
+                  inputDisabled && styles.disabled,
+                ]}
+                accessibilityLabel="Gửi tin nhắn"
+              >
+                {isUploading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <SendHorizontal size={20} color="#fff" strokeWidth={2} />
+                )}
+              </Pressable>
+            ) : (
+              <Pressable
+                onPress={() => void Promise.resolve(onSend("👍")).catch(() => {})}
+                disabled={inputDisabled}
+                style={[styles.likeBtn, inputDisabled && styles.disabled]}
+                accessibilityLabel="Gửi like"
+              >
+                <ThumbsUp size={20} color={primary} strokeWidth={2} />
+              </Pressable>
+            )}
           </View>
-          {hasSendable ? (
-            <Pressable
-              onPress={() => void handleSend()}
-              disabled={inputDisabled}
-              style={[
-                styles.sendBtn,
-                { backgroundColor: primary },
-                inputDisabled && styles.disabled,
-              ]}
-              accessibilityLabel="Gửi tin nhắn"
-            >
-              {isUploading ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <SendHorizontal size={20} color="#fff" strokeWidth={2} />
-              )}
-            </Pressable>
-          ) : (
-            <Pressable
-              onPress={() => void Promise.resolve(onSend("👍")).catch(() => {})}
-              disabled={inputDisabled}
-              style={[styles.likeBtn, inputDisabled && styles.disabled]}
-              accessibilityLabel="Gửi like"
-            >
-              <ThumbsUp size={20} color={primary} strokeWidth={2} />
-            </Pressable>
-          )}
-        </View>
-      )}
+        )}
+      </View>
 
       {isEmojiPickerOpen ? (
         <EmojiPicker
@@ -858,40 +866,49 @@ export const ChatInput = ({
 };
 
 const styles = StyleSheet.create({
+  composeWrapper: {
+    position: "relative",
+  },
   mentionDropdown: {
     position: "absolute",
     bottom: "100%",
     left: 0,
     right: 0,
     zIndex: 999,
-    height: 72,
+    maxHeight: 200,
     backgroundColor: "#ffffff",
-    borderTopWidth: 1,
-    borderTopColor: "rgba(0,0,0,0.06)",
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(0,0,0,0.06)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.08)",
+    marginBottom: 8,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: -3 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
   },
   mentionScroll: {
-    flex: 1,
+    flexGrow: 0,
   },
   mentionScrollContent: {
-    paddingHorizontal: 12,
-    alignItems: "center",
+    paddingVertical: 4,
   },
   mentionItem: {
-    flexDirection: "column",
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    width: 64,
-    marginHorizontal: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.03)",
   },
   mentionItemPressed: {
     opacity: 0.6,
+    backgroundColor: "rgba(0,0,0,0.02)",
+  },
+  mentionRowContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
   },
   mentionAvatar: {
     width: 32,
@@ -926,11 +943,11 @@ const styles = StyleSheet.create({
   },
   mentionName: {
     color: "#334155",
-    fontSize: 10,
+    fontSize: 14,
     fontWeight: "600",
-    marginTop: 4,
-    width: "100%",
-    textAlign: "center",
+    marginLeft: 12,
+    flex: 1,
+    textAlign: "left",
   },
   root: {
     borderTopWidth: StyleSheet.hairlineWidth,
