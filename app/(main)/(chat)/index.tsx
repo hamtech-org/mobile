@@ -33,6 +33,7 @@ import type { UserQrPayload } from "@/utils/userQrPayload";
 import {
   useGetConversationsQuery,
   usePatchConversationPreferencesMutation,
+  useDeleteConversationMutation,
 } from "@/store/api/chatApi";
 import {
   useBlockFriendMutation,
@@ -69,6 +70,7 @@ export default function ChatListScreen() {
   const activeOpenConversationId = useActiveChatRouteConversationId();
   const { data, isLoading, isError, refetch, isFetching } = useGetConversationsQuery();
   const [patchPrefs] = usePatchConversationPreferencesMutation();
+  const [deleteConversation] = useDeleteConversationMutation();
   const [blockFriend] = useBlockFriendMutation();
   const [unblockFriend] = useUnblockFriendMutation();
   const [searchText, setSearchText] = useState("");
@@ -192,6 +194,39 @@ export default function ChatListScreen() {
         .catch(() => toast.error("Không thể bỏ chặn người dùng"));
     },
     [refetch, unblockFriend],
+  );
+
+  const handleQuickMenuDeleteConversation = useCallback(
+    (item: IConversation) => {
+      const isDirect = item.type === "direct";
+      const title = isDirect ? "Xóa cuộc hội thoại?" : "Xóa lịch sử trò chuyện?";
+      const msg = isDirect
+        ? "Toàn bộ lịch sử tin nhắn sẽ bị xóa ở phía bạn và cuộc hội thoại sẽ ẩn khỏi danh sách."
+        : "Toàn bộ lịch sử tin nhắn của nhóm sẽ bị xóa ở phía bạn. Nhóm vẫn sẽ hiển thị trong danh sách.";
+
+      Alert.alert(title, msg, [
+        { text: "Không", style: "cancel" },
+        {
+          text: "Xóa",
+          style: "destructive",
+          onPress: () => {
+            void deleteConversation({
+              conversationId: item.conversationId,
+              type: item.type as "direct" | "group",
+            })
+              .unwrap()
+              .then(() => {
+                toast.success(isDirect ? "Đã xóa cuộc hội thoại" : "Đã xóa lịch sử trò chuyện");
+                if (activeOpenConversationId === item.conversationId && isDirect) {
+                  router.replace("/(main)");
+                }
+              })
+              .catch(() => toast.error("Không thể xóa cuộc trò chuyện"));
+          },
+        },
+      ]);
+    },
+    [deleteConversation, activeOpenConversationId],
   );
 
   const openConversationQuickMenu = useCallback((item: IConversation) => {
@@ -510,6 +545,7 @@ export default function ChatListScreen() {
         onBlockFriend={handleQuickMenuBlockFriend}
         onUnblockFriend={handleQuickMenuUnblockFriend}
         isBlocked={quickMenuFriendshipStatus === "blocked"}
+        onDeleteConversation={handleQuickMenuDeleteConversation}
       />
 
       <MuteNotificationsModal
