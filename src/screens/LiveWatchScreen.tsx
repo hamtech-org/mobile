@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -25,11 +25,13 @@ import {
   RtcSurfaceView,
   VideoSourceType,
 } from "react-native-agora";
-import { ChevronLeft, MessageSquare } from "lucide-react-native";
-import BottomSheet, { BottomSheetBackdrop, BottomSheetView } from "@gorhom/bottom-sheet";
-import type { BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
+import { ChevronLeft } from "lucide-react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 
-import { LiveChatPanel, type LiveChatLine } from "@/components/live/LiveChatPanel";
+import { LiveChatInputBar } from "@/components/live/LiveChatInputBar";
+import { LiveChatOverlay } from "@/components/live/LiveChatOverlay";
+import { LiveFloatingReactions } from "@/components/live/LiveFloatingReactions";
+import type { LiveChatLine } from "@/components/live/LiveChatPanel";
 import { env } from "@/config/env";
 import { useSocketContext } from "@/contexts/SocketContext";
 import { useAppSelector } from "@/hooks/useAppStore";
@@ -77,7 +79,8 @@ export function LiveWatchScreen() {
   const [viewerCount, setViewerCount] = useState(0);
   const [durationTick, setDurationTick] = useState(Date.now());
   const [messages, setMessages] = useState<LiveChatLine[]>([]);
-  const [chatOpen, setChatOpen] = useState(false);
+  const [chatVisible, setChatVisible] = useState(true);
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
 
   const engineRef = useRef<IRtcEngine | null>(null);
   const registeredHandlerRef = useRef<IRtcEngineEventHandler | null>(null);
@@ -275,10 +278,13 @@ export function LiveWatchScreen() {
     };
   }, [currentUserId, session?.channelName, session?.hostUserId, shutdownRtc]);
 
-  const renderBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.35} />
-    ),
+  const swipeToggle = useMemo(
+    () =>
+      Gesture.Pan().onEnd((e) => {
+        if (Math.abs(e.translationX) < 40) return;
+        if (e.translationX > 40) setChatVisible(false);
+        if (e.translationX < -40) setChatVisible(true);
+      }),
     [],
   );
 
@@ -305,78 +311,69 @@ export function LiveWatchScreen() {
 
   return (
     <View className="flex-1 bg-black">
-      <View className={`flex-1 ${isLandscape && chatOpen ? "flex-row" : ""}`}>
+      <GestureDetector gesture={swipeToggle}>
         <View className="flex-1">
-          {joined && hostUid != null && hostVideoOn ? (
-            <RtcSurfaceView
-              style={{ flex: 1 }}
-              canvas={{
-                uid: hostUid,
-                sourceType: VideoSourceType.VideoSourceRemote,
-                renderMode: RenderModeType.RenderModeFit,
-              }}
-            />
-          ) : (
-            <View className="flex-1 items-center justify-center bg-neutral-950">
-              {!joined ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text className="text-sm text-white/70">
-                  {hostUid == null ? "Đang chờ host phát..." : "Host đã tắt video"}
-                </Text>
-              )}
-            </View>
-          )}
-
-          <SafeAreaView className="absolute left-0 right-0 top-0" edges={["top"]}>
-            <View className="flex-row items-center justify-between px-3 pt-2">
-              <Pressable
-                onPress={() => {
-                  shutdownRtc();
-                  router.back();
+          <View className="flex-1">
+            {joined && hostUid != null && hostVideoOn ? (
+              <RtcSurfaceView
+                style={{ flex: 1 }}
+                canvas={{
+                  uid: hostUid,
+                  sourceType: VideoSourceType.VideoSourceRemote,
+                  renderMode: RenderModeType.RenderModeFit,
                 }}
-                className="size-10 items-center justify-center rounded-full bg-black/50"
-              >
-                <ChevronLeft size={22} color="#fff" />
-              </Pressable>
-              <View className="flex-1 px-2">
-                <Text className="text-center text-sm font-semibold text-white" numberOfLines={1}>
-                  {session.title}
-                </Text>
-                <Text className="text-center text-xs text-white/75">
-                  {viewerCount} người xem · {duration}
-                </Text>
+              />
+            ) : (
+              <View className="flex-1 items-center justify-center bg-neutral-950">
+                {!joined ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text className="text-sm text-white/70">
+                    {hostUid == null ? "Đang chờ host phát..." : "Host đã tắt video"}
+                  </Text>
+                )}
               </View>
-              <Pressable
-                onPress={() => setChatOpen((v) => !v)}
-                className="size-10 items-center justify-center rounded-full bg-black/50"
-              >
-                <MessageSquare size={20} color="#fff" />
-              </Pressable>
-            </View>
-          </SafeAreaView>
-        </View>
+            )}
 
-        {chatOpen && isLandscape ? (
-          <View className="w-[300px] border-l border-white/15 bg-black/80 p-3">
-            <LiveChatPanel sessionId={sessionId} messages={messages} variant="dark" />
+            <LiveFloatingReactions sessionId={sessionId} />
+
+            <LiveChatOverlay
+              messages={messages}
+              keyboardOffset={keyboardOffset}
+              visible={chatVisible}
+            />
+
+            <LiveChatInputBar
+              sessionId={sessionId}
+              visible={chatVisible}
+              onKeyboardOffsetChange={(o) => setKeyboardOffset(o)}
+            />
+
+            <SafeAreaView className="absolute left-0 right-0 top-0" edges={["top"]}>
+              <View className="flex-row items-center justify-between px-3 pt-2">
+                <Pressable
+                  onPress={() => {
+                    shutdownRtc();
+                    router.back();
+                  }}
+                  className="size-10 items-center justify-center rounded-full bg-black/50"
+                >
+                  <ChevronLeft size={22} color="#fff" />
+                </Pressable>
+                <View className="flex-1 px-2">
+                  <Text className="text-center text-sm font-semibold text-white" numberOfLines={1}>
+                    {session.title}
+                  </Text>
+                  <Text className="text-center text-xs text-white/75">
+                    {viewerCount} người xem · {duration}
+                  </Text>
+                </View>
+                <View className="size-10" />
+              </View>
+            </SafeAreaView>
           </View>
-        ) : null}
-      </View>
-
-      {chatOpen && !isLandscape ? (
-        <BottomSheet
-          index={0}
-          snapPoints={["40%"]}
-          enablePanDownToClose
-          onClose={() => setChatOpen(false)}
-          backdropComponent={renderBackdrop}
-        >
-          <BottomSheetView className="flex-1 bg-neutral-900 px-3 pb-4">
-            <LiveChatPanel sessionId={sessionId} messages={messages} variant="dark" />
-          </BottomSheetView>
-        </BottomSheet>
-      ) : null}
+        </View>
+      </GestureDetector>
     </View>
   );
 }
