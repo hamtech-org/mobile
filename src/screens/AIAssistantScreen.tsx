@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  Image,
   Platform,
   Pressable,
   Text,
@@ -13,6 +14,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 
+import { AiAssistantMarkdown } from "@/components/chat/AiAssistantMarkdown";
 import { ScreenHeader } from "@/components/layout/ScreenHeader";
 import { useIconColors } from "@/hooks/useIconColors";
 import { useSocket } from "@/hooks/useSocket";
@@ -82,6 +84,26 @@ type ShowGroupResultsAction = {
   };
 };
 
+type ShowCommunityResultsAction = {
+  type: "show_community_results";
+  payload: {
+    source: "search_communities";
+    query: string;
+    communities: {
+      resultKey?: string;
+      groupId: string;
+      communityId: string;
+      name: string;
+      description: string | null;
+      category?: string | null;
+      memberCount: number;
+      type: string;
+      slug?: string | null;
+      avatar?: string | null;
+    }[];
+  };
+};
+
 type ConfirmToolAction = {
   type: "confirm_tool";
   payload: {
@@ -119,11 +141,20 @@ type AIAssistantGroupResultsMessage = {
   query: string;
 };
 
+type AIAssistantCommunityResultsMessage = {
+  id: string;
+  role: "assistant";
+  kind: "community_results";
+  communities: ShowCommunityResultsAction["payload"]["communities"];
+  query: string;
+};
+
 type AIAssistantChatItem =
   | AIAssistantTextMessage
   | AIAssistantUserCardsMessage
   | AIAssistantMessageResultsMessage
-  | AIAssistantGroupResultsMessage;
+  | AIAssistantGroupResultsMessage
+  | AIAssistantCommunityResultsMessage;
 
 type AiMessageDonePayload = {
   threadId: string;
@@ -145,8 +176,33 @@ const WELCOME: AIAssistantTextMessage = {
   role: "assistant",
   kind: "text",
   content:
-    "Chào bạn, mình là trợ lý HAMTECH. Bạn có thể hỏi hoặc nhờ mình tìm tin nhắn, bạn bè, nhóm.",
+    "Chào bạn, mình là trợ lý HAMTECH. Bạn có thể hỏi hoặc nhờ mình tìm tin nhắn, bạn bè, nhóm hoặc gợi ý cộng đồng.",
 };
+
+function isStoredWelcomeEcho(content: string): boolean {
+  const t = content.trim();
+  return (
+    t.includes("Chào bạn, mình là trợ lý HAMTECH") &&
+    t.includes("tin nhắn, bạn bè") &&
+    t.length < 220
+  );
+}
+
+const COMMUNITY_CATEGORY_LABELS: Record<string, string> = {
+  general: "Chung",
+  technology: "Công nghệ",
+  sports: "Thể thao",
+  music: "Âm nhạc",
+  education: "Giáo dục",
+  gaming: "Game",
+  lifestyle: "Đời sống",
+};
+
+function formatCommunityCategory(category: string | null | undefined): string | null {
+  if (!category?.trim()) return null;
+  const key = category.trim().toLowerCase();
+  return COMMUNITY_CATEGORY_LABELS[key] ?? category;
+}
 
 function createAiRequestId(): string {
   return `ai-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -182,6 +238,10 @@ function isMessageResultsAction(action: AiAssistantAction): action is ShowMessag
 
 function isGroupResultsAction(action: AiAssistantAction): action is ShowGroupResultsAction {
   return action.type === "show_group_results" && Array.isArray(action.payload?.groups);
+}
+
+function isCommunityResultsAction(action: AiAssistantAction): action is ShowCommunityResultsAction {
+  return action.type === "show_community_results" && Array.isArray(action.payload?.communities);
 }
 
 function isConfirmToolAction(action: AiAssistantAction): action is ConfirmToolAction {
@@ -223,6 +283,16 @@ function chatItemsFromAssistantActions(
         kind: "group_results",
         query: action.payload.query,
         groups: action.payload.groups.slice(0, 8),
+      });
+    }
+
+    if (isCommunityResultsAction(action) && action.payload.communities.length > 0) {
+      items.push({
+        id: `assistant-communities-${baseId}`,
+        role: "assistant",
+        kind: "community_results",
+        query: action.payload.query,
+        communities: action.payload.communities.slice(0, 8),
       });
     }
   }
@@ -268,11 +338,14 @@ export function AIAssistantScreen() {
 
     const hydrated: AIAssistantChatItem[] = [];
     for (const message of threadData.messages) {
+      const content =
+        message.role === "assistant" ? unwrapAiReply(message.content) : message.content;
+      if (message.role === "assistant" && isStoredWelcomeEcho(content)) continue;
       hydrated.push({
         id: message.messageId,
         role: message.role,
         kind: "text",
-        content: message.role === "assistant" ? unwrapAiReply(message.content) : message.content,
+        content,
       });
       if (message.role === "assistant") {
         hydrated.push(...chatItemsFromAssistantActions(message.actions, message.messageId));
@@ -451,17 +524,21 @@ export function AIAssistantScreen() {
     router.push(`/(main)/(chat)/${conversationId}`);
   }, []);
 
+  const openCommunity = useCallback((groupId: string) => {
+    router.push(`/(main)/(communities)/${groupId}`);
+  }, []);
+
   const renderTextBubble = (message: AIAssistantTextMessage) => {
     const isUser = message.role === "user";
     return (
       <View
         className={`max-w-[86%] rounded-2xl px-4 py-3 ${isUser ? "self-end bg-primary" : "self-start bg-muted"}`}
       >
-        <Text
-          className={`text-sm leading-5 ${isUser ? "text-primary-foreground" : "text-foreground"}`}
-        >
-          {message.content}
-        </Text>
+        {isUser ? (
+          <Text className="text-sm leading-5 text-primary-foreground">{message.content}</Text>
+        ) : (
+          <AiAssistantMarkdown content={message.content} variant="assistant" />
+        )}
       </View>
     );
   };
@@ -516,25 +593,76 @@ export function AIAssistantScreen() {
       );
     }
 
-    return (
-      <View className="max-w-[92%] self-start rounded-2xl border border-border/60 bg-muted/40 p-3">
-        <Text className="mb-2 text-xs font-semibold text-foreground">Nhóm liên quan</Text>
-        {item.groups.map((group) => (
-          <Pressable
-            key={group.groupId}
-            onPress={() => openConversation(group.groupId)}
-            className="mb-2 rounded-xl border border-border/50 bg-background p-3 active:opacity-80"
-          >
-            <Text className="font-semibold text-foreground" numberOfLines={1}>
-              {group.name}
-            </Text>
-            <Text className="mt-1 text-xs text-muted-foreground" numberOfLines={2}>
-              {group.description || `${group.memberCount} thành viên`}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-    );
+    if (item.kind === "group_results") {
+      return (
+        <View className="max-w-[92%] self-start rounded-2xl border border-border/60 bg-muted/40 p-3">
+          <Text className="mb-2 text-xs font-semibold text-foreground">Nhóm liên quan</Text>
+          {item.groups.map((group) => (
+            <Pressable
+              key={group.groupId}
+              onPress={() => openConversation(group.groupId)}
+              className="mb-2 rounded-xl border border-border/50 bg-background p-3 active:opacity-80"
+            >
+              <Text className="font-semibold text-foreground" numberOfLines={1}>
+                {group.name}
+              </Text>
+              <Text className="mt-1 text-xs text-muted-foreground" numberOfLines={2}>
+                {group.description || `${group.memberCount} thành viên`}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      );
+    }
+
+    if (item.kind === "community_results") {
+      return (
+        <View className="max-w-[92%] self-start rounded-2xl border border-border/60 bg-muted/40 p-3">
+          <Text className="mb-2 text-xs font-semibold text-foreground">Gợi ý cộng đồng</Text>
+          {item.communities.map((community) => {
+            const categoryLabel = formatCommunityCategory(community.category);
+            return (
+              <Pressable
+                key={community.groupId}
+                onPress={() => openCommunity(community.groupId)}
+                className="mb-2 rounded-xl border border-border/50 bg-background p-3 active:opacity-80"
+              >
+                <View className="flex-row items-start gap-3">
+                  <View className="size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border bg-muted">
+                    {community.avatar ? (
+                      <Image
+                        source={{ uri: community.avatar }}
+                        accessibilityLabel={community.name}
+                        className="h-full w-full"
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <Ionicons name="people-circle-outline" size={22} color={muted} />
+                    )}
+                  </View>
+                  <View className="min-w-0 flex-1">
+                    <Text className="font-semibold text-foreground" numberOfLines={1}>
+                      {community.name}
+                    </Text>
+                    {categoryLabel ? (
+                      <Text className="mt-0.5 text-[10px] font-semibold text-primary">
+                        {categoryLabel}
+                      </Text>
+                    ) : null}
+                    <Text className="mt-1 text-xs text-muted-foreground" numberOfLines={2}>
+                      {community.description?.trim() ||
+                        `${community.memberCount.toLocaleString("vi-VN")} thành viên`}
+                    </Text>
+                  </View>
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+      );
+    }
+
+    return null;
   };
 
   return (
@@ -547,7 +675,7 @@ export function AIAssistantScreen() {
             <Text className="font-semibold text-foreground">HAMTECH AI Assistant</Text>
           </View>
           <Text className="mt-1 text-xs leading-4 text-muted-foreground">
-            Hỏi về tin nhắn, bạn bè, nhóm hoặc bất cứ điều gì bạn muốn biết.
+            Hỏi về tin nhắn, bạn bè, nhóm, cộng đồng hoặc bất cứ điều gì bạn muốn biết.
           </Text>
         </View>
 
