@@ -74,11 +74,12 @@ export const useChat = () => {
 
   // ── Gửi tin nhắn text ──────────────────────────────────────────────
   const sendMessage = useCallback(
-    async (conversationId: string, content: string): Promise<void> => {
+    async (conversationId: string, content: string, mentions?: string[]): Promise<void> => {
       await sendMessageMutation({
         conversationId,
         type: "text",
         content,
+        mentions,
       }).unwrap();
     },
     [sendMessageMutation],
@@ -144,7 +145,12 @@ export const useChat = () => {
 
   // ── Gửi tin nhắn với reply ─────────────────────────────────────────
   const sendReplyMessage = useCallback(
-    async (conversationId: string, content: string, replyToMessage: IMessage): Promise<void> => {
+    async (
+      conversationId: string,
+      content: string,
+      replyToMessage: IMessage,
+      mentions?: string[],
+    ): Promise<void> => {
       const clientReplyToDetails: IReplyToDetails = {
         messageId: replyToMessage.messageId,
         senderId: replyToMessage.senderId,
@@ -158,6 +164,7 @@ export const useChat = () => {
         content,
         replyTo: replyToMessage.messageId,
         clientReplyToDetails,
+        mentions,
       }).unwrap();
     },
     [sendMessageMutation, currentUserId],

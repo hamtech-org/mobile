@@ -1,6 +1,7 @@
 import type { IMessage, MessageType } from "@/types/chat.types";
 import { tryParseGroupJoinLinkMessage } from "@/utils/groupJoinLinkMessage";
 import { formatSystemLastMessagePreview, preprocessSystemPlainText } from "@/utils/systemMessage";
+import { stripMentionMarkdown } from "@/utils/mentionHelper";
 
 /** Nhãn ngắn cho reply preview / placeholder theo loại tin. */
 export function getMessageTypeLabel(type: MessageType | string | undefined): string {
@@ -106,7 +107,7 @@ export function formatChatPreviewLine(
     return "Thông báo nhóm";
   }
   if (!raw) return getMessageTypeLabel(msg.type) || "Tin nhắn";
-  return truncatePreview(raw, PREVIEW_MAX);
+  return truncatePreview(stripMentionMarkdown(raw), PREVIEW_MAX);
 }
 
 export function truncatePreview(text: string, max: number): string {

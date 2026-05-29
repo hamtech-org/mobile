@@ -756,19 +756,19 @@ export default function ChatDetailScreen() {
   );
 
   const handleSendMessage = useCallback(
-    (content: string) => {
+    (content: string, mentions?: string[]) => {
       if (!conversationId) return;
       if (!canSendInGroup) return;
 
       const reply = replyingTo;
       if (reply) {
         dispatch(clearReplyingTo());
-        void sendReplyMessage(conversationId, content, reply).catch((err) => {
+        void sendReplyMessage(conversationId, content, reply, mentions).catch((err) => {
           console.error("sendReplyMessage:", err);
           toast.error(messageSendErrorText(err));
         });
       } else {
-        void sendMessage(conversationId, content).catch((err) => {
+        void sendMessage(conversationId, content, mentions).catch((err) => {
           console.error("sendMessage:", err);
           toast.error(messageSendErrorText(err));
         });
@@ -1391,6 +1391,7 @@ export default function ChatDetailScreen() {
               onClearReply={() => dispatch(clearReplyingTo())}
               onTyping={handleTyping}
               isGroup={isGroup}
+              groupMembers={isGroup ? groupMembersForPerm : undefined}
               onOpenPoll={
                 isGroup && canCreatePollInGroup
                   ? () => setGroupPollModalOpen(true)
