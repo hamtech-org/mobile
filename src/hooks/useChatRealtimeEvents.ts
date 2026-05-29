@@ -20,6 +20,7 @@ import {
   typingStopped,
   bumpGroupBoardRefresh,
   markGroupMemberRemovedRealtime,
+  clearConversationMessages,
 } from "@/store/slices/chatSlice";
 import {
   groupProfilePatchFromPayload,
@@ -1164,7 +1165,75 @@ export function useChatRealtimeEvents({
       }, TYPING_INDICATOR_IDLE_MS);
     };
 
+    const handleConversationDeletedForMe = (payload: {
+      conversationId: string;
+      type: "direct" | "group";
+      clearedAt: string;
+      clearedAtMs: number;
+      shouldHideFromList: boolean;
+    }) => {
+      const { conversationId, shouldHideFromList, clearedAt } = payload;
+      if (!conversationId) return;
+
+      // Always clear Redux messages buffer
+      dispatch(clearConversationMessages(conversationId));
+
+      dispatch(
+        conversationApi.util.updateQueryData(
+          "getConversations",
+          undefined,
+          (draft: IConversation[]) => {
+            if (!Array.isArray(draft)) return;
+            const idx = draft.findIndex((c) => c.conversationId === conversationId);
+            if (idx >= 0) {
+              if (shouldHideFromList) {
+                draft.splice(idx, 1);
+              } else {
+                draft[idx].lastMessage = null as any;
+                draft[idx].lastMessageAt = clearedAt;
+                draft[idx].unreadCount = 0;
+              }
+            }
+          },
+        ),
+      );
+
+      // Always clear RTK Query messages cache
+      dispatch(
+        (chatApi.util as any).updateQueryData("getMessages", { conversationId }, (draft: any) => {
+          if (draft) draft.data = [];
+        }),
+      );
+      dispatch(
+        (chatApi.util as any).updateQueryData(
+          "getMessagesPaginated",
+          { conversationId },
+          (draft: any) => {
+            if (draft && draft.items) {
+              draft.items = [];
+              draft.hasMore = false;
+              draft.nextCursor = undefined;
+            }
+          },
+        ),
+      );
+
+      if (activeConvRef.current === conversationId) {
+        if (shouldHideFromList) {
+          router.replace("/(main)");
+        }
+      }
+
+      dispatch(
+        chatApi.util.invalidateTags([
+          { type: "Messages", id: conversationId },
+          { type: "Messages", id: `paginated-${conversationId}` },
+        ] as any),
+      );
+    };
+
     socket.on("conversation:created", handleConversationCreated);
+    socket.on("conversation:deleted_for_me", handleConversationDeletedForMe);
     socket.on("message:new", handleNewMessage);
     socket.on("message:edited", handleEdited);
     socket.on("message:recalled", handleRecalled);
@@ -1217,6 +1286,7 @@ export function useChatRealtimeEvents({
         delete timers[key];
       }
       socket.off("conversation:created", handleConversationCreated);
+      socket.off("conversation:deleted_for_me", handleConversationDeletedForMe);
       socket.off("message:new", handleNewMessage);
       socket.off("message:edited", handleEdited);
       socket.off("message:recalled", handleRecalled);
