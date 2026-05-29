@@ -299,6 +299,7 @@ export default function CallAgoraScreen() {
   const registeredHandlerRef = useRef<IRtcEngineEventHandler | null>(null);
   const ringbackRef = useRef<Audio.Sound | null>(null);
   const rtcJoinedRef = useRef(false);
+  const endNavigationStartedRef = useRef(false);
   const isMicOnRef = useRef(isMicOn);
   isMicOnRef.current = isMicOn;
   const isCameraOnRef = useRef(isCameraOn);
@@ -889,6 +890,7 @@ export default function CallAgoraScreen() {
   useEffect(() => {
     deviceAlertShownRef.current = false;
     lastDeviceAlertMessageRef.current = null;
+    endNavigationStartedRef.current = false;
   }, [channelName]);
 
   useEffect(() => {
@@ -912,16 +914,17 @@ export default function CallAgoraScreen() {
 
   useEffect(() => {
     if (status !== "ended") return;
+    if (endNavigationStartedRef.current) return;
+    endNavigationStartedRef.current = true;
     shutdownRtc();
-    if (endReason) {
-      const t = setTimeout(() => {
+    const t = setTimeout(
+      () => {
         dispatch(resetCall());
         goBack();
-      }, 2200);
-      return () => clearTimeout(t);
-    }
-    dispatch(resetCall());
-    goBack();
+      },
+      endReason ? 2200 : 400,
+    );
+    return () => clearTimeout(t);
   }, [dispatch, endReason, goBack, shutdownRtc, status]);
 
   useEffect(() => {
@@ -1010,29 +1013,17 @@ export default function CallAgoraScreen() {
       result: status === "outgoing-ringing" ? "cancelled" : "completed",
     });
     shutdownRtc();
-    setTimeout(() => {
-      dispatch(resetCall());
-      goBack();
-    }, 400);
-  }, [dispatch, endCall, goBack, shutdownRtc, status, timer]);
+  }, [endCall, shutdownRtc, status, timer]);
 
   const handleGroupLeave = useCallback(() => {
     leaveGroupCall();
     shutdownRtc();
-    setTimeout(() => {
-      dispatch(resetCall());
-      goBack();
-    }, 400);
-  }, [dispatch, goBack, leaveGroupCall, shutdownRtc]);
+  }, [leaveGroupCall, shutdownRtc]);
 
   const handleGroupEndAll = useCallback(() => {
     endGroupCallForAll({ durationSec: timer });
     shutdownRtc();
-    setTimeout(() => {
-      dispatch(resetCall());
-      goBack();
-    }, 400);
-  }, [dispatch, endGroupCallForAll, goBack, shutdownRtc, timer]);
+  }, [endGroupCallForAll, shutdownRtc, timer]);
 
   const onOpenPinMenu = useCallback(
     (uid: number) => {

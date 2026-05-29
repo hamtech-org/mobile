@@ -76,6 +76,23 @@ function buildCallParams(
   return p;
 }
 
+function openCallRoute(
+  params: Record<string, string>,
+  options?: {
+    replace?: boolean;
+  },
+): void {
+  const route = {
+    pathname: "/call",
+    params,
+  } as const;
+  if (options?.replace) {
+    router.replace(route as never);
+    return;
+  }
+  router.push(route as never);
+}
+
 function conversationIdFromPathname(pathname: string): string | null {
   const parts = pathname.split("/").filter(Boolean);
   const i = parts.indexOf("(chat)");
@@ -134,7 +151,6 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
 
     const onRejected = () => {
       const ch = store.getState().call.channelName;
-      const st = store.getState().call;
       if (ch) void dismissCallSystemNotification(ch);
       void playCuocGoiNhoTone();
       dispatch(setEndReason("rejected"));
@@ -222,10 +238,7 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
       scope: CallScope,
       hostId?: string | null,
     ) => {
-      router.push({
-        pathname: "/call",
-        params: buildCallParams(channelName, type, conversationId, returnTo, scope, hostId),
-      });
+      openCallRoute(buildCallParams(channelName, type, conversationId, returnTo, scope, hostId));
     },
     [],
   );
@@ -357,15 +370,18 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
     const convId = callState.conversationId || "";
     const scope = callState.callScope;
     const hostId = callState.hostId ?? callState.callerId;
-    navigateToCall(
-      callState.channelName,
-      callState.callType || "audio",
-      convId,
-      rt,
-      scope,
-      scope === "group" ? hostId : null,
+    openCallRoute(
+      buildCallParams(
+        callState.channelName,
+        callState.callType || "audio",
+        convId,
+        rt,
+        scope,
+        scope === "group" ? hostId : null,
+      ),
+      { replace: true },
     );
-  }, [callState, dispatch, navigateToCall, pathname, socket]);
+  }, [callState, dispatch, pathname, socket]);
 
   const rejectCall = useCallback(() => {
     if (!socket || !callState.channelName || !callState.callerId) return;

@@ -2,7 +2,6 @@ import { Tabs } from "expo-router";
 import { useEffect, useMemo } from "react";
 import { useColorScheme, View } from "react-native";
 
-import { requestNotificationPermissionAsync } from "@/utils/notificationPermission";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   MessageCircleMore,
@@ -58,10 +57,6 @@ export default function MainLayout() {
       dispatch(setInboxUnreadCount(notifData.unreadCount));
     }
   }, [dispatch, notifData]);
-
-  useEffect(() => {
-    void requestNotificationPermissionAsync();
-  }, []);
 
   return (
     <View style={{ flex: 1 }}>

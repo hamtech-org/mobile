@@ -1,8 +1,8 @@
 import { Link } from "expo-router";
-import { useState } from "react";
-import { Modal, Pressable, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import { Keyboard, Modal, Platform, Pressable, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useCameraPermissions } from "expo-camera";
+import { Camera } from "expo-camera";
 import { z } from "zod";
 
 import { useAuth } from "@/hooks/useAuth";
@@ -21,7 +21,6 @@ const faceEmailSchema = z.object({
 
 export const LoginForm = ({ redirectPath }: { redirectPath?: string }) => {
   const { login, createFaceLivenessSession, loginWithFace, isLoading, errorMessage } = useAuth();
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
@@ -31,6 +30,28 @@ export const LoginForm = ({ redirectPath }: { redirectPath?: string }) => {
   const [faceMessage, setFaceMessage] = useState<string | null>(null);
   const [isFaceEmailModalOpen, setIsFaceEmailModalOpen] = useState(false);
   const [livenessSessionId, setLivenessSessionId] = useState("");
+  const [keyboardLift, setKeyboardLift] = useState(0);
+
+  useEffect(() => {
+    if (!isFaceEmailModalOpen) {
+      setKeyboardLift(0);
+      return;
+    }
+
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const showSub = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardLift(Math.min(event.endCoordinates.height / 2, 180));
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardLift(0);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [isFaceEmailModalOpen]);
 
   const handleSubmit = async () => {
     const parsed = loginSchema.safeParse({ email, password });
@@ -67,15 +88,16 @@ export const LoginForm = ({ redirectPath }: { redirectPath?: string }) => {
     setFaceEmailError(undefined);
     setFaceMessage(null);
 
-    if (!cameraPermission?.granted) {
-      if (cameraPermission?.canAskAgain === false) {
+    const cameraPermission = await Camera.getCameraPermissionsAsync();
+    if (!cameraPermission.granted) {
+      if (cameraPermission.canAskAgain === false) {
         setFaceMessage(
           "Ứng dụng chưa có quyền camera. Vào Cài đặt thiết bị để bật quyền camera cho HamTech.",
         );
         return;
       }
 
-      const nextPermission = await requestCameraPermission();
+      const nextPermission = await Camera.requestCameraPermissionsAsync();
       if (!nextPermission.granted) {
         setFaceMessage("Cần quyền camera để xác thực khuôn mặt.");
         return;
@@ -172,10 +194,13 @@ export const LoginForm = ({ redirectPath }: { redirectPath?: string }) => {
         onRequestClose={() => setIsFaceEmailModalOpen(false)}
       >
         <Pressable
-          className="flex-1 justify-center bg-black/45 px-5"
+          className="flex-1 justify-center bg-black/45 px-5 py-6"
           onPress={() => setIsFaceEmailModalOpen(false)}
         >
-          <Pressable className="gap-4 rounded-3xl border border-border bg-card p-5">
+          <Pressable
+            className="gap-4 rounded-3xl border border-border bg-card p-5"
+            style={{ transform: [{ translateY: -keyboardLift }] }}
+          >
             <View className="flex-row items-start justify-between gap-3">
               <View className="min-w-0 flex-1 gap-1">
                 <Text className="text-xl font-bold text-foreground">Đăng nhập bằng khuôn mặt</Text>

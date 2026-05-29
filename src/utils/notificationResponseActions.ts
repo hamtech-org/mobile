@@ -1,17 +1,17 @@
 import * as Notifications from "expo-notifications";
 import { router, type Href } from "expo-router";
-import { Platform } from "react-native";
 
 import { conversationApi } from "@/store/api/endpoints/conversationApi";
 import { messageApi } from "@/store/api/endpoints/messageApi";
 import { userApi } from "@/store/api/userApi";
 import { resetCall, setCallAccepted, setIncomingCall, setReturnTo } from "@/store/slices/callSlice";
 import { store } from "@/store/store";
-import type { CallScope, CallType, IncomingCallData } from "@/types/call.types";
+import type { CallScope, IncomingCallData } from "@/types/call.types";
 import type { INotification } from "@/types/notification.types";
 import { getSocketClient, normalizeSocketAuthToken } from "@/services/socket";
 import { toast } from "@/utils/appToast";
 import { clearChatNotificationStack } from "@/utils/chatNotificationStack";
+import { clearConversationNotificationState } from "@/utils/chatNotificationState";
 import { dismissCallSystemNotification } from "@/utils/localSystemNotification";
 import { navigateFromNotification } from "@/utils/notificationNavigation";
 import { NOTIFICATION_ACTION } from "@/utils/notificationRegistry";
@@ -57,18 +57,37 @@ function userText(response: unknown): string {
   );
 }
 
-function emitSocketEvent(event: string, payload: Record<string, unknown>): void {
+async function emitSocketEvent(event: string, payload: Record<string, unknown>): Promise<boolean> {
   const socket = getSocketClient();
   const token = normalizeSocketAuthToken(store.getState().auth.accessToken);
+  if (!token) return false;
   if (token) socket.auth = { token };
   if (socket.connected) {
     socket.emit(event, payload);
-    return;
+    return true;
   }
-  socket.once("connect", () => {
-    socket.emit(event, payload);
+
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (ok: boolean) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timeout);
+      socket.off("connect", onConnect);
+      socket.off("connect_error", onError);
+      resolve(ok);
+    };
+    const onConnect = () => {
+      socket.emit(event, payload);
+      finish(true);
+    };
+    const onError = () => finish(false);
+    const timeout = setTimeout(() => finish(false), 8000);
+
+    socket.once("connect", onConnect);
+    socket.once("connect_error", onError);
+    socket.connect();
   });
-  socket.connect();
 }
 
 function callPayloadFromData(data: Record<string, unknown>): IncomingCallData | null {
@@ -91,7 +110,7 @@ function callPayloadFromData(data: Record<string, unknown>): IncomingCallData | 
 }
 
 function pushCallScreen(payload: IncomingCallData): void {
-  router.push({
+  router.replace({
     pathname: "/call",
     params: {
       channel: payload.channelName,
@@ -108,12 +127,13 @@ async function handleAnswerCall(data: Record<string, unknown>): Promise<boolean>
   const payload = callPayloadFromData(data);
   if (!payload) return false;
 
-  emitSocketEvent("call:accept", {
+  const emitted = await emitSocketEvent("call:accept", {
     channelName: payload.channelName,
     callerId: payload.callerId,
     conversationId: payload.conversationId,
     type: payload.type,
   });
+  if (!emitted) return false;
 
   store.dispatch(setReturnTo("/(main)/(chat)"));
   store.dispatch(setIncomingCall(payload));
@@ -127,12 +147,16 @@ async function handleDeclineCall(data: Record<string, unknown>): Promise<boolean
   const payload = callPayloadFromData(data);
   if (!payload) return false;
 
-  emitSocketEvent("call:reject", {
+  const emitted = await emitSocketEvent("call:reject", {
     channelName: payload.channelName,
     callerId: payload.callerId,
     conversationId: payload.conversationId,
     type: payload.type,
   });
+  if (!emitted) {
+    if (__DEV__) console.warn("[NotificationAction] call:reject emit failed", payload);
+    return true;
+  }
 
   await dismissCallSystemNotification(payload.channelName);
   store.dispatch(resetCall());
@@ -174,14 +198,14 @@ async function handleCallbackCall(data: Record<string, unknown>): Promise<boolea
     payload.calleeId = callerId;
   }
 
-  emitSocketEvent("call:initiate", payload);
-  return true;
+  return emitSocketEvent("call:initiate", payload);
 }
 
 async function handleOpenMessage(data: Record<string, unknown>): Promise<boolean> {
   const conversationId = text(data.conversationId || data.entityId || data.id);
   if (!conversationId) return false;
 
+  clearConversationNotificationState(conversationId);
   router.push(`/(main)/(chat)/${conversationId}` as Href);
   return true;
 }
@@ -193,13 +217,6 @@ async function dismissNotificationById(data: Record<string, unknown>): Promise<v
     await Notifications.dismissNotificationAsync(nid);
   } catch {
     /* ignore */
-  }
-  if (Platform.OS === "android") {
-    const { NativeModules } = await import("react-native");
-    const mod = NativeModules.HamtechNotifications as
-      | { dismissNotification?: (id: string) => Promise<boolean> }
-      | undefined;
-    await mod?.dismissNotification?.(nid);
   }
 }
 

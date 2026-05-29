@@ -1,18 +1,12 @@
 import * as Notifications from "expo-notifications";
 import { useEffect, useRef } from "react";
 import { AppState, Platform } from "react-native";
-import { router } from "expo-router";
 
 import { useAppSelector } from "@/hooks/useAppStore";
 import {
   useRegisterDeviceTokenMutation,
   useRemoveDeviceTokenMutation,
 } from "@/store/api/notificationApi";
-import { navigateFromNotification } from "@/utils/notificationNavigation";
-import {
-  handleNotificationResponseAction,
-  notificationRouteDataFromResponse,
-} from "@/utils/notificationResponseActions";
 import {
   clearPushTokenRegistered,
   ensureNotificationCategories,
@@ -151,7 +145,6 @@ export function usePushNotifications(): void {
   useEffect(() => {
     if (!isRemotePushSupported()) return;
 
-    let cancelled = false;
     ensureExpoNotificationHandlerInstalled();
 
     const subReceived = Notifications.addNotificationReceivedListener((notification) => {
@@ -161,39 +154,8 @@ export function usePushNotifications(): void {
       }
     });
 
-    const subResponse = Notifications.addNotificationResponseReceivedListener((response) => {
-      void (async () => {
-        try {
-          if (await handleNotificationResponseAction(response)) return;
-        } catch {
-          /* fallback to opening route */
-        }
-        const data = notificationRouteDataFromResponse(response);
-        if (data) navigateFromNotification(data);
-        else router.push("/(main)/(notifications)");
-      })();
-    });
-
-    void (async () => {
-      try {
-        const response = await Notifications.getLastNotificationResponseAsync();
-        if (cancelled || !response) return;
-        try {
-          if (await handleNotificationResponseAction(response)) return;
-        } catch {
-          /* fallback to opening route */
-        }
-        const data = notificationRouteDataFromResponse(response);
-        if (data) navigateFromNotification(data);
-      } catch {
-        /* ignore */
-      }
-    })();
-
     return () => {
-      cancelled = true;
       subReceived.remove();
-      subResponse.remove();
     };
   }, []);
 }
