@@ -255,10 +255,10 @@ function chatItemsFromAssistantActions(
   if (!actions?.length) return [];
   const items: AIAssistantChatItem[] = [];
 
-  for (const action of actions) {
+  for (const [index, action] of actions.entries()) {
     if (isUserCardsAction(action) && action.payload.users.length > 0) {
       items.push({
-        id: `assistant-cards-${baseId}-${action.payload.source}`,
+        id: `assistant-cards-${baseId}-${index}-${action.payload.source}`,
         role: "assistant",
         kind: "user_cards",
         query: action.payload.query,
@@ -268,7 +268,7 @@ function chatItemsFromAssistantActions(
 
     if (isMessageResultsAction(action) && action.payload.messages.length > 0) {
       items.push({
-        id: `assistant-messages-${baseId}`,
+        id: `assistant-messages-${baseId}-${index}`,
         role: "assistant",
         kind: "message_results",
         query: action.payload.query,
@@ -278,7 +278,7 @@ function chatItemsFromAssistantActions(
 
     if (isGroupResultsAction(action) && action.payload.groups.length > 0) {
       items.push({
-        id: `assistant-groups-${baseId}`,
+        id: `assistant-groups-${baseId}-${index}`,
         role: "assistant",
         kind: "group_results",
         query: action.payload.query,
@@ -288,7 +288,7 @@ function chatItemsFromAssistantActions(
 
     if (isCommunityResultsAction(action) && action.payload.communities.length > 0) {
       items.push({
-        id: `assistant-communities-${baseId}`,
+        id: `assistant-communities-${baseId}-${index}`,
         role: "assistant",
         kind: "community_results",
         query: action.payload.query,
@@ -550,9 +550,9 @@ export function AIAssistantScreen() {
       return (
         <View className="max-w-[92%] self-start rounded-2xl border border-border/60 bg-muted/40 p-3">
           <Text className="mb-2 text-xs font-semibold text-foreground">Kết quả tìm người dùng</Text>
-          {item.users.map((user) => (
+          {item.users.map((user, index) => (
             <Pressable
-              key={user.userId}
+              key={`${user.userId}-${index}`}
               onPress={() => void openDirectChat(user.userId)}
               className="mb-2 rounded-xl border border-border/50 bg-background p-3 active:opacity-80"
             >
@@ -572,9 +572,9 @@ export function AIAssistantScreen() {
       return (
         <View className="max-w-[92%] self-start rounded-2xl border border-border/60 bg-muted/40 p-3">
           <Text className="mb-2 text-xs font-semibold text-foreground">Tin nhắn liên quan</Text>
-          {item.messages.map((message) => (
+          {item.messages.map((message, index) => (
             <Pressable
-              key={message.resultKey ?? message.messageId}
+              key={`${message.resultKey ?? message.messageId}-${index}`}
               onPress={() => openConversation(message.conversationId)}
               className="mb-2 rounded-xl border border-border/50 bg-background p-3 active:opacity-80"
             >
@@ -597,9 +597,9 @@ export function AIAssistantScreen() {
       return (
         <View className="max-w-[92%] self-start rounded-2xl border border-border/60 bg-muted/40 p-3">
           <Text className="mb-2 text-xs font-semibold text-foreground">Nhóm liên quan</Text>
-          {item.groups.map((group) => (
+          {item.groups.map((group, index) => (
             <Pressable
-              key={group.groupId}
+              key={`${group.groupId}-${index}`}
               onPress={() => openConversation(group.groupId)}
               className="mb-2 rounded-xl border border-border/50 bg-background p-3 active:opacity-80"
             >
@@ -619,11 +619,11 @@ export function AIAssistantScreen() {
       return (
         <View className="max-w-[92%] self-start rounded-2xl border border-border/60 bg-muted/40 p-3">
           <Text className="mb-2 text-xs font-semibold text-foreground">Gợi ý cộng đồng</Text>
-          {item.communities.map((community) => {
+          {item.communities.map((community, index) => {
             const categoryLabel = formatCommunityCategory(community.category);
             return (
               <Pressable
-                key={community.groupId}
+                key={`${community.groupId}-${index}`}
                 onPress={() => openCommunity(community.groupId)}
                 className="mb-2 rounded-xl border border-border/50 bg-background p-3 active:opacity-80"
               >
