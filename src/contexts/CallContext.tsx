@@ -36,6 +36,11 @@ import {
   dismissCallSystemNotification,
   showIncomingCallSystemNotification,
 } from "@/utils/notificationPresenters";
+import {
+  clearPendingIncomingCall,
+  isCallLifecycleClosed,
+  markCallLifecycleClosed,
+} from "@/utils/callNotificationActions";
 import { isSocketLocalNotificationEnabled } from "@/utils/localSystemNotification";
 
 import { useSocketContext } from "./SocketContext";
@@ -64,6 +69,7 @@ function buildCallParams(
   returnTo: string,
   scope: CallScope,
   hostId?: string | null,
+  sessionId?: string | null,
 ): Record<string, string> {
   const p: Record<string, string> = {
     channel: channelName,
@@ -73,6 +79,7 @@ function buildCallParams(
     scope,
   };
   if (hostId) p.hostId = hostId;
+  if (sessionId) p.sessionId = sessionId;
   return p;
 }
 
@@ -135,23 +142,42 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
     if (!socket) return;
 
     const onIncoming = (data: unknown) => {
-      const payload = data as IncomingCallData;
-      dispatch(setReturnTo(pathname));
-      dispatch(setIncomingCall(payload));
-      if (isSocketLocalNotificationEnabled()) {
-        showIncomingCallSystemNotification(payload);
-      }
+      void (async () => {
+        const payload = data as IncomingCallData;
+        if (await isCallLifecycleClosed(payload as unknown as Record<string, unknown>)) return;
+        dispatch(setReturnTo(pathname));
+        dispatch(setIncomingCall(payload));
+        if (isSocketLocalNotificationEnabled()) {
+          showIncomingCallSystemNotification(payload);
+        }
+      })();
     };
 
     const onAccepted = () => {
       const ch = store.getState().call.channelName;
       if (ch) void dismissCallSystemNotification(ch);
+      void clearPendingIncomingCall();
       dispatch(setCallAccepted());
     };
 
-    const onRejected = () => {
+    const onRejected = (data: unknown) => {
+      const payload = data as {
+        channelName?: string;
+        conversationId?: string;
+        sessionId?: string;
+      };
       const ch = store.getState().call.channelName;
       if (ch) void dismissCallSystemNotification(ch);
+      void markCallLifecycleClosed(
+        {
+          channelName: payload.channelName ?? ch ?? undefined,
+          conversationId:
+            payload.conversationId ?? store.getState().call.conversationId ?? undefined,
+          sessionId: payload.sessionId ?? store.getState().call.sessionId ?? undefined,
+        },
+        "rejected",
+      );
+      void clearPendingIncomingCall();
       void playCuocGoiNhoTone();
       dispatch(setEndReason("rejected"));
       dispatch(setCallEnded());
@@ -173,6 +199,15 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
         return;
       }
       if (st.channelName) void dismissCallSystemNotification(st.channelName);
+      void markCallLifecycleClosed(
+        {
+          channelName: payload.channelName ?? st.channelName ?? undefined,
+          conversationId: payload.conversationId ?? st.conversationId ?? undefined,
+          sessionId: (payload as { sessionId?: string }).sessionId ?? st.sessionId ?? undefined,
+        },
+        "ended",
+      );
+      void clearPendingIncomingCall();
       if (st.status === "incoming-ringing") {
         dispatch(setEndReason("missed"));
       }
@@ -196,6 +231,15 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
       const p = data as IncomingCallDismissedPayload;
       if (!p?.channelName || !p?.conversationId) return;
       void dismissCallSystemNotification(p.channelName);
+      void markCallLifecycleClosed(
+        {
+          channelName: p.channelName,
+          conversationId: p.conversationId,
+          sessionId: (p as { sessionId?: string }).sessionId,
+        },
+        p.reason ?? "incoming-dismissed",
+      );
+      void clearPendingIncomingCall();
       const st = store.getState().call;
       if (st.status !== "incoming-ringing") return;
       if (st.channelName !== p.channelName) return;
@@ -237,8 +281,11 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
       returnTo: string,
       scope: CallScope,
       hostId?: string | null,
+      sessionId?: string | null,
     ) => {
-      openCallRoute(buildCallParams(channelName, type, conversationId, returnTo, scope, hostId));
+      openCallRoute(
+        buildCallParams(channelName, type, conversationId, returnTo, scope, hostId, sessionId),
+      );
     },
     [],
   );
@@ -285,6 +332,7 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
             callType: type,
             channelName: payload.channelName,
             conversationId: payload.conversationId ?? conversationId,
+            sessionId: payload.sessionId ?? null,
             returnTo: pathname,
             callScope: payload.scope ?? "direct",
             hostId: payload.hostId ?? null,
@@ -297,6 +345,7 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
           pathname,
           payload.scope ?? "direct",
           payload.hostId,
+          payload.sessionId,
         );
       };
 
@@ -337,13 +386,22 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
             callType: type,
             channelName: payload.channelName,
             conversationId: conv,
+            sessionId: payload.sessionId ?? null,
             returnTo: pathname,
             callScope: "group",
             hostId: payload.hostId ?? null,
             calleeId: null,
           }),
         );
-        navigateToCall(payload.channelName, type, conv, pathname, "group", payload.hostId);
+        navigateToCall(
+          payload.channelName,
+          type,
+          conv,
+          pathname,
+          "group",
+          payload.hostId,
+          payload.sessionId,
+        );
       });
     },
     [callState.status, currentUserId, dispatch, navigateToCall, pathname, socket],
@@ -363,8 +421,18 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
       callerId: callState.callerId,
       conversationId: callState.conversationId,
       type: callState.callType || "audio",
+      sessionId: callState.sessionId,
     });
     void dismissCallSystemNotification(callState.channelName);
+    void markCallLifecycleClosed(
+      {
+        channelName: callState.channelName,
+        conversationId: callState.conversationId ?? undefined,
+        sessionId: callState.sessionId ?? undefined,
+      },
+      "accepted",
+    );
+    void clearPendingIncomingCall();
     dispatch(setCallAccepted());
     const rt = callState.returnTo ?? pathname;
     const convId = callState.conversationId || "";
@@ -378,6 +446,7 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
         rt,
         scope,
         scope === "group" ? hostId : null,
+        callState.sessionId,
       ),
       { replace: true },
     );
@@ -391,8 +460,18 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
       callerId: callState.callerId,
       conversationId: callState.conversationId,
       type: callState.callType || "audio",
+      sessionId: callState.sessionId,
     });
     void dismissCallSystemNotification(callState.channelName);
+    void markCallLifecycleClosed(
+      {
+        channelName: callState.channelName,
+        conversationId: callState.conversationId ?? undefined,
+        sessionId: callState.sessionId ?? undefined,
+      },
+      "rejected",
+    );
+    void clearPendingIncomingCall();
     dispatch(resetCall());
   }, [callState, dispatch, socket]);
 
@@ -410,9 +489,19 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
         peerId,
         conversationId: callState.conversationId,
         type: callState.callType || "audio",
+        sessionId: callState.sessionId,
         durationSec: meta?.durationSec,
         result: meta?.result,
       });
+      void markCallLifecycleClosed(
+        {
+          channelName: callState.channelName,
+          conversationId: callState.conversationId,
+          sessionId: callState.sessionId ?? undefined,
+        },
+        meta?.result ?? "ended",
+      );
+      void clearPendingIncomingCall();
       dispatch(setCallEnded());
     },
     [callState, dispatch, socket],
@@ -467,6 +556,7 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
         callType: session.type,
         channelName: session.channelName,
         conversationId: session.conversationId,
+        sessionId: session.sessionId,
         hostId: session.hostId,
         returnTo,
       }),
@@ -478,6 +568,7 @@ export const CallProvider = ({ children }: PropsWithChildren) => {
       returnTo,
       "group",
       session.hostId,
+      session.sessionId,
     );
   }, [dispatch, navigateToCall, pathname]);
 

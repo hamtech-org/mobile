@@ -3,10 +3,14 @@ import * as SecureStore from "expo-secure-store";
 
 const ACCESS_TOKEN_KEY = "hamtech_access_token";
 const REFRESH_TOKEN_KEY = "hamtech_refresh_token";
+const BG_ACCESS_TOKEN_KEY = "hamtech_bg_access_token";
+const BG_REFRESH_TOKEN_KEY = "hamtech_bg_refresh_token";
 
 export const secureStorage = {
   getAccessToken: () => SecureStore.getItemAsync(ACCESS_TOKEN_KEY),
   getRefreshToken: () => SecureStore.getItemAsync(REFRESH_TOKEN_KEY),
+  getBackgroundAccessToken: () => AsyncStorage.getItem(BG_ACCESS_TOKEN_KEY),
+  getBackgroundRefreshToken: () => AsyncStorage.getItem(BG_REFRESH_TOKEN_KEY),
   setTokens: async (accessToken: string, refreshToken: string) => {
     if (typeof accessToken !== "string" || typeof refreshToken !== "string") {
       throw new Error("Invalid token payload for SecureStore.");
@@ -15,12 +19,16 @@ export const secureStorage = {
     await Promise.all([
       SecureStore.setItemAsync(ACCESS_TOKEN_KEY, accessToken),
       SecureStore.setItemAsync(REFRESH_TOKEN_KEY, refreshToken),
+      AsyncStorage.setItem(BG_ACCESS_TOKEN_KEY, accessToken),
+      AsyncStorage.setItem(BG_REFRESH_TOKEN_KEY, refreshToken),
     ]);
   },
   clearTokens: async () => {
     await Promise.all([
       SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY),
       SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY),
+      AsyncStorage.removeItem(BG_ACCESS_TOKEN_KEY),
+      AsyncStorage.removeItem(BG_REFRESH_TOKEN_KEY),
     ]);
   },
 };
