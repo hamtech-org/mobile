@@ -9,7 +9,18 @@ export type LiveChatLine = {
   sessionId: string;
   userId: string;
   displayName: string;
+  avatar?: string | null;
   text: string;
+  sentAt: string;
+};
+
+export type LiveReactionType = "like" | "love" | "haha" | "wow" | "sad" | "angry";
+
+export type LiveReactionPayload = {
+  sessionId: string;
+  userId: string;
+  displayName: string;
+  reactionType: LiveReactionType;
   sentAt: string;
 };
 

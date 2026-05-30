@@ -5,7 +5,7 @@ import BottomSheet, {
   BottomSheetView,
   type BottomSheetBackdropProps,
 } from "@gorhom/bottom-sheet";
-import { Ban, Bell, BellOff, Pin, PinOff } from "lucide-react-native";
+import { Ban, Bell, BellOff, Pin, PinOff, Trash2 } from "lucide-react-native";
 
 import { useIconColors } from "@/hooks/useIconColors";
 import type { IConversation } from "@/types/chat.types";
@@ -19,6 +19,7 @@ type ConversationListActionSheetProps = {
   onBlockFriend?: (c: IConversation) => void;
   onUnblockFriend?: (c: IConversation) => void;
   isBlocked?: boolean;
+  onDeleteConversation?: (c: IConversation) => void;
 };
 
 /**
@@ -34,9 +35,10 @@ export function ConversationListActionSheet({
   onBlockFriend,
   onUnblockFriend,
   isBlocked = false,
+  onDeleteConversation,
 }: ConversationListActionSheetProps) {
   const bottomSheetRef = useRef<BottomSheet>(null);
-  const snapPoints = useMemo(() => ["46%"], []);
+  const snapPoints = useMemo(() => ["52%"], []);
   const { foreground, muted } = useIconColors();
 
   const pinned = conversation?.isPinnedToTop ?? false;
@@ -137,6 +139,24 @@ export function ConversationListActionSheet({
               }
             />
           ) : null}
+
+          {onDeleteConversation && (
+            <ActionRow
+              icon={<Trash2 size={22} color="#ef4444" strokeWidth={1.5} />}
+              label={c.type === "direct" ? "Xóa cuộc hội thoại" : "Xóa lịch sử trò chuyện"}
+              hint={
+                c.type === "direct"
+                  ? "Xóa tin nhắn phía bạn và ẩn khỏi danh sách"
+                  : "Xóa tin nhắn phía bạn và giữ lại nhóm"
+              }
+              danger
+              onPress={() =>
+                deferAfterClose(() => {
+                  onDeleteConversation(c);
+                })
+              }
+            />
+          )}
         </View>
 
         <Pressable

@@ -12,6 +12,7 @@ export {
   useGetConversationMembersQuery,
   useCreateConversationMutation,
   usePatchConversationPreferencesMutation,
+  useDeleteConversationMutation,
 } from "./endpoints/conversationApi";
 
 export {

@@ -1,5 +1,6 @@
 import type { IConversation, ConversationType } from "@/types/chat.types";
 import { chatApi, type ApiEnvelope } from "../baseChatApi";
+import { clearConversationMessages } from "@/store/slices/chatSlice";
 
 export interface PatchConversationPreferencesRequest {
   conversationId: string;
@@ -128,6 +129,86 @@ export const conversationApi = chatApi.injectEndpoints({
         }
       },
     }),
+
+    deleteConversation: builder.mutation<
+      ApiEnvelope<{
+        conversationId: string;
+        type: "direct" | "group";
+        clearedAt: string;
+        clearedAtMs: number;
+        hiddenFromList: boolean;
+      }>,
+      { conversationId: string; type: "direct" | "group" }
+    >({
+      query: ({ conversationId }) => ({
+        url: `/chat/conversations/${conversationId}`,
+        method: "DELETE",
+      }),
+      async onQueryStarted({ conversationId }, { dispatch, queryFulfilled }) {
+        dispatch(clearConversationMessages(conversationId));
+
+        const patchResult = dispatch(
+          (chatApi.util as any).updateQueryData(
+            "getConversations",
+            undefined,
+            (draft: IConversation[]) => {
+              if (!Array.isArray(draft)) return;
+              const idx = draft.findIndex((c) => c.conversationId === conversationId);
+              if (idx >= 0) draft.splice(idx, 1);
+            },
+          ),
+        );
+
+        const getMessagesPatch = dispatch(
+          (chatApi.util as any).updateQueryData("getMessages", { conversationId }, (draft: any) => {
+            if (draft) draft.data = [];
+          }),
+        );
+
+        const getMessagesPaginatedPatch = dispatch(
+          (chatApi.util as any).updateQueryData(
+            "getMessagesPaginated",
+            { conversationId },
+            (draft: any) => {
+              if (draft && draft.items) {
+                draft.items = [];
+                draft.hasMore = false;
+                draft.nextCursor = undefined;
+              }
+            },
+          ),
+        );
+
+        try {
+          const { data: res } = await queryFulfilled;
+          if (res?.data) {
+            dispatch(
+              (chatApi.util as any).updateQueryData(
+                "getConversations",
+                undefined,
+                (draft: IConversation[]) => {
+                  if (!Array.isArray(draft)) return;
+                  const idx = draft.findIndex((c) => c.conversationId === conversationId);
+                  if (idx >= 0) {
+                    draft.splice(idx, 1);
+                  }
+                },
+              ),
+            );
+          }
+          dispatch(
+            chatApi.util.invalidateTags([
+              { type: "Messages", id: conversationId },
+              { type: "Messages", id: `paginated-${conversationId}` },
+            ] as any),
+          );
+        } catch {
+          patchResult.undo();
+          getMessagesPatch.undo();
+          getMessagesPaginatedPatch.undo();
+        }
+      },
+    }),
   }),
   overrideExisting: true,
 });
@@ -137,4 +218,5 @@ export const {
   useGetConversationMembersQuery,
   useCreateConversationMutation,
   usePatchConversationPreferencesMutation,
+  useDeleteConversationMutation,
 } = conversationApi;
