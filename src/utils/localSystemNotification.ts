@@ -1,8 +1,8 @@
 import * as Notifications from "expo-notifications";
+import notifee from "@notifee/react-native";
 import { Platform } from "react-native";
 
 import type { INotificationRouteData } from "@/types/notification.types";
-import { ensureExpoNotificationHandlerInstalled } from "@/utils/notificationExpoHandler";
 import { pickActorAvatarFromData } from "@/utils/notificationAvatar";
 import { buildAvatarNotificationFieldsSync } from "@/utils/notificationAvatarCache";
 import { requestNotificationPermissionAsync } from "@/utils/notificationPermission";
@@ -224,6 +224,8 @@ export async function ensureNotificationCategories(): Promise<void> {
 export async function initSystemNotifications(): Promise<void> {
   if (Platform.OS === "web") return;
   try {
+    const { ensureExpoNotificationHandlerInstalled } =
+      await import("@/utils/notificationExpoHandler");
     ensureExpoNotificationHandlerInstalled();
     await requestNotificationPermissionAsync();
     await ensureSystemNotificationChannels();
@@ -410,8 +412,14 @@ export async function showLocalSystemNotification(
 
 export async function dismissCallSystemNotification(channelName: string): Promise<void> {
   if (Platform.OS === "web") return;
+  const notificationId = `call-${channelName}`;
   try {
-    await Notifications.dismissNotificationAsync(`call-${channelName}`);
+    await Notifications.dismissNotificationAsync(notificationId);
+  } catch {
+    /* ignore */
+  }
+  try {
+    await notifee.cancelNotification(notificationId);
   } catch {
     /* ignore */
   }

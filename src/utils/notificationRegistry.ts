@@ -83,7 +83,7 @@ const SPECS: Record<NotificationKind, NotificationKindSpec> = {
   chat_call_missed: {
     kind: "chat_call_missed",
     label: "Cuộc gọi bị nhỡ",
-    channel: "calls",
+    channel: "messages",
     categoryId: "hamtech_call_missed",
     interaction: "call_actions",
     behaviorHint: "Gọi lại hoặc nhắn tin nhanh; chạm mở hội thoại",

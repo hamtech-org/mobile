@@ -171,10 +171,10 @@ export function presentChatNotificationFromRemotePush(content: {
   if (!conversationId) return false;
 
   const preview = String(
-    data.messagePreview ?? data.preview ?? content.body ?? "Bạn có tin nhắn mới",
+    data.pushBody ?? data.messagePreview ?? data.preview ?? content.body ?? "Bạn có tin nhắn mới",
   ).trim();
   const sender = String(
-    data.senderName ?? data.actorName ?? content.title ?? "Tin nhắn mới",
+    data.pushTitle ?? data.senderName ?? data.actorName ?? content.title ?? "Tin nhắn mới",
   ).trim();
   const isGroup =
     data.conversationType === "group" || data.chatScope === "group" || data.isGroup === true;

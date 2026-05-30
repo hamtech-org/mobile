@@ -4,15 +4,17 @@ import { router, type Href } from "expo-router";
 import { conversationApi } from "@/store/api/endpoints/conversationApi";
 import { messageApi } from "@/store/api/endpoints/messageApi";
 import { userApi } from "@/store/api/userApi";
-import { resetCall, setCallAccepted, setIncomingCall, setReturnTo } from "@/store/slices/callSlice";
 import { store } from "@/store/store";
-import type { CallScope, IncomingCallData } from "@/types/call.types";
 import type { INotification } from "@/types/notification.types";
 import { getSocketClient, normalizeSocketAuthToken } from "@/services/socket";
 import { toast } from "@/utils/appToast";
 import { clearChatNotificationStack } from "@/utils/chatNotificationStack";
 import { clearConversationNotificationState } from "@/utils/chatNotificationState";
-import { dismissCallSystemNotification } from "@/utils/localSystemNotification";
+import {
+  answerCallFromNotificationData,
+  callRouteParamsFromPayload,
+  declineCallFromNotificationData,
+} from "@/utils/callNotificationActions";
 import { navigateFromNotification } from "@/utils/notificationNavigation";
 import { NOTIFICATION_ACTION } from "@/utils/notificationRegistry";
 import { buildPatchForMutePayload, describeMuteSuccess } from "@/utils/muteNotifications";
@@ -90,77 +92,22 @@ async function emitSocketEvent(event: string, payload: Record<string, unknown>):
   });
 }
 
-function callPayloadFromData(data: Record<string, unknown>): IncomingCallData | null {
-  const channelName = text(data.channelName ?? data.entityId ?? data.id);
-  const conversationId = text(data.conversationId);
-  const callerId = text(data.callerId);
-  if (!channelName || !conversationId || !callerId) return null;
-
-  const callType = text(data.callType) === "video" ? "video" : "audio";
-  const scope: CallScope = text(data.callScope) === "group" ? "group" : "direct";
-  return {
-    channelName,
-    conversationId,
-    callerId,
-    callerName: text(data.callerName) || "Cuộc gọi đến",
-    type: callType,
-    scope,
-    hostId: text(data.hostId) || callerId,
-  };
-}
-
-function pushCallScreen(payload: IncomingCallData): void {
+function pushCallScreen(payload: Parameters<typeof callRouteParamsFromPayload>[0]): void {
   router.replace({
     pathname: "/call",
-    params: {
-      channel: payload.channelName,
-      type: payload.type,
-      conversationId: payload.conversationId,
-      returnTo: encodeURIComponent("/(main)/(chat)"),
-      scope: payload.scope ?? "direct",
-      ...(payload.hostId ? { hostId: payload.hostId } : {}),
-    },
+    params: callRouteParamsFromPayload(payload, "answer"),
   } as Href);
 }
 
 async function handleAnswerCall(data: Record<string, unknown>): Promise<boolean> {
-  const payload = callPayloadFromData(data);
+  const payload = await answerCallFromNotificationData(data);
   if (!payload) return false;
-
-  const emitted = await emitSocketEvent("call:accept", {
-    channelName: payload.channelName,
-    callerId: payload.callerId,
-    conversationId: payload.conversationId,
-    type: payload.type,
-  });
-  if (!emitted) return false;
-
-  store.dispatch(setReturnTo("/(main)/(chat)"));
-  store.dispatch(setIncomingCall(payload));
-  store.dispatch(setCallAccepted());
-  await dismissCallSystemNotification(payload.channelName);
   pushCallScreen(payload);
   return true;
 }
 
 async function handleDeclineCall(data: Record<string, unknown>): Promise<boolean> {
-  const payload = callPayloadFromData(data);
-  if (!payload) return false;
-
-  const emitted = await emitSocketEvent("call:reject", {
-    channelName: payload.channelName,
-    callerId: payload.callerId,
-    conversationId: payload.conversationId,
-    type: payload.type,
-  });
-  if (!emitted) {
-    if (__DEV__) console.warn("[NotificationAction] call:reject emit failed", payload);
-    return true;
-  }
-
-  await dismissCallSystemNotification(payload.channelName);
-  store.dispatch(resetCall());
-  return true;
+  return declineCallFromNotificationData(data);
 }
 
 async function handleInlineReply(data: Record<string, unknown>, body: string): Promise<boolean> {
