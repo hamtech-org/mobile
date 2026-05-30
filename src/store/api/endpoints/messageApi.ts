@@ -25,6 +25,7 @@ export interface SendMessageRequest {
   mediaId?: string;
   replyTo?: string;
   duration?: number;
+  mentions?: string[];
   /** Chỉ client — preview bubble khi đang gửi media */
   optimisticLocalUri?: string;
   /** Chỉ client — strip khỏi body, dùng cho reply preview trên bubble optimistic */

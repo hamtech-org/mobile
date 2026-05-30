@@ -26,6 +26,7 @@ export interface ILastMessage {
   type: MessageType;
   createdAt: string;
   senderDisplayName?: string | null;
+  mentions?: string[];
 }
 
 export interface IGroupMemberPermissions {
@@ -119,6 +120,7 @@ export interface IMessage {
   reactions: Record<string, string[]>;
   duration?: number | null;
   status: MessageStatus;
+  mentions?: string[];
   createdAt: string;
 }
 

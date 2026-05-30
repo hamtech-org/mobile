@@ -1,6 +1,15 @@
-import { useCallback, useEffect, useState, useRef, type ReactElement, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  useRef,
+  useMemo,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -8,6 +17,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { escapeMentionLabel } from "@/utils/mentionHelper";
 import {
   BarChart2,
   CheckSquare,
@@ -54,7 +64,7 @@ export type { PendingAttachment };
 type VoiceUiState = "idle" | "active-ui" | "cancelled-ui";
 
 interface ChatInputProps {
-  onSend: (content: string) => void | Promise<void>;
+  onSend: (content: string, mentions?: string[]) => void | Promise<void>;
   onSendMedia?: (attachments: PendingAttachment[], caption: string) => void | Promise<void>;
   onSendVoice?: (uri: string, duration: number) => void | Promise<void>;
   replyingTo?: IMessage | null;
@@ -67,6 +77,12 @@ interface ChatInputProps {
   onOpenPoll?: () => void;
   onOpenTask?: () => void;
   onOpenAiSummary?: () => void;
+  groupMembers?: {
+    userId: string;
+    displayName: string | null;
+    avatar?: string | null;
+    name?: string | null;
+  }[];
 }
 
 /**
@@ -87,6 +103,7 @@ export const ChatInput = ({
   onOpenPoll,
   onOpenTask,
   onOpenAiSummary,
+  groupMembers = [],
 }: ChatInputProps) => {
   const [content, setContent] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
@@ -95,6 +112,73 @@ export const ChatInput = ({
   const [aiReplyLoading, setAiReplyLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const { muted, primary, foreground } = useIconColors();
+
+  // Mentions autocomplete states
+  const [showMentionDropdown, setShowMentionDropdown] = useState(false);
+  const [mentionSearchTerm, setMentionSearchTerm] = useState("");
+  const [mentionTriggerIndex, setMentionTriggerIndex] = useState(-1);
+  const [selection, setSelection] = useState({ start: 0, end: 0 });
+  const [mentionsMetadata, setMentionsMetadata] = useState<
+    { userId: string; displayName: string }[]
+  >([]);
+
+  const textInputRef = useRef<TextInput>(null);
+
+  // Filtered mention list
+  const filteredMentionMembers = useMemo(() => {
+    if (!showMentionDropdown || !isGroup) return [];
+
+    const list = groupMembers.filter((m) => {
+      if (m.userId === currentUserId) return false; // Không tự tag chính mình
+      const nameLower = (m.displayName || m.name || "").toLowerCase();
+      return nameLower.includes(mentionSearchTerm.toLowerCase());
+    });
+
+    const showAll =
+      "cả nhóm".includes(mentionSearchTerm.toLowerCase()) ||
+      "all".includes(mentionSearchTerm.toLowerCase()) ||
+      mentionSearchTerm === "";
+
+    if (showAll) {
+      return [
+        { userId: "all", displayName: "Cả nhóm", name: "Cả nhóm (@All)", avatar: "" },
+        ...list,
+      ];
+    }
+    return list;
+  }, [showMentionDropdown, isGroup, groupMembers, mentionSearchTerm, currentUserId]);
+
+  useEffect(() => {
+    if (showMentionDropdown && filteredMentionMembers.length === 0) {
+      setShowMentionDropdown(false);
+    }
+  }, [showMentionDropdown, filteredMentionMembers]);
+
+  const handleSelectMention = useCallback(
+    (member: { userId: string; displayName?: string | null; name?: string | null }) => {
+      if (mentionTriggerIndex === -1) return;
+      const name = member.displayName || member.name || "Thành viên";
+      const escapedName = escapeMentionLabel(name);
+
+      // Thêm thông tin tag vào metadata local để đổi sang markdown khi bấm gửi
+      setMentionsMetadata((prev) => [...prev, { userId: member.userId, displayName: escapedName }]);
+
+      const tag = `@${escapedName} `;
+
+      const beforeAt = content.slice(0, mentionTriggerIndex);
+      const afterCursor = content.slice(mentionTriggerIndex + mentionSearchTerm.length + 1);
+
+      const newText = beforeAt + tag + afterCursor;
+      setContent(newText);
+      setShowMentionDropdown(false);
+      onTyping?.();
+
+      setTimeout(() => {
+        textInputRef.current?.focus();
+      }, 50);
+    },
+    [content, mentionTriggerIndex, mentionSearchTerm, onTyping],
+  );
   const placeholder = conversationName ? `Nhập tin nhắn đến ${conversationName}` : "Nhập tin nhắn";
   const hasText = content.trim().length > 0;
   const hasSendable = hasText || pendingAttachments.length > 0;
@@ -250,11 +334,28 @@ export const ChatInput = ({
       }
       const batch = pendingAttachments;
       const cap = content.trim();
+
+      // Chuyển đổi caption thô sang dạng markdown tag
+      let processedCaption = cap;
+      const sortedMetadata = [...mentionsMetadata].sort(
+        (a, b) => b.displayName.length - a.displayName.length,
+      );
+      for (const item of sortedMetadata) {
+        const escapedNameForRegex = item.displayName.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
+        const regex = new RegExp(`@${escapedNameForRegex}`, "g");
+        const replacement =
+          item.userId === "all"
+            ? `@[Cả nhóm](mention:all)`
+            : `@[${item.displayName}](mention:${item.userId})`;
+        processedCaption = processedCaption.replace(regex, replacement);
+      }
+
       setIsUploading(true);
       try {
-        await onSendMedia(batch, cap);
+        await onSendMedia(batch, processedCaption);
         setPendingAttachments([]);
         setContent("");
+        setMentionsMetadata([]);
       } catch {
         /* toast trong handleSendMedia */
       } finally {
@@ -266,12 +367,39 @@ export const ChatInput = ({
     const text = content.trim();
     if (!text) return;
     setContent("");
+
+    // Chuyển đổi nội dung thô hiển thị sang định dạng markdown chứa userId
+    let processedText = text;
+    const sortedMetadata = [...mentionsMetadata].sort(
+      (a, b) => b.displayName.length - a.displayName.length,
+    );
+    for (const item of sortedMetadata) {
+      const escapedNameForRegex = item.displayName.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&");
+      const regex = new RegExp(`@${escapedNameForRegex}`, "g");
+      const replacement =
+        item.userId === "all"
+          ? `@[Cả nhóm](mention:all)`
+          : `@[${item.displayName}](mention:${item.userId})`;
+      processedText = processedText.replace(regex, replacement);
+    }
+
+    // Trích xuất danh sách userId từ markdown tag nhắc tên
+    const mentionsRegex = /@\[.*?\]\(mention:([a-zA-Z0-9-]+|all)\)/g;
+    const mentions: string[] = [];
+    let match: RegExpExecArray | null;
+    while ((match = mentionsRegex.exec(processedText)) !== null) {
+      mentions.push(match[1]);
+    }
+    const uniqueMentions = Array.from(new Set(mentions));
+
+    setMentionsMetadata([]);
+
     try {
-      await Promise.resolve(onSend(text));
+      await Promise.resolve(onSend(processedText, uniqueMentions));
     } catch {
       setContent(text);
     }
-  }, [content, pendingAttachments, onSend, onSendMedia, isUploading]);
+  }, [content, pendingAttachments, onSend, onSendMedia, isUploading, mentionsMetadata]);
 
   const pickImage = useCallback(async () => {
     try {
@@ -382,8 +510,32 @@ export const ChatInput = ({
     (text: string) => {
       setContent(text);
       onTyping?.();
+
+      if (!isGroup) {
+        setShowMentionDropdown(false);
+        return;
+      }
+
+      // Detect `@` tag trigger using cursor position (with robust fallback for initial typing)
+      const cursorIndex = selection.start === 0 && text.length > 0 ? text.length : selection.start;
+      const textBeforeCursor = text.slice(0, cursorIndex);
+      const lastAtIndex = textBeforeCursor.lastIndexOf("@");
+
+      if (lastAtIndex !== -1) {
+        const textAfterAt = textBeforeCursor.slice(lastAtIndex + 1);
+        // Only trigger if no space exists in the search term
+        if (!/\s/.test(textAfterAt)) {
+          setShowMentionDropdown(true);
+          setMentionTriggerIndex(lastAtIndex);
+          setMentionSearchTerm(textAfterAt);
+        } else {
+          setShowMentionDropdown(false);
+        }
+      } else {
+        setShowMentionDropdown(false);
+      }
     },
-    [onTyping],
+    [onTyping, isGroup, selection],
   );
 
   const handleVoiceUiClick = () => {
@@ -571,75 +723,123 @@ export const ChatInput = ({
         </View>
       ) : null}
 
-      {isRecording ? (
-        <View style={styles.recordRow}>
-          <View style={styles.recordLeft}>
-            <View style={styles.recordDot} />
-            <Text style={styles.recordText}>ĐANG GHI ÂM...</Text>
+      <View style={styles.composeWrapper}>
+        {showMentionDropdown && filteredMentionMembers.length > 0 ? (
+          <View style={styles.mentionDropdown}>
+            <ScrollView
+              horizontal={false}
+              showsVerticalScrollIndicator={true}
+              keyboardShouldPersistTaps="handled"
+              style={styles.mentionScroll}
+              contentContainerStyle={styles.mentionScrollContent}
+            >
+              {filteredMentionMembers.map((member) => (
+                <Pressable
+                  key={member.userId}
+                  onPress={() => handleSelectMention(member)}
+                  style={({ pressed }) => [
+                    styles.mentionItem,
+                    pressed && styles.mentionItemPressed,
+                  ]}
+                >
+                  <View style={styles.mentionRowContent}>
+                    {member.userId === "all" ? (
+                      <View style={styles.mentionAvatarAll}>
+                        <Text style={styles.mentionAvatarAllText}>@</Text>
+                      </View>
+                    ) : member.avatar ? (
+                      <Image source={{ uri: member.avatar }} style={styles.mentionAvatar} />
+                    ) : (
+                      <View style={styles.mentionAvatarFallback}>
+                        <Text style={styles.mentionAvatarFallbackText}>
+                          {(member.displayName || member.name || "U").slice(0, 1).toUpperCase()}
+                        </Text>
+                      </View>
+                    )}
+                    <Text style={styles.mentionName} numberOfLines={1}>
+                      {member.userId === "all"
+                        ? "Cả nhóm"
+                        : member.displayName || member.name || "Thành viên"}
+                    </Text>
+                  </View>
+                </Pressable>
+              ))}
+            </ScrollView>
           </View>
-          <Text style={styles.recordTimer}>
-            {Math.floor(recordingDuration / 60)}:
-            {(recordingDuration % 60).toString().padStart(2, "0")}
-          </Text>
-          <View style={styles.recordRight}>
-            <Pressable
-              onPress={() => void stopRecording(false)}
-              style={styles.recordBtnCancel}
-              accessibilityLabel="Hủy ghi âm"
-            >
-              <X size={18} color="#ef4444" strokeWidth={2.5} />
-            </Pressable>
-            <Pressable
-              onPress={() => void stopRecording(true)}
-              style={[styles.recordBtnSend, { backgroundColor: primary }]}
-              accessibilityLabel="Gửi tin nhắn thoại"
-            >
-              <SendHorizontal size={18} color="#fff" strokeWidth={2} />
-            </Pressable>
+        ) : null}
+
+        {isRecording ? (
+          <View style={styles.recordRow}>
+            <View style={styles.recordLeft}>
+              <View style={styles.recordDot} />
+              <Text style={styles.recordText}>ĐANG GHI ÂM...</Text>
+            </View>
+            <Text style={styles.recordTimer}>
+              {Math.floor(recordingDuration / 60)}:
+              {(recordingDuration % 60).toString().padStart(2, "0")}
+            </Text>
+            <View style={styles.recordRight}>
+              <Pressable
+                onPress={() => void stopRecording(false)}
+                style={styles.recordBtnCancel}
+                accessibilityLabel="Hủy ghi âm"
+              >
+                <X size={18} color="#ef4444" strokeWidth={2.5} />
+              </Pressable>
+              <Pressable
+                onPress={() => void stopRecording(true)}
+                style={[styles.recordBtnSend, { backgroundColor: primary }]}
+                accessibilityLabel="Gửi tin nhắn thoại"
+              >
+                <SendHorizontal size={18} color="#fff" strokeWidth={2} />
+              </Pressable>
+            </View>
           </View>
-        </View>
-      ) : (
-        <View style={styles.composeRow}>
-          <View style={styles.inputBox}>
-            <TextInput
-              placeholder={placeholder}
-              placeholderTextColor={muted}
-              value={content}
-              onChangeText={handleTextChange}
-              multiline
-              editable={!inputDisabled}
-              style={styles.textInput}
-            />
+        ) : (
+          <View style={styles.composeRow}>
+            <View style={styles.inputBox}>
+              <TextInput
+                ref={textInputRef}
+                placeholder={placeholder}
+                placeholderTextColor={muted}
+                value={content}
+                onChangeText={handleTextChange}
+                onSelectionChange={(e) => setSelection(e.nativeEvent.selection)}
+                multiline
+                editable={!inputDisabled}
+                style={styles.textInput}
+              />
+            </View>
+            {hasSendable ? (
+              <Pressable
+                onPress={() => void handleSend()}
+                disabled={inputDisabled}
+                style={[
+                  styles.sendBtn,
+                  { backgroundColor: primary },
+                  inputDisabled && styles.disabled,
+                ]}
+                accessibilityLabel="Gửi tin nhắn"
+              >
+                {isUploading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <SendHorizontal size={20} color="#fff" strokeWidth={2} />
+                )}
+              </Pressable>
+            ) : (
+              <Pressable
+                onPress={() => void Promise.resolve(onSend("👍")).catch(() => {})}
+                disabled={inputDisabled}
+                style={[styles.likeBtn, inputDisabled && styles.disabled]}
+                accessibilityLabel="Gửi like"
+              >
+                <ThumbsUp size={20} color={primary} strokeWidth={2} />
+              </Pressable>
+            )}
           </View>
-          {hasSendable ? (
-            <Pressable
-              onPress={() => void handleSend()}
-              disabled={inputDisabled}
-              style={[
-                styles.sendBtn,
-                { backgroundColor: primary },
-                inputDisabled && styles.disabled,
-              ]}
-              accessibilityLabel="Gửi tin nhắn"
-            >
-              {isUploading ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <SendHorizontal size={20} color="#fff" strokeWidth={2} />
-              )}
-            </Pressable>
-          ) : (
-            <Pressable
-              onPress={() => void Promise.resolve(onSend("👍")).catch(() => {})}
-              disabled={inputDisabled}
-              style={[styles.likeBtn, inputDisabled && styles.disabled]}
-              accessibilityLabel="Gửi like"
-            >
-              <ThumbsUp size={20} color={primary} strokeWidth={2} />
-            </Pressable>
-          )}
-        </View>
-      )}
+        )}
+      </View>
 
       {isEmojiPickerOpen ? (
         <EmojiPicker
@@ -666,6 +866,89 @@ export const ChatInput = ({
 };
 
 const styles = StyleSheet.create({
+  composeWrapper: {
+    position: "relative",
+  },
+  mentionDropdown: {
+    position: "absolute",
+    bottom: "100%",
+    left: 0,
+    right: 0,
+    zIndex: 999,
+    maxHeight: 200,
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.08)",
+    marginBottom: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  mentionScroll: {
+    flexGrow: 0,
+  },
+  mentionScrollContent: {
+    paddingVertical: 4,
+  },
+  mentionItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.03)",
+  },
+  mentionItemPressed: {
+    opacity: 0.6,
+    backgroundColor: "rgba(0,0,0,0.02)",
+  },
+  mentionRowContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  mentionAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+  },
+  mentionAvatarAll: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(249, 115, 22, 0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mentionAvatarAllText: {
+    color: "#f97316",
+    fontSize: 15,
+    fontWeight: "bold",
+  },
+  mentionAvatarFallback: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(59, 130, 246, 0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mentionAvatarFallbackText: {
+    color: "#3b82f6",
+    fontSize: 13,
+    fontWeight: "bold",
+  },
+  mentionName: {
+    color: "#334155",
+    fontSize: 14,
+    fontWeight: "600",
+    marginLeft: 12,
+    flex: 1,
+    textAlign: "left",
+  },
   root: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: "rgba(0,0,0,0.08)",

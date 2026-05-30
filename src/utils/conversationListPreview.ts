@@ -1,6 +1,7 @@
 import type { IConversation, MessageType } from "@/types/chat.types";
 import { formatGroupJoinLinkListPreview } from "@/utils/groupJoinLinkMessage";
 import { formatSystemLastMessagePreview } from "@/utils/systemMessage";
+import { stripMentionMarkdown } from "@/utils/mentionHelper";
 
 /** Đồng bộ `frontend/src/utils/chatUtils.ts` — preview sidebar / lastMessage. */
 function normalizeLastMessagePreview(type: MessageType, content: string): string {
@@ -75,14 +76,16 @@ export function formatConversationListLastPreview(
     lm.type,
     lm.type === "call" ? formatCallPreview() : (joinLinkPreview ?? content),
   );
+  let finalPreview = "";
   if (currentUserId && lm.senderId === currentUserId) {
-    return `Bạn: ${previewText}`;
+    finalPreview = `Bạn: ${previewText}`;
+  } else if (conv.type === "direct") {
+    finalPreview = previewText;
+  } else {
+    const name = lm.senderDisplayName?.trim() || "Thành viên";
+    finalPreview = `${name}: ${previewText}`;
   }
-  if (conv.type === "direct") {
-    return previewText;
-  }
-  const name = lm.senderDisplayName?.trim() || "Thành viên";
-  return `${name}: ${previewText}`;
+  return stripMentionMarkdown(finalPreview);
 }
 
 const IMAGE_PLACEHOLDER_LABEL = "Hình ảnh";
