@@ -1,4 +1,5 @@
 import type { IMessage } from "@/types/chat.types";
+import { formatCallMessagePreview } from "@/utils/callMessagePreview";
 import { chatFileTypeAccent, resolveChatFileBubbleMeta } from "@/utils/chatMediaDisplay";
 import { formatChatPreviewLine } from "@/utils/messageDisplay";
 import { formatSystemLastMessagePreview } from "@/utils/systemMessage";
@@ -85,15 +86,7 @@ export function formatPinnedMessagePreviewLine(msg: IMessage): string {
   if (msg.isRecalled) return "Tin nhắn đã được thu hồi";
   if (msg.isDeleted) return "Tin nhắn đã xóa";
   if (msg.type === "call") {
-    const content = msg.content ?? "";
-    try {
-      const payload = JSON.parse(content) as { kind?: string; callType?: string };
-      if (payload.kind === "missed") return "Cuộc gọi nhỡ";
-      if (payload.kind === "rejected") return "Cuộc gọi bị từ chối";
-      return payload.callType === "video" ? "Cuộc gọi video" : "Cuộc gọi thoại";
-    } catch {
-      return "Cuộc gọi";
-    }
+    return formatCallMessagePreview(msg.content);
   }
   if (msg.type === "system") {
     const pollQ = pollQuestionFromPinnedMessage(msg);
@@ -120,6 +113,7 @@ export function bulletinPinnedPreviewLine(msg: IMessage, viewerUserId: string): 
   const pollQ = pollQuestionFromPinnedMessage(msg);
   if (pollQ) return pollQ;
   const raw = String(msg.content ?? "").trim();
+  if (msg.type === "call") return formatCallMessagePreview(raw);
   if (msg.type === "system") {
     const line = formatSystemLastMessagePreview(
       raw,
