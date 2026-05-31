@@ -77,6 +77,8 @@ import { ChatImageMessageWithJoinQr } from "@/components/chat/ChatImageMessageWi
 import type { ChatMediaLightboxState } from "@/components/chat/ChatMediaLightbox";
 import { ChatVideoMessageCard } from "@/components/chat/ChatVideoMessageCard";
 import { chatMediaCaptionStyle, getChatMediaLayout } from "@/components/chat/chatMediaShell";
+import { ChatMessageReactionsOverlay } from "./ChatMessageReactions";
+import { useReactMessageMutation } from "@/store/api/endpoints/messageApi";
 import {
   chatFilePreviewUrl,
   chatImageDisplayUrl,
@@ -1175,6 +1177,24 @@ export const ChatBubble = ({
   const mediaLayout = useMemo(() => getChatMediaLayout(windowWidth), [windowWidth]);
   const [mediaSavedOnDevice, setMediaSavedOnDevice] = useState(false);
 
+  const [reactMessageMutation] = useReactMessageMutation();
+
+  const handleToggleReaction = useCallback(
+    async (emoji: string) => {
+      try {
+        await reactMessageMutation({
+          messageId: message.messageId,
+          conversationId: message.conversationId,
+          createdAt: message.createdAt,
+          emoji,
+        }).unwrap();
+      } catch (err) {
+        console.error("Failed to toggle reaction:", err);
+      }
+    },
+    [reactMessageMutation, message],
+  );
+
   const showMediaLightbox = useCallback(
     (state: ChatMediaLightboxState) => {
       if (state) onMediaLightbox?.(state);
@@ -1488,7 +1508,7 @@ export const ChatBubble = ({
                 </Text>
               </View>
             ) : (
-              <View className="max-w-full">
+              <View className={`max-w-full ${hasReactions ? "mb-3" : ""}`}>
                 <ChatJumpHighlightWrap
                   active={jumpHighlightOnTextBubble}
                   borderRadius={20}
@@ -1706,7 +1726,14 @@ export const ChatBubble = ({
                   </View>
                 </ChatJumpHighlightWrap>
 
-                {hasReactions && <ReactionsRow reactions={message.reactions} isOwn={isOwn} />}
+                {hasReactions && (
+                  <ChatMessageReactionsOverlay
+                    reactions={message.reactions}
+                    isOwn={isOwn}
+                    viewerUserId={viewerUserId}
+                    onReact={handleToggleReaction}
+                  />
+                )}
               </View>
             )}
           </Pressable>

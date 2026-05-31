@@ -30,7 +30,7 @@ import {
 import { normalizeGroupSettings } from "@/utils/normalizeGroupSettings";
 import { store, type AppDispatch } from "@/store/store";
 import type { ChatFrameBannerVariant } from "@/store/slices/chatSlice";
-import type { IConversation, IMessage } from "@/types/chat.types";
+import type { IConversation, IMessage, IMessagePage } from "@/types/chat.types";
 import { toast } from "@/utils/appToast";
 import { isSocketLocalNotificationEnabled } from "@/utils/localSystemNotification";
 import {
@@ -634,6 +634,22 @@ export function useChatRealtimeEvents({
         ) as never,
       );
       dispatch(
+        (chatApi.util as { updateQueryData: (...args: unknown[]) => unknown }).updateQueryData(
+          "getMessagesPaginated",
+          { conversationId: cid },
+          (draft: IMessagePage) => {
+            if (draft && Array.isArray(draft.items)) {
+              const m = draft.items.find((x) => String(x.messageId) === mid);
+              if (m) {
+                m.isRecalled = true;
+                m.content = "Tin nhắn đã được thu hồi";
+                m.isPinned = false;
+              }
+            }
+          },
+        ) as never,
+      );
+      dispatch(
         conversationApi.util.updateQueryData("getConversations", undefined, (draft) => {
           const conv = draft?.find((item: IConversation) => item.conversationId === cid);
           const lm = conv?.lastMessage;
@@ -659,6 +675,18 @@ export function useChatRealtimeEvents({
           },
         ) as never,
       );
+      dispatch(
+        (chatApi.util as { updateQueryData: (...args: unknown[]) => unknown }).updateQueryData(
+          "getMessagesPaginated",
+          { conversationId: payload.conversationId },
+          (draft: IMessagePage) => {
+            if (draft && Array.isArray(draft.items)) {
+              const idx = draft.items.findIndex((x) => x.messageId === payload.messageId);
+              if (idx >= 0) draft.items.splice(idx, 1);
+            }
+          },
+        ) as never,
+      );
       dispatch(chatApi.util.invalidateTags(["Conversations"]));
     };
 
@@ -679,6 +707,18 @@ export function useChatRealtimeEvents({
           (draft: IMessage[]) => {
             const m = draft.find((x) => String(x.messageId) === mid);
             if (m) m.isPinned = payload.isPinned;
+          },
+        ) as never,
+      );
+      dispatch(
+        (chatApi.util as { updateQueryData: (...args: unknown[]) => unknown }).updateQueryData(
+          "getMessagesPaginated",
+          { conversationId: payload.conversationId },
+          (draft: IMessagePage) => {
+            if (draft && Array.isArray(draft.items)) {
+              const m = draft.items.find((x) => String(x.messageId) === mid);
+              if (m) m.isPinned = payload.isPinned;
+            }
           },
         ) as never,
       );
@@ -712,6 +752,18 @@ export function useChatRealtimeEvents({
           (draft: IMessage[]) => {
             const m = draft.find((x) => String(x.messageId) === mid);
             if (m) m.reactions = payload.reactions;
+          },
+        ) as never,
+      );
+      dispatch(
+        (chatApi.util as { updateQueryData: (...args: unknown[]) => unknown }).updateQueryData(
+          "getMessagesPaginated",
+          { conversationId: payload.conversationId },
+          (draft: IMessagePage) => {
+            if (draft && Array.isArray(draft.items)) {
+              const m = draft.items.find((x) => String(x.messageId) === mid);
+              if (m) m.reactions = payload.reactions;
+            }
           },
         ) as never,
       );

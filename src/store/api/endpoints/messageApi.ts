@@ -184,19 +184,38 @@ function getMessagesQueryArg(conversationId: string) {
   return { conversationId, limit: CHAT_MESSAGES_QUERY_LIMIT };
 }
 
-/** RTK không infer endpoint `getMessages` trong callback injectEndpoints. */
-function updateGetMessagesCache(
-  dispatch: (a: unknown) => { undo: () => void },
+/** RTK không infer endpoint `getMessages`/`getMessagesPaginated` trong callback injectEndpoints. */
+function updateChatMessagesCache(
+  dispatch: any,
   conversationId: string,
   updateFn: (draft: IMessage[]) => void,
 ) {
-  return dispatch(
+  const patchGetMessages = dispatch(
     (chatApi.util as any).updateQueryData(
       "getMessages",
       getMessagesQueryArg(conversationId),
       updateFn,
     ),
   );
+
+  const patchGetMessagesPaginated = dispatch(
+    (chatApi.util as any).updateQueryData(
+      "getMessagesPaginated",
+      { conversationId },
+      (draft: IMessagePage) => {
+        if (draft && Array.isArray(draft.items)) {
+          updateFn(draft.items);
+        }
+      },
+    ),
+  );
+
+  return {
+    undo() {
+      patchGetMessages.undo();
+      patchGetMessagesPaginated.undo();
+    },
+  };
 }
 
 function lastMessagePreviewFromMessage(m: IMessage): string {
@@ -301,12 +320,28 @@ export const messageApi = chatApi.injectEndpoints({
         const optimisticId = newOptimisticId();
         const optimistic = buildOptimisticMessage(arg, optimisticId, user.userId, user.displayName);
 
-        const patchMessages = updateGetMessagesCache(
-          dispatch,
-          arg.conversationId,
-          (draft: IMessage[]) => {
-            draft.unshift(optimistic);
-          },
+        const patchMessages = dispatch(
+          (chatApi.util as any).updateQueryData(
+            "getMessages",
+            getMessagesQueryArg(arg.conversationId),
+            (draft: IMessage[]) => {
+              draft.unshift(optimistic);
+            },
+          ),
+        );
+
+        const patchMessagesPaginated = dispatch(
+          (chatApi.util as any).updateQueryData(
+            "getMessagesPaginated",
+            { conversationId: arg.conversationId },
+            (draft: IMessagePage) => {
+              if (draft && Array.isArray(draft.items)) {
+                if (!draft.items.some((m) => m.messageId === optimistic.messageId)) {
+                  draft.items.push(optimistic);
+                }
+              }
+            },
+          ),
         );
 
         const preview = lastMessagePreviewFromArg(arg);
@@ -324,21 +359,55 @@ export const messageApi = chatApi.injectEndpoints({
         );
 
         const mergeServerMessage = (serverMsg: IMessage) => {
-          updateGetMessagesCache(dispatch, arg.conversationId, (draft: IMessage[]) => {
-            const dup = draft.findIndex(
-              (m: IMessage) => m.messageId === serverMsg.messageId && m.messageId !== optimisticId,
-            );
-            if (dup !== -1) draft.splice(dup, 1);
-            const optIdx = draft.findIndex((m: IMessage) => m.messageId === optimisticId);
-            const optimisticMsg = optIdx !== -1 ? draft[optIdx] : undefined;
-            const merged =
-              optimisticMsg != null
-                ? mergeChatFileMessageFields(serverMsg, optimisticMsg)
-                : serverMsg;
-            if (optIdx !== -1) draft[optIdx] = merged;
-            else if (!draft.some((m: IMessage) => m.messageId === serverMsg.messageId))
-              draft.unshift(merged);
-          });
+          dispatch(
+            (chatApi.util as any).updateQueryData(
+              "getMessages",
+              getMessagesQueryArg(arg.conversationId),
+              (draft: IMessage[]) => {
+                const dup = draft.findIndex(
+                  (m: IMessage) =>
+                    m.messageId === serverMsg.messageId && m.messageId !== optimisticId,
+                );
+                if (dup !== -1) draft.splice(dup, 1);
+                const optIdx = draft.findIndex((m: IMessage) => m.messageId === optimisticId);
+                const optimisticMsg = optIdx !== -1 ? draft[optIdx] : undefined;
+                const merged =
+                  optimisticMsg != null
+                    ? mergeChatFileMessageFields(serverMsg, optimisticMsg)
+                    : serverMsg;
+                if (optIdx !== -1) draft[optIdx] = merged;
+                else if (!draft.some((m: IMessage) => m.messageId === serverMsg.messageId))
+                  draft.unshift(merged);
+              },
+            ),
+          );
+
+          dispatch(
+            (chatApi.util as any).updateQueryData(
+              "getMessagesPaginated",
+              { conversationId: arg.conversationId },
+              (draft: IMessagePage) => {
+                if (draft && Array.isArray(draft.items)) {
+                  const dup = draft.items.findIndex(
+                    (m: IMessage) =>
+                      m.messageId === serverMsg.messageId && m.messageId !== optimisticId,
+                  );
+                  if (dup !== -1) draft.items.splice(dup, 1);
+                  const optIdx = draft.items.findIndex(
+                    (m: IMessage) => m.messageId === optimisticId,
+                  );
+                  const optimisticMsg = optIdx !== -1 ? draft.items[optIdx] : undefined;
+                  const merged =
+                    optimisticMsg != null
+                      ? mergeChatFileMessageFields(serverMsg, optimisticMsg)
+                      : serverMsg;
+                  if (optIdx !== -1) draft.items[optIdx] = merged;
+                  else if (!draft.items.some((m: IMessage) => m.messageId === serverMsg.messageId))
+                    draft.items.push(merged);
+                }
+              },
+            ),
+          );
 
           const lastContent = lastMessagePreviewFromMessage(serverMsg);
 
@@ -362,6 +431,7 @@ export const messageApi = chatApi.injectEndpoints({
           mergeServerMessage(serverMsg);
         } catch {
           patchMessages.undo();
+          patchMessagesPaginated.undo();
           patchConvs.undo();
         }
       },
@@ -375,7 +445,7 @@ export const messageApi = chatApi.injectEndpoints({
       }),
       invalidatesTags: () => [],
       async onQueryStarted(arg, { dispatch, queryFulfilled }) {
-        const patchMsgs = updateGetMessagesCache(
+        const patchMsgs = updateChatMessagesCache(
           dispatch,
           arg.conversationId,
           (draft: IMessage[]) => {
@@ -429,7 +499,7 @@ export const messageApi = chatApi.injectEndpoints({
         const nextList = list.filter((m) => m.messageId !== arg.messageId);
         const newest = newestMessageInList(nextList);
 
-        const patchMsgs = updateGetMessagesCache(
+        const patchMsgs = updateChatMessagesCache(
           dispatch,
           arg.conversationId,
           (draft: IMessage[]) => {
@@ -477,7 +547,7 @@ export const messageApi = chatApi.injectEndpoints({
       }),
       invalidatesTags: () => [],
       async onQueryStarted(arg, { dispatch, queryFulfilled }) {
-        const patchMsgs = updateGetMessagesCache(
+        const patchMsgs = updateChatMessagesCache(
           dispatch,
           arg.conversationId,
           (draft: IMessage[]) => {
@@ -527,7 +597,7 @@ export const messageApi = chatApi.injectEndpoints({
       }),
       invalidatesTags: () => [],
       async onQueryStarted(arg, { dispatch, queryFulfilled }) {
-        const patchMsgs = updateGetMessagesCache(
+        const patchMsgs = updateChatMessagesCache(
           dispatch,
           arg.conversationId,
           (draft: IMessage[]) => {
@@ -551,7 +621,7 @@ export const messageApi = chatApi.injectEndpoints({
       }),
       invalidatesTags: () => [],
       async onQueryStarted(arg, { dispatch, queryFulfilled }) {
-        const patchMsgs = updateGetMessagesCache(
+        const patchMsgs = updateChatMessagesCache(
           dispatch,
           arg.conversationId,
           (draft: IMessage[]) => {
@@ -578,7 +648,7 @@ export const messageApi = chatApi.injectEndpoints({
         try {
           const { data } = await queryFulfilled;
           const reactions = (data as ApiEnvelope<Record<string, string[]>>).data;
-          updateGetMessagesCache(dispatch, arg.conversationId, (draft: IMessage[]) => {
+          updateChatMessagesCache(dispatch, arg.conversationId, (draft: IMessage[]) => {
             const m = draft.find((x) => x.messageId === arg.messageId);
             if (m) m.reactions = reactions;
           });
