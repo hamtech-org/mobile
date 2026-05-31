@@ -93,6 +93,7 @@ import {
   openOrShareChatFile,
   saveChatMediaToLibrary,
 } from "@/utils/chatMediaDownload";
+import { normalizeMediaUrl } from "@/utils/url";
 
 import { GroupJoinLinkCard } from "./GroupJoinLinkCard";
 import type { PollVoteModalPoll } from "./PollVoteModal";
@@ -291,6 +292,7 @@ interface ChatBubbleProps {
   groupExtras?: ChatBubbleGroupExtras;
   /** Xem ảnh/video toàn màn hình (lightbox ở màn chat). */
   onMediaLightbox?: (state: ChatMediaLightboxState) => void;
+  isLatestUserMessage?: boolean;
 }
 
 // ── Call Log Message ────────────────────────────────────────────────────
@@ -1168,6 +1170,7 @@ export const ChatBubble = ({
   isJumpHighlighted = false,
   groupExtras,
   onMediaLightbox,
+  isLatestUserMessage,
 }: ChatBubbleProps) => {
   const { width: windowWidth } = useWindowDimensions();
   const { muted, primary, isDark } = useIconColors();
@@ -1754,6 +1757,74 @@ export const ChatBubble = ({
           </Pressable>
         )}
 
+        {isOwn &&
+          isLatestUserMessage &&
+          !isRecalled &&
+          !isDeleted &&
+          message.readBy &&
+          message.readBy.length > 0 && (
+            <View className="mt-0.5 flex-row justify-end pr-1">
+              <View className="flex-row items-center">
+                {message.readBy.slice(0, 5).map((r, idx) => {
+                  const avatarUri = normalizeMediaUrl(r.avatar);
+                  const isFirst = idx === 0;
+                  return avatarUri ? (
+                    <Image
+                      key={r.userId}
+                      source={{ uri: avatarUri }}
+                      style={{
+                        width: 16,
+                        height: 16,
+                        borderRadius: 8,
+                        marginLeft: isFirst ? 0 : -4,
+                        flexShrink: 0,
+                      }}
+                      className="border border-white bg-slate-200 dark:border-zinc-900"
+                    />
+                  ) : (
+                    <View
+                      key={r.userId}
+                      style={{
+                        width: 16,
+                        height: 16,
+                        borderRadius: 8,
+                        marginLeft: isFirst ? 0 : -4,
+                        flexShrink: 0,
+                      }}
+                      className="items-center justify-center border border-white bg-slate-300 dark:border-zinc-900 dark:bg-zinc-700"
+                    >
+                      <Text
+                        style={{ fontSize: 8, lineHeight: 10 }}
+                        className="font-bold text-foreground"
+                      >
+                        {(r.displayName || "U").charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                  );
+                })}
+                {message.readBy.length > 5 && (
+                  <View
+                    style={{
+                      width: 16,
+                      height: 16,
+                      borderRadius: 8,
+                      marginLeft: -4,
+                      flexShrink: 0,
+                    }}
+                    className="items-center justify-center border border-white bg-slate-200 dark:border-zinc-900 dark:bg-zinc-800"
+                  >
+                    <Text
+                      style={{ fontSize: 8, lineHeight: 10 }}
+                      className="font-bold text-muted-foreground"
+                    >
+                      +{message.readBy.length - 5}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
+
         {showTimestamp && (
           <View
             className={`mt-0.5 flex-row items-center gap-1 px-1 ${isOwn ? "flex-row-reverse" : "flex-row"}`}
@@ -1761,9 +1832,12 @@ export const ChatBubble = ({
             <Text className="text-[11px] text-muted-foreground">
               {formatTimestamp(message.createdAt)}
             </Text>
-            {isOwn && !isRecalled && !isDeleted && (
-              <StatusIcon status={message.status} primary={primary} muted={muted} />
-            )}
+            {isOwn &&
+              !isRecalled &&
+              !isDeleted &&
+              (!message.readBy || message.readBy.length === 0) && (
+                <StatusIcon status={message.status} primary={primary} muted={muted} />
+              )}
           </View>
         )}
       </View>

@@ -294,6 +294,38 @@ const chatSlice = createSlice({
       if (!cid) return;
       delete state.removedGroupMemberIdsByConversationId[cid];
     },
+
+    messageReadAckReceived: (
+      state,
+      action: PayloadAction<{
+        conversationId: string;
+        messageId: string;
+        readBy: { userId: string; displayName?: string | null; avatar?: string | null };
+      }>,
+    ) => {
+      const { conversationId, messageId, readBy } = action.payload;
+      const messages = state.messages[conversationId];
+      if (messages) {
+        const msg = messages.find((m) => m.messageId === messageId);
+        if (msg) {
+          if (!msg.readBy) msg.readBy = [];
+          if (!msg.readBy.some((r) => r.userId === readBy.userId)) {
+            msg.readBy.push(readBy);
+          }
+          msg.status = "read";
+
+          const pivotMs = new Date(msg.createdAt).getTime();
+          messages.forEach((m) => {
+            if (m.messageId !== messageId && m.readBy) {
+              const mTime = new Date(m.createdAt).getTime();
+              if (mTime < pivotMs) {
+                m.readBy = m.readBy.filter((r) => r.userId !== readBy.userId);
+              }
+            }
+          });
+        }
+      }
+    },
   },
 });
 
@@ -320,6 +352,7 @@ export const {
   bumpGroupBoardRefresh,
   markGroupMemberRemovedRealtime,
   resetRemovedGroupMembersRealtime,
+  messageReadAckReceived,
 } = chatSlice.actions;
 
 export const chatReducer = chatSlice.reducer;

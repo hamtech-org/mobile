@@ -16,6 +16,7 @@ import {
   messagePinUpdated,
   messageReacted,
   messageStatusUpdated,
+  messageReadAckReceived,
   showChatFrameBanner,
   typingStarted,
   typingStopped,
@@ -1355,6 +1356,99 @@ export function useChatRealtimeEvents({
       dispatch(chatApi.util.invalidateTags([{ type: "Messages", id: conversationId }]));
     };
 
+    const applyMessageReadAckPatch = (
+      conversationId: string,
+      messageId: string,
+      readBy: { userId: string; displayName?: string | null; avatar?: string | null },
+    ) => {
+      dispatch(messageReadAckReceived({ conversationId, messageId, readBy }));
+
+      const messagesMap = store.getState().chat.messages[conversationId] ?? [];
+      const pivot = messagesMap.find((m) => String(m.messageId) === String(messageId));
+
+      if (!pivot) {
+        dispatch(
+          (chatApi.util as any).updateQueryData(
+            "getMessages",
+            { conversationId, limit: CHAT_MESSAGES_QUERY_LIMIT },
+            (draft: IMessage[]) => {
+              if (Array.isArray(draft)) {
+                const m = draft.find((x) => String(x.messageId) === String(messageId));
+                if (m) {
+                  m.status = "read";
+                  if (!m.readBy) m.readBy = [];
+                  if (!m.readBy.some((r) => r.userId === readBy.userId)) {
+                    m.readBy.push(readBy);
+                  }
+                }
+              }
+            },
+          ) as never,
+        );
+        dispatch(
+          (chatApi.util as any).updateQueryData(
+            "getMessagesPaginated",
+            { conversationId },
+            (draft: IMessagePage) => {
+              if (draft && Array.isArray(draft.items)) {
+                const m = draft.items.find((x) => String(x.messageId) === String(messageId));
+                if (m) {
+                  m.status = "read";
+                  if (!m.readBy) m.readBy = [];
+                  if (!m.readBy.some((r) => r.userId === readBy.userId)) {
+                    m.readBy.push(readBy);
+                  }
+                }
+              }
+            },
+          ) as never,
+        );
+        return;
+      }
+
+      const pivotMs = new Date(pivot.createdAt).getTime();
+
+      const patchArray = (items: IMessage[]) => {
+        if (!Array.isArray(items)) return;
+        items.forEach((m) => {
+          const mTime = new Date(m.createdAt).getTime();
+          if (String(m.messageId) === String(messageId)) {
+            m.status = "read";
+            if (!m.readBy) m.readBy = [];
+            if (!m.readBy.some((r) => r.userId === readBy.userId)) {
+              m.readBy.push(readBy);
+            }
+          } else if (m.readBy?.some((r) => r.userId === readBy.userId)) {
+            if (mTime < pivotMs) {
+              m.readBy = m.readBy.filter((r) => r.userId !== readBy.userId);
+            }
+          }
+        });
+      };
+
+      dispatch(
+        (chatApi.util as any).updateQueryData(
+          "getMessages",
+          { conversationId, limit: CHAT_MESSAGES_QUERY_LIMIT },
+          (draft: IMessage[]) => {
+            patchArray(draft);
+          },
+        ) as never,
+      );
+
+      dispatch(
+        (chatApi.util as any).updateQueryData(
+          "getMessagesPaginated",
+          { conversationId },
+          (draft: IMessagePage) => {
+            if (draft && Array.isArray(draft.items)) {
+              patchArray(draft.items);
+            }
+          },
+        ) as never,
+      );
+    };
+
     const handleMessageStatus = (payload: {
       conversationId: string;
       messageId: string;
@@ -1362,6 +1456,15 @@ export function useChatRealtimeEvents({
     }) => {
       if (!payload.conversationId || !payload.messageId || !payload.status) return;
       applyMessageStatusPatch(payload.conversationId, payload.messageId, payload.status);
+    };
+
+    const handleReadAck = (payload: {
+      conversationId: string;
+      messageId: string;
+      readBy: { userId: string; displayName?: string | null; avatar?: string | null };
+    }) => {
+      if (!payload.conversationId || !payload.messageId || !payload.readBy) return;
+      applyMessageReadAckPatch(payload.conversationId, payload.messageId, payload.readBy);
     };
 
     const handleConversationRead = (payload: { conversationId: string; messageId: string }) => {
@@ -1384,6 +1487,7 @@ export function useChatRealtimeEvents({
     socket.on("message:new", handleNewMessage);
     socket.on("message:status", handleMessageStatus);
     socket.on("conversation:read", handleConversationRead);
+    socket.on("message:read_ack", handleReadAck);
     socket.on("message:edited", handleEdited);
     socket.on("message:recalled", handleRecalled);
     socket.on("message:recall", handleRecalled);
@@ -1439,6 +1543,7 @@ export function useChatRealtimeEvents({
       socket.off("message:new", handleNewMessage);
       socket.off("message:status", handleMessageStatus);
       socket.off("conversation:read", handleConversationRead);
+      socket.off("message:read_ack", handleReadAck);
       socket.off("message:edited", handleEdited);
       socket.off("message:recalled", handleRecalled);
       socket.off("message:recall", handleRecalled);

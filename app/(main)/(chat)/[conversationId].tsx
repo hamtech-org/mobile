@@ -231,6 +231,10 @@ export default function ChatDetailScreen() {
   const { allMessages, pinnedMessagesOrdered, isLoading, latestMessageId } =
     useChatMessageData(conversationId);
 
+  const lastUserMessageIndex = useMemo(() => {
+    return allMessages.findIndex((m) => m.type !== "system" && (m as any).position !== "center");
+  }, [allMessages]);
+
   useConversationLifecycle({
     conversationId,
     latestMessageId,
@@ -1352,6 +1356,7 @@ export default function ChatDetailScreen() {
           renderItem={({ item, index }) => (
             <ChatBubble
               message={item}
+              isLatestUserMessage={index === lastUserMessageIndex}
               isOwn={item.senderId === currentUserId}
               viewerUserId={currentUserId}
               isGroup={isGroup}
