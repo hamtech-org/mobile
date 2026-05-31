@@ -208,11 +208,7 @@ function MentionifiedChatText({
               key={index}
               style={{
                 fontWeight: "bold",
-                color: isOwn && !isVisualMedia ? "#fed7aa" : "#ea580c",
-                backgroundColor:
-                  isOwn && !isVisualMedia ? "rgba(255,255,255,0.2)" : "rgba(249,115,22,0.1)",
-                paddingHorizontal: 4,
-                borderRadius: 2,
+                color: isOwn && !isVisualMedia ? "#dbeafe" : "#0068FF",
               }}
             >
               @{token.value}
@@ -224,8 +220,7 @@ function MentionifiedChatText({
             key={index}
             style={{
               fontWeight: "bold",
-              textDecorationLine: "underline",
-              color: isOwn && !isVisualMedia ? "#dbeafe" : "#0284c7",
+              color: isOwn && !isVisualMedia ? "#dbeafe" : "#0068FF",
             }}
             onPress={(event) => {
               event.stopPropagation?.();
