@@ -190,7 +190,6 @@ export default function ChatDetailScreen() {
   const insets = useSafeAreaInsets();
 
   const currentUserId = useAppSelector((state) => state.auth.user?.userId);
-  const currentUserName = useAppSelector((state) => state.auth.user?.displayName ?? null);
   const currentUserAvatar = useAppSelector((state) => state.auth.user?.avatar ?? null);
   const frameBanner = useAppSelector((state) => state.chat.frameBanner);
   const activeGroupCall = useAppSelector((state) => state.call.activeGroupCall);
@@ -269,7 +268,18 @@ export default function ChatDetailScreen() {
     deleteMessage,
     reactMessage,
     emitTyping,
+    emitTypingStop,
   } = useChat();
+
+  const conversationIdRef = useRef(conversationId);
+  useEffect(() => {
+    conversationIdRef.current = conversationId;
+    return () => {
+      if (conversationIdRef.current) {
+        emitTypingStop(conversationIdRef.current);
+      }
+    };
+  }, [conversationId, emitTypingStop]);
 
   const [uploadMediaMulti] = useUploadMediaMultiMutation();
 
@@ -441,7 +451,15 @@ export default function ChatDetailScreen() {
       userId: currentUserId ?? "",
       members: groupMembersForPerm,
     });
-  }, [groupDisbanded, isGroup, conversation, myRoleInGroup, currentUserId, groupMembersForPerm]);
+  }, [
+    groupDisbanded,
+    chatPaused,
+    isGroup,
+    conversation,
+    myRoleInGroup,
+    currentUserId,
+    groupMembersForPerm,
+  ]);
 
   const canCreatePollInGroup = useMemo(() => {
     if (!isGroup || !conversation) return false;
@@ -760,6 +778,7 @@ export default function ChatDetailScreen() {
       if (!conversationId) return;
       if (!canSendInGroup) return;
 
+      emitTypingStop(conversationId);
       const reply = replyingTo;
       if (reply) {
         dispatch(clearReplyingTo());
@@ -776,7 +795,15 @@ export default function ChatDetailScreen() {
 
       listRef.current?.scrollToOffset({ offset: 0, animated: true });
     },
-    [conversationId, replyingTo, sendReplyMessage, sendMessage, dispatch, canSendInGroup],
+    [
+      conversationId,
+      replyingTo,
+      sendReplyMessage,
+      sendMessage,
+      dispatch,
+      canSendInGroup,
+      emitTypingStop,
+    ],
   );
 
   const handleSendMedia = useCallback(
@@ -789,6 +816,7 @@ export default function ChatDetailScreen() {
         toast.error("Bạn không có quyền gửi tin trong nhóm này.");
         throw new Error("no_permission");
       }
+      emitTypingStop(conversationId);
       if (attachments.length === 0) return;
 
       const replySnapshot = replyingTo;
@@ -895,6 +923,7 @@ export default function ChatDetailScreen() {
       replyingTo,
       dispatch,
       currentUserId,
+      emitTypingStop,
     ],
   );
 
@@ -908,6 +937,7 @@ export default function ChatDetailScreen() {
         toast.error("Bạn không có quyền gửi tin trong nhóm này.");
         throw new Error("no_permission");
       }
+      emitTypingStop(conversationId);
 
       const replySnapshot = replyingTo;
       if (replySnapshot) {
@@ -975,6 +1005,7 @@ export default function ChatDetailScreen() {
       replyingTo,
       dispatch,
       currentUserId,
+      emitTypingStop,
     ],
   );
 
@@ -1118,9 +1149,18 @@ export default function ChatDetailScreen() {
     handleDeleteGroupTask,
   ]);
 
-  const handleTyping = useCallback(() => {
-    if (conversationId) emitTyping(conversationId);
-  }, [conversationId, emitTyping]);
+  const handleTyping = useCallback(
+    (text?: string) => {
+      if (conversationId) {
+        if (text != null && text.trim() === "") {
+          emitTypingStop(conversationId);
+        } else {
+          emitTyping(conversationId);
+        }
+      }
+    },
+    [conversationId, emitTyping, emitTypingStop],
+  );
 
   const handleTogglePinForSheet = useCallback(
     async (msg: IMessage) => {

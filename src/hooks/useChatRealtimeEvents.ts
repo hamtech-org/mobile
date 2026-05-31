@@ -61,7 +61,7 @@ interface UseChatRealtimeEventsParams {
   activeConversationId: string | null;
 }
 
-const TYPING_INDICATOR_IDLE_MS = 2500;
+const TYPING_INDICATOR_IDLE_MS = 3000; // Tăng TTL lên 3000ms để đồng bộ với Web và tránh nháy UI
 const SYSTEM_NOTIFICATION_DEDUPE_MS = 3500;
 
 function normalizeIso(at?: string | null): string {
@@ -1201,8 +1201,16 @@ export function useChatRealtimeEvents({
       userId: string;
       conversationId: string;
       displayName?: string | null;
+      isTyping?: boolean;
     }) => {
       const key = `${payload.conversationId}:${payload.userId}`;
+      clearTypingIndicatorTimer(key);
+
+      if (payload.isTyping === false) {
+        dispatch(typingStopped({ conversationId: payload.conversationId, userId: payload.userId }));
+        return;
+      }
+
       const name = payload.displayName?.trim();
       dispatch(
         typingStarted({
@@ -1211,7 +1219,6 @@ export function useChatRealtimeEvents({
           displayName: name ? name : undefined,
         }),
       );
-      clearTypingIndicatorTimer(key);
       timers[key] = setTimeout(() => {
         dispatch(typingStopped({ conversationId: payload.conversationId, userId: payload.userId }));
         delete timers[key];
