@@ -1,18 +1,20 @@
 import * as Notifications from "expo-notifications";
 import { router, type Href } from "expo-router";
-import { Platform } from "react-native";
 
 import { conversationApi } from "@/store/api/endpoints/conversationApi";
 import { messageApi } from "@/store/api/endpoints/messageApi";
 import { userApi } from "@/store/api/userApi";
-import { resetCall, setCallAccepted, setIncomingCall, setReturnTo } from "@/store/slices/callSlice";
 import { store } from "@/store/store";
-import type { CallScope, CallType, IncomingCallData } from "@/types/call.types";
 import type { INotification } from "@/types/notification.types";
 import { getSocketClient, normalizeSocketAuthToken } from "@/services/socket";
 import { toast } from "@/utils/appToast";
 import { clearChatNotificationStack } from "@/utils/chatNotificationStack";
-import { dismissCallSystemNotification } from "@/utils/localSystemNotification";
+import { clearConversationNotificationState } from "@/utils/chatNotificationState";
+import {
+  answerCallFromNotificationData,
+  callRouteParamsFromPayload,
+  declineCallFromNotificationData,
+} from "@/utils/callNotificationActions";
 import { navigateFromNotification } from "@/utils/notificationNavigation";
 import { NOTIFICATION_ACTION } from "@/utils/notificationRegistry";
 import { buildPatchForMutePayload, describeMuteSuccess } from "@/utils/muteNotifications";
@@ -57,86 +59,55 @@ function userText(response: unknown): string {
   );
 }
 
-function emitSocketEvent(event: string, payload: Record<string, unknown>): void {
+async function emitSocketEvent(event: string, payload: Record<string, unknown>): Promise<boolean> {
   const socket = getSocketClient();
   const token = normalizeSocketAuthToken(store.getState().auth.accessToken);
+  if (!token) return false;
   if (token) socket.auth = { token };
   if (socket.connected) {
     socket.emit(event, payload);
-    return;
+    return true;
   }
-  socket.once("connect", () => {
-    socket.emit(event, payload);
+
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (ok: boolean) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timeout);
+      socket.off("connect", onConnect);
+      socket.off("connect_error", onError);
+      resolve(ok);
+    };
+    const onConnect = () => {
+      socket.emit(event, payload);
+      finish(true);
+    };
+    const onError = () => finish(false);
+    const timeout = setTimeout(() => finish(false), 8000);
+
+    socket.once("connect", onConnect);
+    socket.once("connect_error", onError);
+    socket.connect();
   });
-  socket.connect();
 }
 
-function callPayloadFromData(data: Record<string, unknown>): IncomingCallData | null {
-  const channelName = text(data.channelName ?? data.entityId ?? data.id);
-  const conversationId = text(data.conversationId);
-  const callerId = text(data.callerId);
-  if (!channelName || !conversationId || !callerId) return null;
-
-  const callType = text(data.callType) === "video" ? "video" : "audio";
-  const scope: CallScope = text(data.callScope) === "group" ? "group" : "direct";
-  return {
-    channelName,
-    conversationId,
-    callerId,
-    callerName: text(data.callerName) || "Cuộc gọi đến",
-    type: callType,
-    scope,
-    hostId: text(data.hostId) || callerId,
-  };
-}
-
-function pushCallScreen(payload: IncomingCallData): void {
-  router.push({
+function pushCallScreen(payload: Parameters<typeof callRouteParamsFromPayload>[0]): void {
+  router.replace({
     pathname: "/call",
-    params: {
-      channel: payload.channelName,
-      type: payload.type,
-      conversationId: payload.conversationId,
-      returnTo: encodeURIComponent("/(main)/(chat)"),
-      scope: payload.scope ?? "direct",
-      ...(payload.hostId ? { hostId: payload.hostId } : {}),
-    },
+    params: callRouteParamsFromPayload(payload, "answer"),
   } as Href);
 }
 
 async function handleAnswerCall(data: Record<string, unknown>): Promise<boolean> {
-  const payload = callPayloadFromData(data);
+  const payload = await answerCallFromNotificationData(data);
   if (!payload) return false;
-
-  emitSocketEvent("call:accept", {
-    channelName: payload.channelName,
-    callerId: payload.callerId,
-    conversationId: payload.conversationId,
-    type: payload.type,
-  });
-
-  store.dispatch(setReturnTo("/(main)/(chat)"));
-  store.dispatch(setIncomingCall(payload));
-  store.dispatch(setCallAccepted());
-  await dismissCallSystemNotification(payload.channelName);
   pushCallScreen(payload);
   return true;
 }
 
 async function handleDeclineCall(data: Record<string, unknown>): Promise<boolean> {
-  const payload = callPayloadFromData(data);
-  if (!payload) return false;
-
-  emitSocketEvent("call:reject", {
-    channelName: payload.channelName,
-    callerId: payload.callerId,
-    conversationId: payload.conversationId,
-    type: payload.type,
-  });
-
-  await dismissCallSystemNotification(payload.channelName);
-  store.dispatch(resetCall());
-  return true;
+  return declineCallFromNotificationData(data);
 }
 
 async function handleInlineReply(data: Record<string, unknown>, body: string): Promise<boolean> {
@@ -174,15 +145,15 @@ async function handleCallbackCall(data: Record<string, unknown>): Promise<boolea
     payload.calleeId = callerId;
   }
 
-  emitSocketEvent("call:initiate", payload);
-  return true;
+  return emitSocketEvent("call:initiate", payload);
 }
 
 async function handleOpenMessage(data: Record<string, unknown>): Promise<boolean> {
   const conversationId = text(data.conversationId || data.entityId || data.id);
   if (!conversationId) return false;
 
-  router.push(`/(main)/(chat)/${conversationId}` as Href);
+  clearConversationNotificationState(conversationId);
+  router.replace(`/(main)/(chat)/${conversationId}` as Href);
   return true;
 }
 
@@ -193,13 +164,6 @@ async function dismissNotificationById(data: Record<string, unknown>): Promise<v
     await Notifications.dismissNotificationAsync(nid);
   } catch {
     /* ignore */
-  }
-  if (Platform.OS === "android") {
-    const { NativeModules } = await import("react-native");
-    const mod = NativeModules.HamtechNotifications as
-      | { dismissNotification?: (id: string) => Promise<boolean> }
-      | undefined;
-    await mod?.dismissNotification?.(nid);
   }
 }
 

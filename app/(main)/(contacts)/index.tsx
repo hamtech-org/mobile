@@ -5,6 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import {
   Check,
   Clock,
+  Eye,
   MessageCircle,
   Search,
   Send,
@@ -754,17 +755,30 @@ export default function ContactsScreen() {
                 ) : null}
               </View>
 
-              <Pressable
-                onPress={() => {
-                  const friend = selectedFriend;
-                  setSelectedFriend(null);
-                  void openFriendChat(friend);
-                }}
-                className="mt-6 flex-row items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3"
-              >
-                <MessageCircle size={18} color="#fff" />
-                <Text className="font-bold text-primary-foreground">Nhắn tin</Text>
-              </Pressable>
+              <View className="mt-6 flex-row gap-3">
+                <Pressable
+                  onPress={() => {
+                    const friend = selectedFriend;
+                    setSelectedFriend(null);
+                    router.push(`/(main)/(newsfeed)/user/${friend.userId}`);
+                  }}
+                  className="min-w-0 flex-1 flex-row items-center justify-center gap-2 rounded-2xl bg-muted px-4 py-3"
+                >
+                  <Eye size={18} color={muted} />
+                  <Text className="font-bold text-foreground">Xem hồ sơ</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    const friend = selectedFriend;
+                    setSelectedFriend(null);
+                    void openFriendChat(friend);
+                  }}
+                  className="min-w-0 flex-1 flex-row items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3"
+                >
+                  <MessageCircle size={18} color="#fff" />
+                  <Text className="font-bold text-primary-foreground">Nhắn tin</Text>
+                </Pressable>
+              </View>
             </Pressable>
           ) : null}
         </Pressable>

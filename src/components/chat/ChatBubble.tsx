@@ -94,6 +94,9 @@ import {
 
 import { GroupJoinLinkCard } from "./GroupJoinLinkCard";
 import type { PollVoteModalPoll } from "./PollVoteModal";
+import { VoiceMessagePlayer } from "./VoiceMessagePlayer";
+import { router } from "expo-router";
+import { parseMentionTokens } from "@/utils/mentionHelper";
 
 const CHAT_URL_REGEX = /((?:https?:\/\/|www\.)[^\s<>"']+)/gi;
 const TRAILING_URL_PUNCTUATION_REGEX = /[),.!?;:]+$/;
@@ -109,15 +112,13 @@ function hrefFromChatUrl(raw: string): string {
   return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
 }
 
-function LinkifiedChatText({
+function LinkifiedChatTextInline({
   text,
-  className,
   linkClassName,
 }: {
   text: string;
-  className: string;
   linkClassName: string;
-}): ReactElement {
+}): ReactNode {
   const nodes: ReactNode[] = [];
   let cursor = 0;
   let match: RegExpExecArray | null;
@@ -149,7 +150,96 @@ function LinkifiedChatText({
   }
 
   if (cursor < text.length) nodes.push(text.slice(cursor));
-  return <Text className={className}>{nodes.length > 0 ? nodes : text}</Text>;
+  return <>{nodes.length > 0 ? nodes : text}</>;
+}
+
+function LinkifiedChatText({
+  text,
+  className,
+  linkClassName,
+}: {
+  text: string;
+  className: string;
+  linkClassName: string;
+}): ReactElement {
+  return (
+    <Text className={className}>
+      <LinkifiedChatTextInline text={text} linkClassName={linkClassName} />
+    </Text>
+  );
+}
+
+function MentionifiedChatText({
+  text,
+  className,
+  linkClassName,
+  isOwn,
+  isVisualMedia,
+  style,
+}: {
+  text: string;
+  className?: string;
+  linkClassName?: string;
+  isOwn: boolean;
+  isVisualMedia: boolean;
+  style?: any;
+}): ReactElement {
+  const tokens = parseMentionTokens(text);
+
+  if (tokens.length === 0) {
+    return <Text className={className} style={style} />;
+  }
+
+  return (
+    <Text className={className} style={style}>
+      {tokens.map((token, index) => {
+        if (token.type === "text") {
+          return (
+            <LinkifiedChatTextInline
+              key={index}
+              text={token.value}
+              linkClassName={linkClassName ?? ""}
+            />
+          );
+        }
+        if (token.userId === "all") {
+          return (
+            <Text
+              key={index}
+              style={{
+                fontWeight: "bold",
+                color: isOwn && !isVisualMedia ? "#fed7aa" : "#ea580c",
+                backgroundColor:
+                  isOwn && !isVisualMedia ? "rgba(255,255,255,0.2)" : "rgba(249,115,22,0.1)",
+                paddingHorizontal: 4,
+                borderRadius: 2,
+              }}
+            >
+              @{token.value}
+            </Text>
+          );
+        }
+        return (
+          <Text
+            key={index}
+            style={{
+              fontWeight: "bold",
+              textDecorationLine: "underline",
+              color: isOwn && !isVisualMedia ? "#dbeafe" : "#0284c7",
+            }}
+            onPress={(event) => {
+              event.stopPropagation?.();
+              if (token.userId) {
+                router.push(`/(main)/(newsfeed)/user/${token.userId}`);
+              }
+            }}
+          >
+            @{token.value}
+          </Text>
+        );
+      })}
+    </Text>
+  );
 }
 
 /** Dữ liệu nhóm để card giao việc / nút bình chọn (chỉ khi `isGroup`). */
@@ -1366,17 +1456,20 @@ export const ChatBubble = ({
             onDownload={() => void handleDownloadFile()}
             onFolderHint={openDownloadsFolderHint}
             renderCaption={(text) => (
-              <Text
+              <MentionifiedChatText
+                text={text}
+                isOwn={isOwn}
+                isVisualMedia={true}
                 style={{
                   color: isDark ? "#E4E6EB" : "#1C1E21",
                   fontSize: 13,
                   lineHeight: 18,
                 }}
-              >
-                {text}
-              </Text>
+              />
             )}
           />
+        ) : message.type === "voice" && !isDeleted && !isRecalled ? (
+          <VoiceMessagePlayer message={message} isOwn={isOwn} onShowActions={openActionSheet} />
         ) : (
           <Pressable
             onLongPress={openActionSheet}
@@ -1481,15 +1574,16 @@ export const ChatBubble = ({
                       <View
                         style={chatMediaCaptionStyle(isOwn, isDark, mediaLayout.visualMaxWidth)}
                       >
-                        <Text
+                        <MentionifiedChatText
+                          text={captionPlainText}
+                          isOwn={isOwn}
+                          isVisualMedia={true}
                           style={{
                             color: isDark ? "#E4E6EB" : "#1C1E21",
                             fontSize: 13,
                             lineHeight: 18,
                           }}
-                        >
-                          {captionPlainText}
-                        </Text>
+                        />
                       </View>
                     ) : null}
 
@@ -1581,10 +1675,12 @@ export const ChatBubble = ({
                       !hasVideo &&
                       !hasFile && (
                         <View className={isVisualMedia || hasFile ? "px-3 py-2" : ""}>
-                          <LinkifiedChatText
+                          <MentionifiedChatText
                             text={captionPlainText}
                             className={`text-[15px] leading-[22px] ${isOwn && !isVisualMedia ? "text-white" : "text-foreground"}`}
                             linkClassName={`font-bold underline ${isOwn && !isVisualMedia ? "text-white" : "text-primary"}`}
+                            isOwn={isOwn}
+                            isVisualMedia={isVisualMedia}
                           />
                         </View>
                       )}

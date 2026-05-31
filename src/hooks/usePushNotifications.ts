@@ -1,18 +1,14 @@
 import * as Notifications from "expo-notifications";
 import { useEffect, useRef } from "react";
 import { AppState, Platform } from "react-native";
-import { router } from "expo-router";
+import { getApp, getApps } from "@react-native-firebase/app";
+import { getMessaging } from "@react-native-firebase/messaging";
 
 import { useAppSelector } from "@/hooks/useAppStore";
 import {
   useRegisterDeviceTokenMutation,
   useRemoveDeviceTokenMutation,
 } from "@/store/api/notificationApi";
-import { navigateFromNotification } from "@/utils/notificationNavigation";
-import {
-  handleNotificationResponseAction,
-  notificationRouteDataFromResponse,
-} from "@/utils/notificationResponseActions";
 import {
   clearPushTokenRegistered,
   ensureNotificationCategories,
@@ -22,6 +18,12 @@ import {
 import { ensureExpoNotificationHandlerInstalled } from "@/utils/notificationExpoHandler";
 import { requestNotificationPermissionAsync } from "@/utils/notificationPermission";
 import { isRemotePushSupported } from "@/utils/pushNotificationsSupport";
+import { getStablePushDeviceId } from "@/utils/pushDeviceId";
+import { getNativeFirebaseAppsDebugInfo } from "@/utils/firebaseNativeApps";
+import {
+  getNativeFcmTokenFallbackAsync,
+  getNativeMessagingDebugInfo,
+} from "@/utils/nativeFcmToken";
 
 console.log("[PushToken] usePushNotifications.ts module loaded globally!");
 
@@ -67,6 +69,40 @@ async function registerForPushNotificationsAsync(): Promise<string | null> {
   }
 }
 
+async function getNativeFcmTokenAsync(): Promise<string | null> {
+  if (Platform.OS !== "android" || !isRemotePushSupported()) return null;
+
+  console.log(
+    `[PushToken] RNFirebase native apps before lookup: ${getNativeFirebaseAppsDebugInfo()}`,
+  );
+  console.log(`[PushToken] Native messaging modules: ${getNativeMessagingDebugInfo()}`);
+
+  try {
+    const firebaseApp = getApp();
+    console.log(
+      `[PushToken] RNFirebase default app resolved: ${firebaseApp.name}; JS apps=${getApps().length}`,
+    );
+    await getMessaging().registerDeviceForRemoteMessages();
+    return await getMessaging().getToken();
+  } catch (error) {
+    const errorDetails =
+      error && typeof error === "object" && "code" in error
+        ? `${String((error as { code?: unknown }).code)}: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        : error instanceof Error
+          ? error.message
+          : String(error);
+    console.warn(
+      "[PushToken] Native FCM token registration failed:",
+      errorDetails,
+      `Native apps: ${getNativeFirebaseAppsDebugInfo()}`,
+      `Messaging modules: ${getNativeMessagingDebugInfo()}`,
+    );
+    return getNativeFcmTokenFallbackAsync();
+  }
+}
+
 /**
  * Đăng ký push token + listener tap notification.
  * Trên Expo Go: no-op (in-app socket vẫn hoạt động).
@@ -76,7 +112,7 @@ export function usePushNotifications(): void {
   const isAuthenticated = useAppSelector((state) => Boolean(state.auth.accessToken));
   const [registerToken] = useRegisterDeviceTokenMutation();
   const [removeToken] = useRemoveDeviceTokenMutation();
-  const registeredTokenRef = useRef<string | null>(null);
+  const registeredTokensRef = useRef<string[]>([]);
 
   useEffect(() => {
     const isSupported = isRemotePushSupported();
@@ -101,24 +137,47 @@ export function usePushNotifications(): void {
       void (async () => {
         try {
           console.log("[PushToken] Requesting device token from Expo...");
-          const token = await registerForPushNotificationsAsync();
-          console.log(`[PushToken] Expo push token retrieved: ${token}`);
+          const [deviceId, expoToken, fcmToken] = await Promise.all([
+            getStablePushDeviceId(),
+            registerForPushNotificationsAsync(),
+            getNativeFcmTokenAsync(),
+          ]);
+          console.log(`[PushToken] Expo push token retrieved: ${expoToken}`);
+          console.log(`[PushToken] Native FCM token retrieved: ${fcmToken ? "[present]" : "null"}`);
           if (cancelled) {
             console.log("[PushToken] Registration cancelled due to unmount.");
             return;
           }
-          if (!token) {
+          if (!expoToken && !fcmToken) {
             console.log("[PushToken] No token retrieved — fallback banner local từ socket.");
             clearPushTokenRegistered();
             return;
           }
-          registeredTokenRef.current = token;
           const platform =
             Platform.OS === "ios" ? "ios" : Platform.OS === "android" ? "android" : "web";
           try {
             console.log(`[PushToken] Sending token to backend for user. Platform: ${platform}`);
-            await registerToken({ token, platform }).unwrap();
-            markPushTokenRegistered();
+            const registered: string[] = [];
+            if (expoToken) {
+              await registerToken({
+                token: expoToken,
+                platform,
+                provider: "expo",
+                deviceId,
+              }).unwrap();
+              registered.push(expoToken);
+            }
+            if (fcmToken && platform === "android") {
+              await registerToken({
+                token: fcmToken,
+                platform,
+                provider: "fcm",
+                deviceId,
+              }).unwrap();
+              registered.push(fcmToken);
+            }
+            registeredTokensRef.current = registered;
+            if (expoToken) markPushTokenRegistered();
             console.log("[PushToken] Token registered successfully on backend!");
           } catch (err) {
             clearPushTokenRegistered();
@@ -138,12 +197,20 @@ export function usePushNotifications(): void {
     return () => {
       cancelled = true;
       appStateSub.remove();
-      clearPushTokenRegistered();
-      const token = registeredTokenRef.current;
-      if (token) {
-        console.log("[PushToken] Cleaning up and removing token from backend...");
-        void removeToken({ token }).catch(() => undefined);
-        registeredTokenRef.current = null;
+
+      // ONLY remove token from backend and local storage if the user explicitly logs out (isAuthenticated becomes false)
+      if (!isAuthenticated) {
+        clearPushTokenRegistered();
+        const tokens = registeredTokensRef.current;
+        if (tokens.length > 0) {
+          console.log(
+            "[PushToken] User logged out. Cleaning up and removing token from backend...",
+          );
+          tokens.forEach((token) => {
+            void removeToken({ token }).catch(() => undefined);
+          });
+          registeredTokensRef.current = [];
+        }
       }
     };
   }, [isAuthenticated, registerToken, removeToken]);
@@ -151,7 +218,6 @@ export function usePushNotifications(): void {
   useEffect(() => {
     if (!isRemotePushSupported()) return;
 
-    let cancelled = false;
     ensureExpoNotificationHandlerInstalled();
 
     const subReceived = Notifications.addNotificationReceivedListener((notification) => {
@@ -161,39 +227,8 @@ export function usePushNotifications(): void {
       }
     });
 
-    const subResponse = Notifications.addNotificationResponseReceivedListener((response) => {
-      void (async () => {
-        try {
-          if (await handleNotificationResponseAction(response)) return;
-        } catch {
-          /* fallback to opening route */
-        }
-        const data = notificationRouteDataFromResponse(response);
-        if (data) navigateFromNotification(data);
-        else router.push("/(main)/(notifications)");
-      })();
-    });
-
-    void (async () => {
-      try {
-        const response = await Notifications.getLastNotificationResponseAsync();
-        if (cancelled || !response) return;
-        try {
-          if (await handleNotificationResponseAction(response)) return;
-        } catch {
-          /* fallback to opening route */
-        }
-        const data = notificationRouteDataFromResponse(response);
-        if (data) navigateFromNotification(data);
-      } catch {
-        /* ignore */
-      }
-    })();
-
     return () => {
-      cancelled = true;
       subReceived.remove();
-      subResponse.remove();
     };
   }, []);
 }

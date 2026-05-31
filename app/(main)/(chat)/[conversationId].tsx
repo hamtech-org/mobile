@@ -263,6 +263,7 @@ export default function ChatDetailScreen() {
   const {
     sendMessage,
     sendMediaMessage,
+    sendVoiceMessage,
     sendReplyMessage,
     recallMessage,
     deleteMessage,
@@ -755,19 +756,19 @@ export default function ChatDetailScreen() {
   );
 
   const handleSendMessage = useCallback(
-    (content: string) => {
+    (content: string, mentions?: string[]) => {
       if (!conversationId) return;
       if (!canSendInGroup) return;
 
       const reply = replyingTo;
       if (reply) {
         dispatch(clearReplyingTo());
-        void sendReplyMessage(conversationId, content, reply).catch((err) => {
+        void sendReplyMessage(conversationId, content, reply, mentions).catch((err) => {
           console.error("sendReplyMessage:", err);
           toast.error(messageSendErrorText(err));
         });
       } else {
-        void sendMessage(conversationId, content).catch((err) => {
+        void sendMessage(conversationId, content, mentions).catch((err) => {
           console.error("sendMessage:", err);
           toast.error(messageSendErrorText(err));
         });
@@ -891,6 +892,86 @@ export default function ChatDetailScreen() {
       canSendInGroup,
       uploadMediaMulti,
       sendMediaMessage,
+      replyingTo,
+      dispatch,
+      currentUserId,
+    ],
+  );
+
+  const handleSendVoice = useCallback(
+    async (uri: string, duration: number) => {
+      if (!conversationId) {
+        toast.error("Không tìm thấy hội thoại.");
+        throw new Error("no_conversation");
+      }
+      if (!canSendInGroup) {
+        toast.error("Bạn không có quyền gửi tin trong nhóm này.");
+        throw new Error("no_permission");
+      }
+
+      const replySnapshot = replyingTo;
+      if (replySnapshot) {
+        dispatch(clearReplyingTo());
+      }
+
+      const replyToId =
+        replySnapshot?.messageId && !replySnapshot.messageId.startsWith("optimistic-")
+          ? replySnapshot.messageId
+          : undefined;
+
+      const clientReplyToDetails = replySnapshot
+        ? {
+            messageId: replySnapshot.messageId,
+            senderId: replySnapshot.senderId,
+            senderDisplayName: replySnapshot.senderDisplayName ?? null,
+            content: formatChatPreviewLine(replySnapshot, currentUserId ?? ""),
+            type: replySnapshot.type,
+          }
+        : undefined;
+
+      try {
+        const filename = uri.split("/").pop() || `voice-${Date.now()}.m4a`;
+        const match = /\.(\w+)$/.exec(filename);
+        const mimeType = match ? `audio/${match[1]}` : `audio/m4a`;
+
+        const prepared = await prepareLocalFileForUpload({
+          uri,
+          name: filename,
+          mimeType,
+        });
+
+        const uploadResults = await uploadMediaMulti({
+          files: [
+            {
+              uri: prepared.uri,
+              name: prepared.name,
+              type: prepared.type,
+            },
+          ],
+        }).unwrap();
+
+        const result = uploadResults?.[0];
+        if (!result?.mediaId) {
+          throw new Error("upload_missing_media_id");
+        }
+
+        await sendVoiceMessage(conversationId, result.mediaId, duration, replyToId, {
+          optimisticLocalUri: prepared.uri,
+          clientReplyToDetails,
+        });
+
+        listRef.current?.scrollToOffset({ offset: 0, animated: true });
+      } catch (err) {
+        console.error("Gửi tin nhắn thoại thất bại:", err);
+        toast.error("Gửi tin nhắn thoại thất bại. Vui lòng thử lại.");
+        throw err;
+      }
+    },
+    [
+      conversationId,
+      canSendInGroup,
+      uploadMediaMulti,
+      sendVoiceMessage,
       replyingTo,
       dispatch,
       currentUserId,
@@ -1302,6 +1383,7 @@ export default function ChatDetailScreen() {
             <ChatInput
               onSend={handleSendMessage}
               onSendMedia={handleSendMedia}
+              onSendVoice={handleSendVoice}
               replyingTo={replyingTo}
               currentUserId={currentUserId ?? ""}
               activeConversationId={conversationId ?? null}
@@ -1309,6 +1391,7 @@ export default function ChatDetailScreen() {
               onClearReply={() => dispatch(clearReplyingTo())}
               onTyping={handleTyping}
               isGroup={isGroup}
+              groupMembers={isGroup ? groupMembersForPerm : undefined}
               onOpenPoll={
                 isGroup && canCreatePollInGroup
                   ? () => setGroupPollModalOpen(true)

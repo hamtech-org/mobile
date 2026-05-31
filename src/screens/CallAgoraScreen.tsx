@@ -56,12 +56,15 @@ import {
   resetCall,
   setCameraAvailability,
   setCameraEnabled,
+  setCallAccepted,
   setCallConnected,
   setCallEnded,
   setEndReason,
+  setIncomingCall,
   setMicAvailability,
   setMicEnabled,
   setReceiveOnly,
+  setReturnTo,
   setScreenSharing,
 } from "@/store/slices/callSlice";
 import type { AppDispatch, RootState } from "@/store/store";
@@ -192,9 +195,13 @@ export default function CallAgoraScreen() {
     channel?: string;
     type?: string;
     conversationId?: string;
+    callerId?: string;
+    callerName?: string;
+    action?: string;
     returnTo?: string;
     scope?: string;
     hostId?: string;
+    sessionId?: string;
   }>();
   const dispatch = useDispatch<AppDispatch>();
   const socket = useSocketContext();
@@ -205,9 +212,13 @@ export default function CallAgoraScreen() {
   const channelName = paramOne(params.channel);
   const urlCallType = paramOne(params.type) as "audio" | "video" | "";
   const conversationIdParam = paramOne(params.conversationId);
+  const callerIdParam = paramOne(params.callerId);
+  const callerNameParam = paramOne(params.callerName);
+  const actionParam = paramOne(params.action);
   const returnToParam = paramOne(params.returnTo);
   const scopeParam = paramOne(params.scope);
   const hostIdParam = paramOne(params.hostId);
+  const sessionIdParam = paramOne(params.sessionId);
 
   const {
     endCall,
@@ -237,6 +248,7 @@ export default function CallAgoraScreen() {
     upgradeStatus,
     returnTo,
     conversationId,
+    sessionId,
     calleeId,
     endReason,
   } = useSelector((state: RootState) => state.call);
@@ -295,10 +307,83 @@ export default function CallAgoraScreen() {
   const goBack = useCallback(() => {
     router.replace(resolvedReturnTo as never);
   }, [resolvedReturnTo]);
+  const answerParamSeededChannelRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (actionParam !== "answer") return;
+    if (!channelName || !resolvedConversationId || !callerIdParam) {
+      if (__DEV__) {
+        console.log("[CallAgora] answer param seed skipped: missing params", {
+          channelName,
+          resolvedConversationId,
+          callerIdParam,
+        });
+      }
+      return;
+    }
+    if (answerParamSeededChannelRef.current === channelName) {
+      if (__DEV__) {
+        console.log("[CallAgora] answer param seed skipped: duplicate channel", {
+          channelName,
+          status,
+        });
+      }
+      return;
+    }
+    if (status !== "idle") {
+      if (status === "ended") {
+        answerParamSeededChannelRef.current = channelName;
+      }
+      if (__DEV__) {
+        console.log("[CallAgora] answer param seed skipped: non-idle status", {
+          channelName,
+          status,
+        });
+      }
+      return;
+    }
+
+    answerParamSeededChannelRef.current = channelName;
+    if (__DEV__) {
+      console.log("[CallAgora] answer param seed used", {
+        channelName,
+        callerId: callerIdParam,
+        callType: urlCallType || "audio",
+      });
+    }
+    dispatch(setReturnTo(resolvedReturnTo));
+    dispatch(
+      setIncomingCall({
+        channelName,
+        conversationId: resolvedConversationId,
+        callerId: callerIdParam,
+        callerName: callerNameParam || "Cuộc gọi đến",
+        type: (urlCallType || "audio") as "audio" | "video",
+        scope: isGroup ? "group" : "direct",
+        hostId: hostIdResolved || callerIdParam,
+        ...(sessionIdParam ? { sessionId: sessionIdParam } : {}),
+      }),
+    );
+    dispatch(setCallAccepted());
+  }, [
+    actionParam,
+    callerIdParam,
+    callerNameParam,
+    channelName,
+    dispatch,
+    hostIdResolved,
+    isGroup,
+    resolvedConversationId,
+    resolvedReturnTo,
+    status,
+    sessionIdParam,
+    urlCallType,
+  ]);
 
   const registeredHandlerRef = useRef<IRtcEngineEventHandler | null>(null);
   const ringbackRef = useRef<Audio.Sound | null>(null);
   const rtcJoinedRef = useRef(false);
+  const endNavigationStartedRef = useRef(false);
   const isMicOnRef = useRef(isMicOn);
   isMicOnRef.current = isMicOn;
   const isCameraOnRef = useRef(isCameraOn);
@@ -442,6 +527,7 @@ export default function CallAgoraScreen() {
               channelName,
               peerId: directPeerId,
               conversationId: resolvedConversationId,
+              sessionId: sessionId || sessionIdParam || undefined,
               type,
               durationSec: 0,
               result: "cancelled",
@@ -451,6 +537,7 @@ export default function CallAgoraScreen() {
           socketRef.current?.emit("call:group-missed", {
             channelName,
             conversationId: resolvedConversationId,
+            sessionId: sessionId || sessionIdParam || undefined,
             type,
           });
         }
@@ -470,6 +557,8 @@ export default function CallAgoraScreen() {
       isGroup,
       isHost,
       resolvedConversationId,
+      sessionId,
+      sessionIdParam,
       shutdownRtc,
       status,
       urlCallType,
@@ -889,6 +978,7 @@ export default function CallAgoraScreen() {
   useEffect(() => {
     deviceAlertShownRef.current = false;
     lastDeviceAlertMessageRef.current = null;
+    endNavigationStartedRef.current = false;
   }, [channelName]);
 
   useEffect(() => {
@@ -912,16 +1002,17 @@ export default function CallAgoraScreen() {
 
   useEffect(() => {
     if (status !== "ended") return;
+    if (endNavigationStartedRef.current) return;
+    endNavigationStartedRef.current = true;
     shutdownRtc();
-    if (endReason) {
-      const t = setTimeout(() => {
+    const t = setTimeout(
+      () => {
         dispatch(resetCall());
         goBack();
-      }, 2200);
-      return () => clearTimeout(t);
-    }
-    dispatch(resetCall());
-    goBack();
+      },
+      endReason ? 2200 : 400,
+    );
+    return () => clearTimeout(t);
   }, [dispatch, endReason, goBack, shutdownRtc, status]);
 
   useEffect(() => {
@@ -935,6 +1026,7 @@ export default function CallAgoraScreen() {
           socketRef.current?.emit("call:group-missed", {
             channelName,
             conversationId: resolvedConversationId,
+            sessionId: sessionId || sessionIdParam || undefined,
             type,
           });
         } else if (calleeId) {
@@ -942,6 +1034,7 @@ export default function CallAgoraScreen() {
             channelName,
             peerId: calleeId,
             conversationId: resolvedConversationId,
+            sessionId: sessionId || sessionIdParam || undefined,
             type,
           });
         }
@@ -949,7 +1042,17 @@ export default function CallAgoraScreen() {
       dispatch(setCallEnded());
     }, timeoutMs);
     return () => clearTimeout(t);
-  }, [calleeId, callType, channelName, dispatch, resolvedConversationId, status, urlCallType]);
+  }, [
+    calleeId,
+    callType,
+    channelName,
+    dispatch,
+    resolvedConversationId,
+    sessionId,
+    sessionIdParam,
+    status,
+    urlCallType,
+  ]);
 
   useEffect(() => {
     const shouldPlay = status === "outgoing-ringing";
@@ -1010,29 +1113,17 @@ export default function CallAgoraScreen() {
       result: status === "outgoing-ringing" ? "cancelled" : "completed",
     });
     shutdownRtc();
-    setTimeout(() => {
-      dispatch(resetCall());
-      goBack();
-    }, 400);
-  }, [dispatch, endCall, goBack, shutdownRtc, status, timer]);
+  }, [endCall, shutdownRtc, status, timer]);
 
   const handleGroupLeave = useCallback(() => {
     leaveGroupCall();
     shutdownRtc();
-    setTimeout(() => {
-      dispatch(resetCall());
-      goBack();
-    }, 400);
-  }, [dispatch, goBack, leaveGroupCall, shutdownRtc]);
+  }, [leaveGroupCall, shutdownRtc]);
 
   const handleGroupEndAll = useCallback(() => {
     endGroupCallForAll({ durationSec: timer });
     shutdownRtc();
-    setTimeout(() => {
-      dispatch(resetCall());
-      goBack();
-    }, 400);
-  }, [dispatch, endGroupCallForAll, goBack, shutdownRtc, timer]);
+  }, [endGroupCallForAll, shutdownRtc, timer]);
 
   const onOpenPinMenu = useCallback(
     (uid: number) => {

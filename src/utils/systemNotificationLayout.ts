@@ -74,7 +74,14 @@ export function buildCallNotificationLayout(
   const scope = payload.scope === "group" ? "group" : "direct";
   const isGroup = scope === "group";
   const caller = sanitizeNotificationText(payload.callerName ?? "", "Ai đó");
-  const body = sanitizeNotificationText(callBody(payload.type, isGroup, caller), "Đang gọi đến");
+  const customBody =
+    typeof (payload as IncomingCallData & { pushBody?: unknown }).pushBody === "string"
+      ? String((payload as IncomingCallData & { pushBody?: string }).pushBody).trim()
+      : "";
+  const body = sanitizeNotificationText(
+    customBody || callBody(payload.type, isGroup, caller),
+    "Đang gọi đến",
+  );
   const notificationId = `call-${payload.channelName}`;
 
   if (isGroup) {

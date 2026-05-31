@@ -1,6 +1,8 @@
 import type { IMessage, MessageType } from "@/types/chat.types";
+import { formatCallMessagePreview } from "@/utils/callMessagePreview";
 import { tryParseGroupJoinLinkMessage } from "@/utils/groupJoinLinkMessage";
 import { formatSystemLastMessagePreview, preprocessSystemPlainText } from "@/utils/systemMessage";
+import { stripMentionMarkdown } from "@/utils/mentionHelper";
 
 /** Nhãn ngắn cho reply preview / placeholder theo loại tin. */
 export function getMessageTypeLabel(type: MessageType | string | undefined): string {
@@ -71,6 +73,7 @@ export function formatChatPreviewLine(
 ): string {
   if (msg.isRecalled) return "Tin nhắn đã được thu hồi";
   const raw = (msg.content ?? "").trim();
+  if (msg.type === "call") return truncatePreview(formatCallMessagePreview(raw), PREVIEW_MAX);
   if (msg.type === "system") {
     const sys = formatSystemLastMessagePreview(
       raw,
@@ -106,7 +109,7 @@ export function formatChatPreviewLine(
     return "Thông báo nhóm";
   }
   if (!raw) return getMessageTypeLabel(msg.type) || "Tin nhắn";
-  return truncatePreview(raw, PREVIEW_MAX);
+  return truncatePreview(stripMentionMarkdown(raw), PREVIEW_MAX);
 }
 
 export function truncatePreview(text: string, max: number): string {

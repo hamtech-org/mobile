@@ -74,11 +74,12 @@ export const useChat = () => {
 
   // ── Gửi tin nhắn text ──────────────────────────────────────────────
   const sendMessage = useCallback(
-    async (conversationId: string, content: string): Promise<void> => {
+    async (conversationId: string, content: string, mentions?: string[]): Promise<void> => {
       await sendMessageMutation({
         conversationId,
         type: "text",
         content,
+        mentions,
       }).unwrap();
     },
     [sendMessageMutation],
@@ -116,9 +117,40 @@ export const useChat = () => {
     [sendMessageMutation],
   );
 
+  // ── Gửi tin nhắn thoại (Voice Message) ────────────────────────
+  const sendVoiceMessage = useCallback(
+    async (
+      conversationId: string,
+      mediaId: string,
+      duration: number,
+      replyTo?: string,
+      options?: {
+        optimisticLocalUri?: string;
+        clientReplyToDetails?: IReplyToDetails | null;
+      },
+    ): Promise<void> => {
+      await sendMessageMutation({
+        conversationId,
+        type: "voice",
+        content: "[Tin nhắn thoại]",
+        mediaId,
+        replyTo,
+        duration,
+        optimisticLocalUri: options?.optimisticLocalUri,
+        clientReplyToDetails: options?.clientReplyToDetails,
+      }).unwrap();
+    },
+    [sendMessageMutation],
+  );
+
   // ── Gửi tin nhắn với reply ─────────────────────────────────────────
   const sendReplyMessage = useCallback(
-    async (conversationId: string, content: string, replyToMessage: IMessage): Promise<void> => {
+    async (
+      conversationId: string,
+      content: string,
+      replyToMessage: IMessage,
+      mentions?: string[],
+    ): Promise<void> => {
       const clientReplyToDetails: IReplyToDetails = {
         messageId: replyToMessage.messageId,
         senderId: replyToMessage.senderId,
@@ -132,6 +164,7 @@ export const useChat = () => {
         content,
         replyTo: replyToMessage.messageId,
         clientReplyToDetails,
+        mentions,
       }).unwrap();
     },
     [sendMessageMutation, currentUserId],
@@ -257,6 +290,7 @@ export const useChat = () => {
   return {
     sendMessage,
     sendMediaMessage,
+    sendVoiceMessage,
     sendReplyMessage,
     editMessage,
     recallMessage,

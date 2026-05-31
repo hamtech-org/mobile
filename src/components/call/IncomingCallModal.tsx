@@ -1,11 +1,12 @@
-import { useEffect, useRef } from "react";
-import { Modal, Pressable, Text, Vibration, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { AppState, Modal, Pressable, Text, Vibration, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Phone, PhoneOff, Video } from "lucide-react-native";
 import { useSelector } from "react-redux";
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from "expo-audio";
 
 import type { RootState } from "@/store/store";
+import { dismissCallSystemNotification } from "@/utils/localSystemNotification";
 
 interface Props {
   acceptCall: () => void;
@@ -13,14 +14,36 @@ interface Props {
 }
 
 export function IncomingCallModal({ acceptCall, rejectCall }: Props) {
-  const { status, callType, callerName, callerId, callScope } = useSelector(
+  const { status, callType, callerName, callerId, callScope, channelName } = useSelector(
     (state: RootState) => state.call,
   );
   const insets = useSafeAreaInsets();
   const patternRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const playerRef = useRef<AudioPlayer | null>(null);
 
+  const [appState, setAppState] = useState(AppState.currentState);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (nextState) => {
+      setAppState(nextState);
+    });
+    return () => {
+      sub.remove();
+    };
+  }, []);
+
   const isVisible = status === "incoming-ringing";
+
+  useEffect(() => {
+    if (!__DEV__) return;
+    console.log("[IncomingCallModal] visibility state", {
+      isVisible,
+      status,
+      callerName,
+      callerId,
+      channelName,
+    });
+  }, [isVisible, status, callerName, callerId, channelName]);
 
   useEffect(() => {
     if (!isVisible) {
@@ -36,6 +59,27 @@ export function IncomingCallModal({ acceptCall, rejectCall }: Props) {
       }
       return;
     }
+
+    if (appState !== "active") {
+      // App is in background/inactive, stop any in-app sound/vibration immediately
+      if (patternRef.current) {
+        clearInterval(patternRef.current);
+        patternRef.current = null;
+      }
+      Vibration.cancel();
+      if (playerRef.current) {
+        playerRef.current.pause();
+        playerRef.current.remove();
+        playerRef.current = null;
+      }
+      return;
+    }
+
+    // App is active (foreground)
+    if (channelName) {
+      void dismissCallSystemNotification(channelName);
+    }
+
     const buzz = () => {
       Vibration.vibrate([0, 400, 200, 400], false);
     };
@@ -45,6 +89,10 @@ export function IncomingCallModal({ acceptCall, rejectCall }: Props) {
     // Chuông: nếu project có asset `mobile/assets/ringtones/amThanhNhan.mp3` thì phát loop.
     // Nếu không có file (chưa add vào repo), app vẫn rung như cũ.
     const startRingtone = async () => {
+      // Delay playing in-app ringtone by 1000ms to let system notification dismiss and silence completely
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      if (appState !== "active" || !isVisible || playerRef.current) return;
+
       try {
         await setAudioModeAsync({
           playsInSilentMode: true,
@@ -74,7 +122,7 @@ export function IncomingCallModal({ acceptCall, rejectCall }: Props) {
         playerRef.current = null;
       }
     };
-  }, [isVisible]);
+  }, [isVisible, appState, channelName]);
 
   const label = callerName || callerId || "?";
   const initial = label.charAt(0).toUpperCase();

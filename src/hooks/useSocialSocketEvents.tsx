@@ -34,7 +34,7 @@ export function useSocialSocketEvents(): ReactNode {
 
   const openProfileTab = () => {
     closeNewDeviceModal();
-    router.push("/(main)/(profile)");
+    router.replace("/(main)/(profile)");
   };
 
   useEffect(() => {

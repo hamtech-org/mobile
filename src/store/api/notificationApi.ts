@@ -49,7 +49,12 @@ export const notificationApi = createApi({
     }),
     registerDeviceToken: builder.mutation<
       void,
-      { token: string; platform: "ios" | "android" | "web" }
+      {
+        token: string;
+        platform: "ios" | "android" | "web";
+        provider?: "expo" | "fcm";
+        deviceId?: string;
+      }
     >({
       query: (body) => ({
         url: "/notifications/device-tokens",

@@ -17,6 +17,7 @@ import {
   buildMessageNotificationLayout,
   type ChatNotificationScope,
 } from "@/utils/systemNotificationLayout";
+import { stripMentionMarkdown } from "@/utils/mentionHelper";
 
 export interface ChatMessageNotificationOptions {
   avatarUrl?: string | null;
@@ -98,10 +99,11 @@ function presentConversationStackNotification(
   const cid = conversationId.trim();
   if (!cid) return;
 
+  const cleanLineText = stripMentionMarkdown(lineText);
   const { isGroup, groupName, chatScope } = resolveConversationMeta(cid, options);
   const sender = options?.senderName?.trim() || "Tin nhắn mới";
   /** Nhóm: prefix hiển thị qua senderName; 1:1 chỉ nội dung tin. */
-  const stackLine = lineText;
+  const stackLine = cleanLineText;
 
   const dedupeKey = options?.messageId?.trim() || options?.eventKey?.trim() || undefined;
   const snapshot = pushChatNotificationStack(cid, stackLine, {
@@ -169,10 +171,10 @@ export function presentChatNotificationFromRemotePush(content: {
   if (!conversationId) return false;
 
   const preview = String(
-    data.messagePreview ?? data.preview ?? content.body ?? "Bạn có tin nhắn mới",
+    data.pushBody ?? data.messagePreview ?? data.preview ?? content.body ?? "Bạn có tin nhắn mới",
   ).trim();
   const sender = String(
-    data.senderName ?? data.actorName ?? content.title ?? "Tin nhắn mới",
+    data.pushTitle ?? data.senderName ?? data.actorName ?? content.title ?? "Tin nhắn mới",
   ).trim();
   const isGroup =
     data.conversationType === "group" || data.chatScope === "group" || data.isGroup === true;
