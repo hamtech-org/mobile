@@ -1231,6 +1231,21 @@ export const ChatBubble = ({
   const showDateSeparator = dayChangedFromPrev && !(isGroup && isSystemCenter);
 
   if (isSystemCenter) {
+    const view = buildSystemBubbleView(message, {
+      isOwn,
+      currentUserId: viewerUserId ?? groupExtras?.currentUserId,
+      isGroupChat: Boolean(isGroup),
+    });
+
+    if (view.variant === "task_assigned_card") {
+      const isLocalCard = message.messageId.startsWith("local-task-card:");
+      const tid = String(view.taskId ?? "").trim();
+      const onBoard = (groupExtras?.groupTasks ?? []).some((x) => String(x.taskId ?? "") === tid);
+      if (isLocalCard && tid && !tid.startsWith("tmp-") && !onBoard) {
+        return null;
+      }
+    }
+
     return (
       <>
         {showDateSeparator && <DateSeparator date={message.createdAt} now={calendarNow} />}
