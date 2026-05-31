@@ -15,6 +15,7 @@ import {
   messageHiddenForMe,
   messagePinUpdated,
   messageReacted,
+  messageStatusUpdated,
   showChatFrameBanner,
   typingStarted,
   typingStopped,
@@ -30,7 +31,7 @@ import {
 import { normalizeGroupSettings } from "@/utils/normalizeGroupSettings";
 import { store, type AppDispatch } from "@/store/store";
 import type { ChatFrameBannerVariant } from "@/store/slices/chatSlice";
-import type { IConversation, IMessage, IMessagePage } from "@/types/chat.types";
+import type { IConversation, IMessage, IMessagePage, MessageStatus } from "@/types/chat.types";
 import { toast } from "@/utils/appToast";
 import { isSocketLocalNotificationEnabled } from "@/utils/localSystemNotification";
 import {
@@ -1284,9 +1285,98 @@ export function useChatRealtimeEvents({
       );
     };
 
+    const applyMessageStatusPatch = (
+      conversationId: string,
+      messageId: string,
+      status: MessageStatus,
+    ) => {
+      const currentUserId = store.getState().auth.user?.userId ?? "";
+
+      const patchSingleInCache = (cid: string, mid: string, st: MessageStatus) => {
+        dispatch(
+          (chatApi.util as any).updateQueryData(
+            "getMessages",
+            { conversationId: cid, limit: CHAT_MESSAGES_QUERY_LIMIT },
+            (draft: IMessage[]) => {
+              const m = draft.find((x) => String(x.messageId) === String(mid));
+              if (m) m.status = st;
+            },
+          ) as never,
+        );
+        dispatch(
+          (chatApi.util as any).updateQueryData(
+            "getMessagesPaginated",
+            { conversationId: cid },
+            (draft: IMessagePage) => {
+              if (draft && Array.isArray(draft.items)) {
+                const m = draft.items.find((x) => String(x.messageId) === String(mid));
+                if (m) m.status = st;
+              }
+            },
+          ) as never,
+        );
+      };
+
+      if (status !== "read") {
+        patchSingleInCache(conversationId, messageId, status);
+        dispatch(messageStatusUpdated({ conversationId, messageId, status }));
+        return;
+      }
+
+      const messagesMap = store.getState().chat.messages[conversationId] ?? [];
+      const pivot = messagesMap.find((m) => String(m.messageId) === String(messageId));
+      if (!pivot) {
+        patchSingleInCache(conversationId, messageId, "read");
+        dispatch(messageStatusUpdated({ conversationId, messageId, status: "read" }));
+        dispatch(chatApi.util.invalidateTags([{ type: "Messages", id: conversationId }]));
+        return;
+      }
+
+      const pivotMs = new Date(pivot.createdAt).getTime();
+      for (const m of messagesMap) {
+        if (m.senderId !== currentUserId) continue;
+        if (new Date(m.createdAt).getTime() > pivotMs) continue;
+        patchSingleInCache(conversationId, m.messageId, "read");
+        dispatch(
+          messageStatusUpdated({
+            conversationId,
+            messageId: m.messageId,
+            status: "read",
+          }),
+        );
+      }
+      dispatch(chatApi.util.invalidateTags([{ type: "Messages", id: conversationId }]));
+    };
+
+    const handleMessageStatus = (payload: {
+      conversationId: string;
+      messageId: string;
+      status: MessageStatus;
+    }) => {
+      if (!payload.conversationId || !payload.messageId || !payload.status) return;
+      applyMessageStatusPatch(payload.conversationId, payload.messageId, payload.status);
+    };
+
+    const handleConversationRead = (payload: { conversationId: string; messageId: string }) => {
+      if (!payload.conversationId) return;
+      dispatch(
+        conversationApi.util.updateQueryData(
+          "getConversations",
+          undefined,
+          (draft: IConversation[]) => {
+            if (!Array.isArray(draft)) return;
+            const conv = draft.find((c) => c.conversationId === payload.conversationId);
+            if (conv) conv.unreadCount = 0;
+          },
+        ) as never,
+      );
+    };
+
     socket.on("conversation:created", handleConversationCreated);
     socket.on("conversation:deleted_for_me", handleConversationDeletedForMe);
     socket.on("message:new", handleNewMessage);
+    socket.on("message:status", handleMessageStatus);
+    socket.on("conversation:read", handleConversationRead);
     socket.on("message:edited", handleEdited);
     socket.on("message:recalled", handleRecalled);
     socket.on("message:recall", handleRecalled);
@@ -1340,6 +1430,8 @@ export function useChatRealtimeEvents({
       socket.off("conversation:created", handleConversationCreated);
       socket.off("conversation:deleted_for_me", handleConversationDeletedForMe);
       socket.off("message:new", handleNewMessage);
+      socket.off("message:status", handleMessageStatus);
+      socket.off("conversation:read", handleConversationRead);
       socket.off("message:edited", handleEdited);
       socket.off("message:recalled", handleRecalled);
       socket.off("message:recall", handleRecalled);
