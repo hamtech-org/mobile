@@ -10,12 +10,12 @@ import { isCallLifecycleClosed } from "@/utils/callNotificationActions";
 function openChatConversation(conversationId: string): void {
   const id = conversationId.trim();
   if (!id) {
-    router.push("/(main)/(chat)" as Href);
+    router.replace("/(main)/(chat)" as Href);
     return;
   }
 
   clearConversationNotificationState(id);
-  router.push(`/(main)/(chat)/${id}` as Href);
+  router.replace(`/(main)/(chat)/${id}` as Href);
 }
 
 function pushCallRoute(data: INotification["data"]): void {
@@ -27,11 +27,11 @@ function pushCallRoute(data: INotification["data"]): void {
   const returnTo = String(data.returnTo ?? data.extra?.returnTo ?? "/(main)/(chat)").trim();
 
   if (!channel || !conversationId) {
-    router.push("/call" as Href);
+    router.replace("/call" as Href);
     return;
   }
 
-  router.push({
+  router.replace({
     pathname: "/call",
     params: {
       channel,
@@ -102,12 +102,12 @@ export function navigateFromNotification(data: INotification["data"]): void {
         const deepLink = typeof data.deepLink === "string" ? data.deepLink.trim() : "";
         if (deepLink) {
           if (deepLink.startsWith("/(main)")) {
-            router.push(deepLink as Href);
+            router.replace(deepLink as Href);
             return;
           }
           if (deepLink.startsWith("/communities/")) {
             const pathWithQuery = deepLink.replace(/^\/communities\//, "");
-            router.push(`/(main)/(communities)/${pathWithQuery}` as Href);
+            router.replace(`/(main)/(communities)/${pathWithQuery}` as Href);
             return;
           }
           if (deepLink.startsWith("/chat/")) {
@@ -116,17 +116,17 @@ export function navigateFromNotification(data: INotification["data"]): void {
             return;
           }
           if (deepLink.startsWith("/reels/")) {
-            router.push("/(main)/(reels)" as Href);
+            router.replace("/(main)/(reels)" as Href);
             return;
           }
           if (deepLink.startsWith("/live/")) {
             const id = deepLink.replace(/^\/live\//, "").split("/")[0];
-            if (id) router.push(`/(main)/(live)/${id}/watch` as Href);
-            else router.push("/(main)/(live)" as Href);
+            if (id) router.replace(`/(main)/(live)/${id}/watch` as Href);
+            else router.replace("/(main)/(live)" as Href);
             return;
           }
           if (deepLink === "/community") {
-            router.push("/(main)/(contacts)" as Href);
+            router.replace("/(main)/(contacts)" as Href);
             return;
           }
           if (deepLink.startsWith("/call")) {
@@ -150,29 +150,29 @@ export function navigateFromNotification(data: INotification["data"]): void {
             openChatConversation(entityId);
             return;
           case "post":
-            router.push("/(main)/(newsfeed)" as Href);
+            router.replace("/(main)/(newsfeed)" as Href);
             return;
           case "reel":
-            router.push("/(main)/(reels)" as Href);
+            router.replace("/(main)/(reels)" as Href);
             return;
           case "friends":
           case "friend":
-            router.push("/(main)/(contacts)" as Href);
+            router.replace("/(main)/(contacts)" as Href);
             return;
           case "profile":
           case "user":
-            router.push("/(main)/(profile)" as Href);
+            router.replace("/(main)/(profile)" as Href);
             return;
           case "live":
-            if (entityId) router.push(`/(main)/(live)/${entityId}/watch` as Href);
-            else router.push("/(main)/(live)" as Href);
+            if (entityId) router.replace(`/(main)/(live)/${entityId}/watch` as Href);
+            else router.replace("/(main)/(live)" as Href);
             return;
           case "call":
             pushCallRoute(data);
             return;
           case "community":
-            if (entityId) router.push(`/(main)/(communities)/${entityId}?joinChat=true` as Href);
-            else router.push("/(main)/(communities)" as Href);
+            if (entityId) router.replace(`/(main)/(communities)/${entityId}?joinChat=true` as Href);
+            else router.replace("/(main)/(communities)" as Href);
             return;
           default:
             if (entityId && data.route === "chat") {

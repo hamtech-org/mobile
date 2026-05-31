@@ -46,7 +46,7 @@ export const ReelsStrip = () => {
         {/* Create reel card */}
         <Pressable
           className="w-[126px] overflow-hidden rounded-2xl bg-card"
-          onPress={() => router.push("/(main)/(reels)")}
+          onPress={() => router.replace("/(main)/(reels)")}
         >
           <View className="h-[160px] items-center justify-center bg-muted/70">
             <View className="size-14 rounded-full bg-primary/20" />
@@ -63,7 +63,7 @@ export const ReelsStrip = () => {
           <Pressable
             key={reel.reelId}
             className="relative h-[200px] w-[126px] overflow-hidden rounded-2xl"
-            onPress={() => router.push("/(main)/(reels)")}
+            onPress={() => router.replace("/(main)/(reels)")}
           >
             {reel.thumbnailUrl ? (
               <Image
