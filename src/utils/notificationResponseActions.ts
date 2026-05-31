@@ -153,7 +153,7 @@ async function handleOpenMessage(data: Record<string, unknown>): Promise<boolean
   if (!conversationId) return false;
 
   clearConversationNotificationState(conversationId);
-  router.push(`/(main)/(chat)/${conversationId}` as Href);
+  router.replace(`/(main)/(chat)/${conversationId}` as Href);
   return true;
 }
 

@@ -93,11 +93,8 @@ function openCallRoute(
     pathname: "/call",
     params,
   } as const;
-  if (options?.replace) {
-    router.replace(route as never);
-    return;
-  }
-  router.push(route as never);
+  // Luôn dùng replace cho màn hình cuộc gọi để tránh đè màn hình trong stack navigation
+  router.replace(route as never);
 }
 
 function conversationIdFromPathname(pathname: string): string | null {

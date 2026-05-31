@@ -37,7 +37,7 @@ export function useNotificationResponses(): void {
 
     const data = notificationRouteDataFromResponse(response);
     if (data) navigateFromNotification(data);
-    else router.push("/(main)/(notifications)");
+    else router.replace("/(main)/(notifications)");
   }, []);
 
   useEffect(() => {
