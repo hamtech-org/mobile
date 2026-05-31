@@ -1325,11 +1325,13 @@ export default function ChatDetailScreen() {
             />
           )}
           ListEmptyComponent={
-            <EmptyState
-              icon={MessageSquare}
-              title="Chưa có tin nhắn"
-              description="Hãy bắt đầu cuộc trò chuyện!"
-            />
+            <View style={{ transform: [{ scaleY: -1 }, { scaleX: -1 }] }} className="flex-1">
+              <EmptyState
+                icon={MessageSquare}
+                title="Chưa có tin nhắn"
+                description="Hãy bắt đầu cuộc trò chuyện!"
+              />
+            </View>
           }
           onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => {
             // Inverted FlatList: offset 0 = bottom (latest). Scrolled up = offset > threshold.
