@@ -1,4 +1,5 @@
 import type { IConversation, MessageType } from "@/types/chat.types";
+import { formatCallMessagePreview } from "@/utils/callMessagePreview";
 import { formatGroupJoinLinkListPreview } from "@/utils/groupJoinLinkMessage";
 import { formatSystemLastMessagePreview } from "@/utils/systemMessage";
 import { stripMentionMarkdown } from "@/utils/mentionHelper";
@@ -29,19 +30,6 @@ export function formatConversationListLastPreview(
   const lm = conv.lastMessage;
   if (!lm) return "Chưa có tin nhắn";
   const content = lm.content ?? "";
-  const formatCallPreview = (): string => {
-    try {
-      const payload = JSON.parse(content) as { kind?: string; callType?: string };
-      const kind = payload.kind;
-      const callType = payload.callType;
-      if (kind === "missed") return "Cuộc gọi nhỡ";
-      if (kind === "rejected") return "Cuộc gọi bị từ chối";
-      if (callType === "video") return "Cuộc gọi video";
-      return "Cuộc gọi thoại";
-    } catch {
-      return "Cuộc gọi";
-    }
-  };
 
   const formatSystemPreview = (): string | null => {
     if (lm.type !== "system") return null;
@@ -74,7 +62,7 @@ export function formatConversationListLastPreview(
 
   const previewText = normalizeLastMessagePreview(
     lm.type,
-    lm.type === "call" ? formatCallPreview() : (joinLinkPreview ?? content),
+    lm.type === "call" ? formatCallMessagePreview(content) : (joinLinkPreview ?? content),
   );
   let finalPreview = "";
   if (currentUserId && lm.senderId === currentUserId) {

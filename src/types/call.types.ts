@@ -29,6 +29,7 @@ export interface CallState {
   hostId: string | null;
   channelName: string | null;
   conversationId: string | null;
+  sessionId: string | null;
   callerId: string | null;
   callerName: string | null;
   calleeId: string | null;
@@ -60,5 +61,6 @@ export interface IncomingCallData {
 export interface IncomingCallDismissedPayload {
   channelName: string;
   conversationId: string;
+  sessionId?: string;
   reason?: "accepted" | "rejected" | "ended" | "cancelled";
 }

@@ -30,6 +30,7 @@ const initialState: CallState = {
   hostId: null,
   channelName: null,
   conversationId: null,
+  sessionId: null,
   callerId: null,
   callerName: null,
   calleeId: null,
@@ -47,6 +48,23 @@ const initialState: CallState = {
   activeGroupCall: null,
 };
 
+function applyIncomingCallState(state: CallState, payload: IncomingCallData): void {
+  state.status = "incoming-ringing";
+  state.callType = payload.type;
+  state.callerId = payload.callerId;
+  state.callerName = payload.callerName;
+  state.channelName = payload.channelName;
+  state.conversationId = payload.conversationId;
+  state.sessionId = payload.sessionId ?? null;
+  state.callScope = payload.scope ?? "direct";
+  state.hostId = payload.hostId ?? payload.callerId;
+  state.calleeId = null;
+  applyDefaultDeviceState(state, payload.type);
+  state.upgradeStatus = "none";
+  state.isScreenSharing = false;
+  state.endReason = null;
+}
+
 const callSlice = createSlice({
   name: "call",
   initialState,
@@ -58,6 +76,7 @@ const callSlice = createSlice({
         callType: CallType;
         channelName: string;
         conversationId?: string | null;
+        sessionId?: string | null;
         returnTo?: string | null;
         callScope?: CallScope;
         hostId?: string | null;
@@ -70,25 +89,20 @@ const callSlice = createSlice({
       state.calleeId = action.payload.calleeId ?? null;
       state.channelName = action.payload.channelName;
       state.conversationId = action.payload.conversationId ?? state.conversationId ?? null;
+      state.sessionId = action.payload.sessionId ?? state.sessionId ?? null;
       applyDefaultDeviceState(state, action.payload.callType);
       state.returnTo = action.payload.returnTo ?? state.returnTo ?? null;
       state.endReason = null;
     },
     setIncomingCall: (state, action: PayloadAction<IncomingCallData>) => {
       if (state.status !== "idle" && state.status !== "ended") return;
-      state.status = "incoming-ringing";
-      state.callType = action.payload.type;
-      state.callerId = action.payload.callerId;
-      state.callerName = action.payload.callerName;
-      state.channelName = action.payload.channelName;
-      state.conversationId = action.payload.conversationId;
-      state.callScope = action.payload.scope ?? "direct";
-      state.hostId = action.payload.hostId ?? action.payload.callerId;
-      state.calleeId = null;
-      applyDefaultDeviceState(state, action.payload.type);
-      state.upgradeStatus = "none";
-      state.isScreenSharing = false;
-      state.endReason = null;
+      applyIncomingCallState(state, action.payload);
+    },
+    hydrateIncomingCallFromNotification: (state, action: PayloadAction<IncomingCallData>) => {
+      const sameChannel =
+        Boolean(state.channelName) && state.channelName === action.payload.channelName;
+      if (state.status !== "idle" && state.status !== "ended" && !sameChannel) return;
+      applyIncomingCallState(state, action.payload);
     },
     setCallAccepted: (state) => {
       state.status = "connecting";
@@ -187,6 +201,7 @@ const callSlice = createSlice({
         callType: CallType;
         channelName: string;
         conversationId: string;
+        sessionId?: string | null;
         hostId: string;
         returnTo: string;
       }>,
@@ -197,6 +212,7 @@ const callSlice = createSlice({
       state.hostId = action.payload.hostId;
       state.channelName = action.payload.channelName;
       state.conversationId = action.payload.conversationId;
+      state.sessionId = action.payload.sessionId ?? null;
       state.returnTo = action.payload.returnTo;
       state.callerId = null;
       state.calleeId = null;
@@ -216,6 +232,7 @@ const callSlice = createSlice({
 export const {
   setOutgoingCall,
   setIncomingCall,
+  hydrateIncomingCallFromNotification,
   setCallAccepted,
   setCallConnected,
   setCallEnded,

@@ -1,7 +1,7 @@
 {
   "name": "mobile",
   "version": "1.0.0",
-  "main": "expo-router/entry",
+  "main": "index.ts",
   "scripts": {
     "start": "expo start",
     "start:clear": "expo start -c",
@@ -41,6 +41,9 @@
     "expo-image": "~3.0.11",
     "expo-image-picker": "~17.0.11",
     "expo-linking": "~8.0.11",
+    "@notifee/react-native": "^7.8.0",
+    "@react-native-firebase/app": "21.14.0",
+    "@react-native-firebase/messaging": "21.14.0",
     "expo-media-library": "~18.2.1",
     "expo-modules-core": "~3.0.30",
     "expo-notifications": "^0.32.17",

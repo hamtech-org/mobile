@@ -1,8 +1,10 @@
-import { registerRootComponent } from "expo";
+import "@expo/metro-runtime";
+import { App } from "expo-router/build/qualified-entry";
+import { renderRootComponent } from "expo-router/build/renderRootComponent";
 
-import App from "./App";
+// 1. Register FCM background message handler at the absolute entry point
+import { setupBackgroundCallHandler } from "./src/utils/callNotificationHandler";
+setupBackgroundCallHandler();
 
-// registerRootComponent calls AppRegistry.registerComponent('main', () => App);
-// It also ensures that whether you load the app in Expo Go or in a native build,
-// the environment is set up appropriately
-registerRootComponent(App);
+// 2. Register and render the Expo Router root component
+renderRootComponent(App);
