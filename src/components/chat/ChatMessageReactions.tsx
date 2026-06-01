@@ -52,7 +52,7 @@ const styles = StyleSheet.create({
     maxWidth: "100%",
   },
   wrapOwn: {
-    left: -4,
+    right: -4,
   },
   wrapOther: {
     right: -4,
