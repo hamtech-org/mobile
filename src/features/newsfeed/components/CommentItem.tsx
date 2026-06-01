@@ -1,5 +1,7 @@
 import { ActivityIndicator, Image, Modal, Pressable, Text, View } from "react-native";
 import { useState, useEffect, useRef } from "react";
+import { useSelector } from "react-redux";
+import type { RootState } from "@/store/store";
 import { useVideoPlayer, VideoView } from "expo-video";
 import ImageViewing from "react-native-image-viewing";
 import { Ionicons } from "@expo/vector-icons";
@@ -61,6 +63,7 @@ export const CommentItem = ({
   newReply,
   groupId,
 }: Props) => {
+  const currentUser = useSelector((state: RootState) => state.auth.user);
   const [localReaction, setLocalReaction] = useState<ReactionType | null>(
     comment.currentUserReaction ?? null,
   );
@@ -258,7 +261,7 @@ export const CommentItem = ({
               </Pressable>
             )}
 
-            {groupId && (
+            {groupId && currentUser?.userId !== comment.authorId && (
               <Pressable onPress={() => setShowReportSheet(true)} className="active:opacity-60">
                 <Ionicons name="flag-outline" size={14} color="hsl(var(--muted-foreground))" />
               </Pressable>
