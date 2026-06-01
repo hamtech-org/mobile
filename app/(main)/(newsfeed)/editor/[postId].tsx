@@ -28,10 +28,8 @@ import type { RootState } from "@/store/store";
 import {
   Globe,
   Image as ImageIcon,
-  MapPin,
   MoreHorizontal,
   Smile,
-  UserPlus,
   Users,
   Lock,
   X,
@@ -404,13 +402,7 @@ export default function EditPostEditorScreen({
               <ImageIcon size={24} color="#22c55e" />
             </Pressable>
             <Pressable className="p-2" disabled={busy}>
-              <UserPlus size={24} color="#3b82f6" />
-            </Pressable>
-            <Pressable className="p-2" disabled={busy}>
               <Smile size={24} color="#eab308" />
-            </Pressable>
-            <Pressable className="p-2" disabled={busy}>
-              <MapPin size={24} color="#ef4444" />
             </Pressable>
             <Pressable className="p-2" onPress={() => setIsMoreOpen(true)} disabled={busy}>
               <MoreHorizontal size={24} color="#9ca3af" />
