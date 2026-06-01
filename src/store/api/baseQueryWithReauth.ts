@@ -47,12 +47,17 @@ export function createBaseQueryWithReauth(): BaseQueryFn<
       return result;
     }
 
-    if (requestIncludesRefreshTokenPath(args)) {
+    const isAuthEndpoint =
+      typeof args === "string" ? args.includes("/auth/") : args.url.includes("/auth/");
+
+    if (isAuthEndpoint || requestIncludesRefreshTokenPath(args)) {
       return result;
     }
 
     const hadAccessToken = Boolean((api.getState() as AuthSliceRef).auth?.accessToken);
     if (!hadAccessToken) {
+      await invalidateSessionAfterAuthFailure(api.dispatch);
+      router.replace("/(auth)/login");
       return result;
     }
 
