@@ -1,4 +1,4 @@
-import { Tabs } from "expo-router";
+import { Tabs, router } from "expo-router";
 import { useEffect, useMemo } from "react";
 import { useColorScheme, View } from "react-native";
 
@@ -18,7 +18,7 @@ import { SocialSocketBootstrap } from "@/components/notifications/SocialSocketBo
 import { ReelUploadBanner } from "@/features/reels/components/ReelUploadBanner";
 import { useGetConversationsQuery } from "@/store/api/chatApi";
 import { useGetNotificationsQuery } from "@/store/api/notificationApi";
-import { useAppDispatch } from "@/hooks/useAppStore";
+import { useAppDispatch, useAppSelector } from "@/hooks/useAppStore";
 import { setInboxNotifications, setInboxUnreadCount } from "@/store/slices/inboxNotificationSlice";
 import { formatUnreadBadge } from "@/utils/chatBadge";
 
@@ -39,17 +39,24 @@ const TABS: TabConfig[] = [
 ];
 
 export default function MainLayout() {
+  const { isAuthenticated, isBootstrapping } = useAppSelector((state) => state.auth);
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
   const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
-  const { data: conversations } = useGetConversationsQuery();
-  const { data: notifData } = useGetNotificationsQuery({ limit: 50 });
+  const { data: conversations } = useGetConversationsQuery(undefined, { skip: !isAuthenticated });
+  const { data: notifData } = useGetNotificationsQuery({ limit: 50 }, { skip: !isAuthenticated });
 
   const chatTabBadge = useMemo(() => {
     const total = (conversations ?? []).reduce((sum, c) => sum + (c.unreadCount ?? 0), 0);
     return formatUnreadBadge(total);
   }, [conversations]);
+
+  useEffect(() => {
+    if (!isBootstrapping && !isAuthenticated) {
+      router.replace("/(auth)/login");
+    }
+  }, [isAuthenticated, isBootstrapping]);
 
   useEffect(() => {
     if (notifData?.items) {

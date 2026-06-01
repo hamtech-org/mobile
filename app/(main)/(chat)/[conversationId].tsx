@@ -1399,7 +1399,7 @@ export default function ChatDetailScreen() {
 
         <View
           className="border-t border-border/40 bg-background/95 dark:bg-background"
-          style={{ paddingBottom: insets.bottom }}
+          style={{ paddingBottom: 0 }}
         >
           {isGroup && frameBanner && frameBanner.conversationId === conversationId ? (
             <ChatFrameBanner

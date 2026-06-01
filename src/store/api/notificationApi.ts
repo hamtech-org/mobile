@@ -62,11 +62,12 @@ export const notificationApi = createApi({
         body,
       }),
     }),
-    removeDeviceToken: builder.mutation<void, { token: string }>({
-      query: (body) => ({
+    removeDeviceToken: builder.mutation<void, { token: string; accessToken?: string | null }>({
+      query: ({ token, accessToken }) => ({
         url: "/notifications/device-tokens",
         method: "DELETE",
-        body,
+        body: { token },
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
       }),
     }),
   }),

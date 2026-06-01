@@ -1,7 +1,9 @@
 import * as Notifications from "expo-notifications";
 import { useEffect, useRef } from "react";
 import { AppState, Platform } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getApp, getApps } from "@react-native-firebase/app";
+
 import { getMessaging } from "@react-native-firebase/messaging";
 
 import { useAppSelector } from "@/hooks/useAppStore";
@@ -109,7 +111,11 @@ async function getNativeFcmTokenAsync(): Promise<string | null> {
  */
 export function usePushNotifications(): void {
   console.log("[PushToken] usePushNotifications hook running...");
-  const isAuthenticated = useAppSelector((state) => Boolean(state.auth.accessToken));
+  const accessToken = useAppSelector((state) => state.auth.accessToken);
+  const isAuthenticated = Boolean(accessToken);
+  const isAuthenticatedRef = useRef(isAuthenticated);
+  isAuthenticatedRef.current = isAuthenticated;
+
   const [registerToken] = useRegisterDeviceTokenMutation();
   const [removeToken] = useRemoveDeviceTokenMutation();
   const registeredTokensRef = useRef<string[]>([]);
@@ -177,6 +183,10 @@ export function usePushNotifications(): void {
               registered.push(fcmToken);
             }
             registeredTokensRef.current = registered;
+            await AsyncStorage.setItem(
+              "hamtech_registered_push_tokens",
+              JSON.stringify(registered),
+            );
             if (expoToken) markPushTokenRegistered();
             console.log("[PushToken] Token registered successfully on backend!");
           } catch (err) {
@@ -199,7 +209,7 @@ export function usePushNotifications(): void {
       appStateSub.remove();
 
       // ONLY remove token from backend and local storage if the user explicitly logs out (isAuthenticated becomes false)
-      if (!isAuthenticated) {
+      if (!isAuthenticatedRef.current) {
         clearPushTokenRegistered();
         const tokens = registeredTokensRef.current;
         if (tokens.length > 0) {
@@ -207,9 +217,10 @@ export function usePushNotifications(): void {
             "[PushToken] User logged out. Cleaning up and removing token from backend...",
           );
           tokens.forEach((token) => {
-            void removeToken({ token }).catch(() => undefined);
+            void removeToken({ token, accessToken }).catch(() => undefined);
           });
           registeredTokensRef.current = [];
+          void AsyncStorage.removeItem("hamtech_registered_push_tokens").catch(() => undefined);
         }
       }
     };

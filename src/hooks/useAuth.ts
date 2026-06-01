@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { useRouter } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import {
   useForgotPasswordMutation,
@@ -182,11 +183,15 @@ export const useAuth = () => {
 
   const logout = useCallback(async () => {
     try {
-      await logoutMutation({ accessToken }).unwrap();
+      const storedTokens = await AsyncStorage.getItem("hamtech_registered_push_tokens");
+      const tokens = storedTokens ? (JSON.parse(storedTokens) as string[]) : [];
+      const deviceToken = tokens[0]; // Lấy token đầu tiên (nếu có) để gửi lên backend xóa
+      await logoutMutation({ accessToken, deviceToken }).unwrap();
     } catch {
       // Luôn cho phép logout local để tránh user bị kẹt phiên đăng nhập.
     }
     await secureStorage.clearTokens();
+    await AsyncStorage.removeItem("hamtech_registered_push_tokens").catch(() => undefined);
     clearMarkAsReadDedupeCache();
     dispatch(clearAuthState());
     router.replace("/(auth)/login");
