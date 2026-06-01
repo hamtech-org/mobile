@@ -29,6 +29,9 @@ export const extractTextFromTiptapJson = (content: string): string => {
       .join("")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
+    if (parsed && typeof parsed === "object" && parsed.type === "doc") {
+      return extracted;
+    }
     return extracted || content;
   } catch {
     // If JSON parsing fails (e.g. because it was truncated), try regex extraction
