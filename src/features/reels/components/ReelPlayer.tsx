@@ -92,15 +92,6 @@ export const ReelPlayer = ({ reel, isVisible, height }: Props) => {
         nativeControls={false}
       />
 
-      {/* Gradient overlay bottom */}
-      <View
-        className="absolute inset-x-0 bottom-0"
-        style={{ height: height * 0.35 }}
-        pointerEvents="none"
-      >
-        <View className="flex-1 bg-black/60" style={{ opacity: 0.7 }} />
-      </View>
-
       {/* Pause icon overlay */}
       {isPaused && (
         <View className="absolute inset-0 items-center justify-center" pointerEvents="none">
@@ -114,7 +105,7 @@ export const ReelPlayer = ({ reel, isVisible, height }: Props) => {
       <View className="absolute bottom-5 left-4 right-16 z-10">
         {/* Author row */}
         <View className="mb-2 flex-row items-center">
-          <Text className="text-[15px] font-bold text-white">
+          <Text className="text-[15px] font-bold text-white" style={s.textShadow}>
             {reel.author?.displayName ?? "Người dùng"}
           </Text>
         </View>
@@ -125,11 +116,14 @@ export const ReelPlayer = ({ reel, isVisible, height }: Props) => {
             <Text
               className="text-[13px] leading-snug text-white"
               numberOfLines={captionExpanded ? undefined : 1}
+              style={s.textShadow}
             >
               {reel.caption}
             </Text>
             {hasLongCaption && !captionExpanded && (
-              <Text className="mt-0.5 text-[13px] font-semibold text-white/80">... Xem thêm</Text>
+              <Text className="mt-0.5 text-[13px] font-semibold text-white/80" style={s.textShadow}>
+                ... Xem thêm
+              </Text>
             )}
           </Pressable>
         ) : null}
@@ -138,7 +132,11 @@ export const ReelPlayer = ({ reel, isVisible, height }: Props) => {
         {reel.hashtags.length > 0 ? (
           <View className="mt-1 flex-row flex-wrap gap-1.5">
             {reel.hashtags.map((tag) => (
-              <Text key={tag} className="text-[13px] font-semibold text-blue-300">
+              <Text
+                key={tag}
+                className="text-[13px] font-semibold text-blue-300"
+                style={s.textShadow}
+              >
                 #{tag}
               </Text>
             ))}
@@ -147,4 +145,12 @@ export const ReelPlayer = ({ reel, isVisible, height }: Props) => {
       </View>
     </Pressable>
   );
+};
+
+const s = {
+  textShadow: {
+    textShadowColor: "rgba(0, 0, 0, 0.8)",
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
+  },
 };
