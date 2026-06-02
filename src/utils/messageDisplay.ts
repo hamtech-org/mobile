@@ -1,4 +1,5 @@
 import type { IMessage, MessageType } from "@/types/chat.types";
+import { formatCallMessagePreview } from "@/utils/callMessagePreview";
 import { tryParseGroupJoinLinkMessage } from "@/utils/groupJoinLinkMessage";
 import { formatSystemLastMessagePreview, preprocessSystemPlainText } from "@/utils/systemMessage";
 import { stripMentionMarkdown } from "@/utils/mentionHelper";
@@ -72,6 +73,7 @@ export function formatChatPreviewLine(
 ): string {
   if (msg.isRecalled) return "Tin nhắn đã được thu hồi";
   const raw = (msg.content ?? "").trim();
+  if (msg.type === "call") return truncatePreview(formatCallMessagePreview(raw), PREVIEW_MAX);
   if (msg.type === "system") {
     const sys = formatSystemLastMessagePreview(
       raw,

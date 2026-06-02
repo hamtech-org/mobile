@@ -61,8 +61,6 @@ import { formatChatPreviewLine } from "@/utils/messageDisplay";
 
 export type { PendingAttachment };
 
-type VoiceUiState = "idle" | "active-ui" | "cancelled-ui";
-
 interface ChatInputProps {
   onSend: (content: string, mentions?: string[]) => void | Promise<void>;
   onSendMedia?: (attachments: PendingAttachment[], caption: string) => void | Promise<void>;
@@ -70,7 +68,7 @@ interface ChatInputProps {
   replyingTo?: IMessage | null;
   currentUserId?: string;
   onClearReply?: () => void;
-  onTyping?: () => void;
+  onTyping?: (text?: string) => void;
   activeConversationId?: string | null;
   conversationName?: string;
   isGroup?: boolean;
@@ -108,7 +106,7 @@ export const ChatInput = ({
   const [content, setContent] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
-  const [showAiQuickReplies, setShowAiQuickReplies] = useState(true);
+  const [showAiQuickReplies, setShowAiQuickReplies] = useState(false);
   const [aiReplyLoading, setAiReplyLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const { muted, primary, foreground } = useIconColors();
@@ -171,7 +169,7 @@ export const ChatInput = ({
       const newText = beforeAt + tag + afterCursor;
       setContent(newText);
       setShowMentionDropdown(false);
-      onTyping?.();
+      onTyping?.(newText);
 
       setTimeout(() => {
         textInputRef.current?.focus();
@@ -281,8 +279,9 @@ export const ChatInput = ({
   }, [activeConversationId]);
 
   const handleEmojiSelected = (emojiObject: EmojiType) => {
-    setContent((prev) => prev + emojiObject.emoji);
-    onTyping?.();
+    const nextText = content + emojiObject.emoji;
+    setContent(nextText);
+    onTyping?.(nextText);
   };
 
   const removePendingAttachment = useCallback((localId: string) => {
@@ -509,7 +508,7 @@ export const ChatInput = ({
   const handleTextChange = useCallback(
     (text: string) => {
       setContent(text);
-      onTyping?.();
+      onTyping?.(text);
 
       if (!isGroup) {
         setShowMentionDropdown(false);
@@ -717,7 +716,7 @@ export const ChatInput = ({
             inputText={content}
             onPickReply={(text) => {
               setContent(text);
-              onTyping?.();
+              onTyping?.(text);
             }}
           />
         </View>

@@ -120,6 +120,7 @@ export interface IMessage {
   reactions: Record<string, string[]>;
   duration?: number | null;
   status: MessageStatus;
+  readBy?: { userId: string; displayName?: string | null; avatar?: string | null }[];
   mentions?: string[];
   createdAt: string;
 }

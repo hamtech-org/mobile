@@ -39,7 +39,7 @@ export const ConversationItem = ({
 }: ConversationItemProps) => {
   const currentUserId = useAppSelector((s) => s.auth.user?.userId ?? "");
   const calendarNow = useCalendarNow();
-  const { destructive, muted: mutedIcon } = useIconColors();
+  const { destructive, muted: mutedIcon, isDark } = useIconColors();
   const lastMsg = conversation.lastMessage;
   const unreadCount = conversation.unreadCount ?? 0;
   const hasUnread = unreadCount > 0;
@@ -50,6 +50,15 @@ export const ConversationItem = ({
   const inMutedPanel = variant === "mutedSection";
 
   const showActiveChrome = isActive && !inMutedPanel;
+
+  const activeChromeStyle = useMemo(() => {
+    if (!showActiveChrome) return undefined;
+    return {
+      backgroundColor: isDark ? "rgba(41, 127, 255, 0.1)" : "rgba(0, 110, 255, 0.12)",
+      borderWidth: 1,
+      borderColor: isDark ? "rgba(41, 127, 255, 0.15)" : "rgba(0, 110, 255, 0.2)",
+    };
+  }, [showActiveChrome, isDark]);
 
   const activityIso = lastMsg?.createdAt ?? conversation.updatedAt;
   const timeLabel = useMemo(() => {
@@ -101,11 +110,10 @@ export const ConversationItem = ({
       onPress={onPress}
       onLongPress={onLongPressMenu ? () => onLongPressMenu(conversation) : undefined}
       delayLongPress={380}
+      style={activeChromeStyle}
       className={`mx-1 flex-row items-center gap-3 rounded-2xl px-3 py-2.5 active:bg-muted/60 ${
-        showActiveChrome
-          ? "bg-blue-500/12 shadow-sm ring-1 ring-blue-500/20 dark:bg-blue-400/10 dark:ring-blue-400/15"
-          : ""
-      } ${isMuted || inMutedPanel ? "bg-muted/30 opacity-70" : ""}`}
+        isMuted || inMutedPanel ? "bg-muted/30 opacity-70" : ""
+      }`}
     >
       <Avatar
         uri={conversation.avatar || undefined}

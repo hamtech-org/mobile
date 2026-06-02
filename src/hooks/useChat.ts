@@ -282,7 +282,19 @@ export const useChat = () => {
       if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
       typingTimerRef.current = setTimeout(() => {
         typingTimerRef.current = null;
-      }, 900);
+      }, 1000); // Chuẩn hóa emit interval thành 1000ms
+    },
+    [socket],
+  );
+
+  const emitTypingStop = useCallback(
+    (conversationId: string) => {
+      if (!socket || !conversationId) return;
+      socket.emit("message:typing_stop", conversationId);
+      if (typingTimerRef.current) {
+        clearTimeout(typingTimerRef.current);
+        typingTimerRef.current = null;
+      }
     },
     [socket],
   );
@@ -298,6 +310,7 @@ export const useChat = () => {
     togglePinMessage,
     reactMessage,
     emitTyping,
+    emitTypingStop,
     isSending: sendState.isLoading,
     isEditing: editState.isLoading,
   };

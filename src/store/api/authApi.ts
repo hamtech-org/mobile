@@ -201,11 +201,15 @@ export const authApi = createApi({
       }),
       invalidatesTags: ["AuthSessions"],
     }),
-    logout: builder.mutation<{ message: string }, { accessToken?: string | null }>({
-      query: ({ accessToken }) => ({
+    logout: builder.mutation<
+      { message: string },
+      { accessToken?: string | null; deviceToken?: string }
+    >({
+      query: ({ accessToken, deviceToken }) => ({
         url: "/auth/logout",
         method: "POST",
         headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+        body: deviceToken ? { deviceToken } : undefined,
       }),
       transformResponse: (response: ApiEnvelope<null>) => ({ message: response.message }),
     }),

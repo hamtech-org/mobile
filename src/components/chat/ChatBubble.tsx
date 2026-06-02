@@ -77,6 +77,8 @@ import { ChatImageMessageWithJoinQr } from "@/components/chat/ChatImageMessageWi
 import type { ChatMediaLightboxState } from "@/components/chat/ChatMediaLightbox";
 import { ChatVideoMessageCard } from "@/components/chat/ChatVideoMessageCard";
 import { chatMediaCaptionStyle, getChatMediaLayout } from "@/components/chat/chatMediaShell";
+import { ChatMessageReactionsOverlay } from "./ChatMessageReactions";
+import { useReactMessageMutation } from "@/store/api/endpoints/messageApi";
 import {
   chatFilePreviewUrl,
   chatImageDisplayUrl,
@@ -91,6 +93,7 @@ import {
   openOrShareChatFile,
   saveChatMediaToLibrary,
 } from "@/utils/chatMediaDownload";
+import { normalizeMediaUrl } from "@/utils/url";
 
 import { GroupJoinLinkCard } from "./GroupJoinLinkCard";
 import type { PollVoteModalPoll } from "./PollVoteModal";
@@ -208,11 +211,7 @@ function MentionifiedChatText({
               key={index}
               style={{
                 fontWeight: "bold",
-                color: isOwn && !isVisualMedia ? "#fed7aa" : "#ea580c",
-                backgroundColor:
-                  isOwn && !isVisualMedia ? "rgba(255,255,255,0.2)" : "rgba(249,115,22,0.1)",
-                paddingHorizontal: 4,
-                borderRadius: 2,
+                color: isOwn && !isVisualMedia ? "#dbeafe" : "#0068FF",
               }}
             >
               @{token.value}
@@ -224,8 +223,7 @@ function MentionifiedChatText({
             key={index}
             style={{
               fontWeight: "bold",
-              textDecorationLine: "underline",
-              color: isOwn && !isVisualMedia ? "#dbeafe" : "#0284c7",
+              color: isOwn && !isVisualMedia ? "#dbeafe" : "#0068FF",
             }}
             onPress={(event) => {
               event.stopPropagation?.();
@@ -294,6 +292,7 @@ interface ChatBubbleProps {
   groupExtras?: ChatBubbleGroupExtras;
   /** Xem ảnh/video toàn màn hình (lightbox ở màn chat). */
   onMediaLightbox?: (state: ChatMediaLightboxState) => void;
+  isLatestUserMessage?: boolean;
 }
 
 // ── Call Log Message ────────────────────────────────────────────────────
@@ -1171,6 +1170,7 @@ export const ChatBubble = ({
   isJumpHighlighted = false,
   groupExtras,
   onMediaLightbox,
+  isLatestUserMessage,
 }: ChatBubbleProps) => {
   const { width: windowWidth } = useWindowDimensions();
   const { muted, primary, isDark } = useIconColors();
@@ -1179,6 +1179,24 @@ export const ChatBubble = ({
   const isDeleted = Boolean(message.isDeleted);
   const mediaLayout = useMemo(() => getChatMediaLayout(windowWidth), [windowWidth]);
   const [mediaSavedOnDevice, setMediaSavedOnDevice] = useState(false);
+
+  const [reactMessageMutation] = useReactMessageMutation();
+
+  const handleToggleReaction = useCallback(
+    async (emoji: string) => {
+      try {
+        await reactMessageMutation({
+          messageId: message.messageId,
+          conversationId: message.conversationId,
+          createdAt: message.createdAt,
+          emoji,
+        }).unwrap();
+      } catch (err) {
+        console.error("Failed to toggle reaction:", err);
+      }
+    },
+    [reactMessageMutation, message],
+  );
 
   const showMediaLightbox = useCallback(
     (state: ChatMediaLightboxState) => {
@@ -1216,6 +1234,21 @@ export const ChatBubble = ({
   const showDateSeparator = dayChangedFromPrev && !(isGroup && isSystemCenter);
 
   if (isSystemCenter) {
+    const view = buildSystemBubbleView(message, {
+      isOwn,
+      currentUserId: viewerUserId ?? groupExtras?.currentUserId,
+      isGroupChat: Boolean(isGroup),
+    });
+
+    if (view.variant === "task_assigned_card") {
+      const isLocalCard = message.messageId.startsWith("local-task-card:");
+      const tid = String(view.taskId ?? "").trim();
+      const onBoard = (groupExtras?.groupTasks ?? []).some((x) => String(x.taskId ?? "") === tid);
+      if (isLocalCard && tid && !tid.startsWith("tmp-") && !onBoard) {
+        return null;
+      }
+    }
+
     return (
       <>
         {showDateSeparator && <DateSeparator date={message.createdAt} now={calendarNow} />}
@@ -1493,7 +1526,7 @@ export const ChatBubble = ({
                 </Text>
               </View>
             ) : (
-              <View className="max-w-full">
+              <View className={`max-w-full ${hasReactions ? "mb-3" : ""}`}>
                 <ChatJumpHighlightWrap
                   active={jumpHighlightOnTextBubble}
                   borderRadius={20}
@@ -1711,11 +1744,86 @@ export const ChatBubble = ({
                   </View>
                 </ChatJumpHighlightWrap>
 
-                {hasReactions && <ReactionsRow reactions={message.reactions} isOwn={isOwn} />}
+                {hasReactions && (
+                  <ChatMessageReactionsOverlay
+                    reactions={message.reactions}
+                    isOwn={isOwn}
+                    viewerUserId={viewerUserId}
+                    onReact={handleToggleReaction}
+                  />
+                )}
               </View>
             )}
           </Pressable>
         )}
+
+        {isOwn &&
+          isLatestUserMessage &&
+          !isRecalled &&
+          !isDeleted &&
+          message.readBy &&
+          message.readBy.length > 0 && (
+            <View className="mt-0.5 flex-row justify-end pr-1">
+              <View className="flex-row items-center">
+                {message.readBy.slice(0, 5).map((r, idx) => {
+                  const avatarUri = normalizeMediaUrl(r.avatar);
+                  const isFirst = idx === 0;
+                  return avatarUri ? (
+                    <Image
+                      key={r.userId}
+                      source={{ uri: avatarUri }}
+                      style={{
+                        width: 16,
+                        height: 16,
+                        borderRadius: 8,
+                        marginLeft: isFirst ? 0 : -4,
+                        flexShrink: 0,
+                      }}
+                      className="border border-white bg-slate-200 dark:border-zinc-900"
+                    />
+                  ) : (
+                    <View
+                      key={r.userId}
+                      style={{
+                        width: 16,
+                        height: 16,
+                        borderRadius: 8,
+                        marginLeft: isFirst ? 0 : -4,
+                        flexShrink: 0,
+                      }}
+                      className="items-center justify-center border border-white bg-slate-300 dark:border-zinc-900 dark:bg-zinc-700"
+                    >
+                      <Text
+                        style={{ fontSize: 8, lineHeight: 10 }}
+                        className="font-bold text-foreground"
+                      >
+                        {(r.displayName || "U").charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                  );
+                })}
+                {message.readBy.length > 5 && (
+                  <View
+                    style={{
+                      width: 16,
+                      height: 16,
+                      borderRadius: 8,
+                      marginLeft: -4,
+                      flexShrink: 0,
+                    }}
+                    className="items-center justify-center border border-white bg-slate-200 dark:border-zinc-900 dark:bg-zinc-800"
+                  >
+                    <Text
+                      style={{ fontSize: 8, lineHeight: 10 }}
+                      className="font-bold text-muted-foreground"
+                    >
+                      +{message.readBy.length - 5}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
 
         {showTimestamp && (
           <View
@@ -1724,9 +1832,12 @@ export const ChatBubble = ({
             <Text className="text-[11px] text-muted-foreground">
               {formatTimestamp(message.createdAt)}
             </Text>
-            {isOwn && !isRecalled && !isDeleted && (
-              <StatusIcon status={message.status} primary={primary} muted={muted} />
-            )}
+            {isOwn &&
+              !isRecalled &&
+              !isDeleted &&
+              (!message.readBy || message.readBy.length === 0) && (
+                <StatusIcon status={message.status} primary={primary} muted={muted} />
+              )}
           </View>
         )}
       </View>

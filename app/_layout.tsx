@@ -11,10 +11,10 @@ import { CallProvider } from "@/contexts/CallContext";
 import { SocketProvider } from "@/contexts/SocketContext";
 import { ToastHost } from "@/components/common/ToastHost";
 import { NotificationResponseBootstrap } from "@/components/notifications/NotificationResponseBootstrap";
+import { CallNotificationBootstrap } from "@/components/notifications/CallNotificationBootstrap";
 import { store } from "@/store/store";
 import { requestStartupPermissionsAsync } from "@/utils/startupPermissions";
 import { View } from "react-native";
-
 export default function RootLayout() {
   useEffect(() => {
     void requestStartupPermissionsAsync();
@@ -30,6 +30,7 @@ export default function RootLayout() {
                 <KeyboardProvider>
                   <View style={{ flex: 1 }}>
                     <NotificationResponseBootstrap />
+                    <CallNotificationBootstrap />
                     <Stack screenOptions={{ headerShown: false }} />
                     <ToastHost />
                   </View>
