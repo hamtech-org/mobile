@@ -5,7 +5,10 @@ export default function LiveStackLayout() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="[sessionId]/host" />
-      <Stack.Screen name="[sessionId]/watch" />
+      <Stack.Screen
+        name="[sessionId]/watch"
+        options={{ gestureEnabled: false, fullScreenGestureEnabled: false }}
+      />
     </Stack>
   );
 }
