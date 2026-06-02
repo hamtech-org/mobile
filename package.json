@@ -15,7 +15,8 @@
     "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md}\"",
     "postinstall": "patch-package",
     "prepare": "husky",
-    "build:android:apk": "eas build --platform android --profile preview"
+    "build:android:apk": "eas build --platform android --profile preview",
+    "build:android:apk:local": "cd android && gradlew.bat assembleRelease"
   },
   "dependencies": {
     "@10play/tentap-editor": "^1.0.1",
