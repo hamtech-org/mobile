@@ -23,11 +23,20 @@ type Props = {
   sessionId: string;
   visible?: boolean;
   onKeyboardOffsetChange?: (offset: number) => void;
+  /** Nền trong suốt, đè lên video live */
+  overlayOnVideo?: boolean;
+  paddingBottomInset?: number;
 };
 
 const REACTIONS: LiveReactionType[] = ["like", "love", "haha", "wow", "sad", "angry"];
 
-export const LiveChatInputBar = ({ sessionId, visible = true, onKeyboardOffsetChange }: Props) => {
+export const LiveChatInputBar = ({
+  sessionId,
+  visible = true,
+  onKeyboardOffsetChange,
+  overlayOnVideo = false,
+  paddingBottomInset = 0,
+}: Props) => {
   const socket = useSocketContext();
   const { muted, foreground, isDark, primary } = useIconColors();
   const [text, setText] = useState("");
@@ -36,12 +45,21 @@ export const LiveChatInputBar = ({ sessionId, visible = true, onKeyboardOffsetCh
   const inputRef = useRef<TextInput>(null);
   const bottomAnim = useRef(new Animated.Value(0)).current;
 
-  const bg = useMemo(() => (isDark ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.85)"), [isDark]);
+  const bg = useMemo(() => {
+    if (overlayOnVideo) return "transparent";
+    return isDark ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.85)";
+  }, [isDark, overlayOnVideo]);
   const borderColor = useMemo(
-    () => (isDark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.10)"),
-    [isDark],
+    () => (overlayOnVideo ? "transparent" : isDark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.10)"),
+    [isDark, overlayOnVideo],
   );
-  const inputBg = useMemo(() => (isDark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.06)"), [isDark]);
+  const inputBg = useMemo(
+    () =>
+      overlayOnVideo ? "rgba(0,0,0,0.42)" : isDark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.06)",
+    [isDark, overlayOnVideo],
+  );
+  const placeholderColor = overlayOnVideo ? "rgba(255,255,255,0.55)" : muted;
+  const textColor = overlayOnVideo ? "#fff" : foreground;
 
   useEffect(() => {
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
@@ -50,21 +68,25 @@ export const LiveChatInputBar = ({ sessionId, visible = true, onKeyboardOffsetCh
     const showSub = Keyboard.addListener(showEvent, (e) => {
       setIsKeyboardOpen(true);
       const target = e.endCoordinates.height + KEYBOARD_EXTRA;
-      onKeyboardOffsetChange?.(target);
+      onKeyboardOffsetChange?.(Platform.OS === "android" ? 0 : target);
       if (Platform.OS === "android") {
         bottomAnim.setValue(target);
-      } else {
-        Animated.timing(bottomAnim, {
-          toValue: target,
-          duration: e.duration ?? 250,
-          useNativeDriver: false,
-        }).start();
+        return;
       }
+      Animated.timing(bottomAnim, {
+        toValue: target,
+        duration: e.duration ?? 250,
+        useNativeDriver: false,
+      }).start();
     });
 
     const hideSub = Keyboard.addListener(hideEvent, () => {
       setIsKeyboardOpen(false);
       onKeyboardOffsetChange?.(0);
+      if (Platform.OS === "android") {
+        bottomAnim.setValue(0);
+        return;
+      }
       Animated.timing(bottomAnim, {
         toValue: 0,
         duration: 200,
@@ -102,9 +124,10 @@ export const LiveChatInputBar = ({ sessionId, visible = true, onKeyboardOffsetCh
         s.container,
         {
           bottom: bottomAnim,
-          paddingBottom: isKeyboardOpen ? 14 : 10,
+          paddingBottom: (isKeyboardOpen ? 14 : 10) + paddingBottomInset,
           backgroundColor: bg,
           borderTopColor: borderColor,
+          borderTopWidth: overlayOnVideo ? 0 : StyleSheet.hairlineWidth,
         },
       ]}
     >
@@ -139,8 +162,8 @@ export const LiveChatInputBar = ({ sessionId, visible = true, onKeyboardOffsetCh
           value={text}
           onChangeText={setText}
           placeholder="Nhắn tin..."
-          placeholderTextColor={muted}
-          style={[s.input, { backgroundColor: inputBg, color: foreground }]}
+          placeholderTextColor={placeholderColor}
+          style={[s.input, { backgroundColor: inputBg, color: textColor }]}
           returnKeyType="send"
           onSubmitEditing={sendChat}
         />
@@ -154,7 +177,7 @@ export const LiveChatInputBar = ({ sessionId, visible = true, onKeyboardOffsetCh
             { opacity: text.trim() ? 1 : 0.35, backgroundColor: isDark ? "#2563eb" : "#2563eb" },
           ]}
         >
-          <Text style={s.sendText}>Gửi</Text>
+          <Text style={[s.sendText, overlayOnVideo && s.sendTextOnVideo]}>Gửi</Text>
         </Pressable>
       </View>
     </Animated.View>
@@ -231,5 +254,8 @@ const s = StyleSheet.create({
     color: "#fff",
     fontSize: 13,
     fontWeight: "800",
+  },
+  sendTextOnVideo: {
+    color: "#fff",
   },
 });

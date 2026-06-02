@@ -6,12 +6,11 @@ import {
   Platform,
   Pressable,
   Text,
-  useWindowDimensions,
   View,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import * as ScreenOrientation from "expo-screen-orientation";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ChannelMediaOptions,
   ChannelProfileType,
@@ -25,8 +24,9 @@ import {
   RtcSurfaceView,
   VideoSourceType,
 } from "react-native-agora";
-import { ChevronLeft } from "lucide-react-native";
+import { ChevronLeft, PanelBottom, PanelBottomClose } from "lucide-react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { runOnJS } from "react-native-reanimated";
 
 import { LiveChatInputBar } from "@/components/live/LiveChatInputBar";
 import { LiveChatOverlay } from "@/components/live/LiveChatOverlay";
@@ -35,6 +35,7 @@ import type { LiveChatLine } from "@/components/live/LiveChatPanel";
 import { env } from "@/config/env";
 import { useSocketContext } from "@/contexts/SocketContext";
 import { useAppSelector } from "@/hooks/useAppStore";
+import { useHideMainTabBar } from "@/hooks/useHideMainTabBar";
 import { useGetLiveSessionQuery } from "@/store/api/liveApi";
 import { fetchLiveRtcToken } from "@/utils/liveAgora";
 import { formatLiveDuration } from "@/utils/liveSessionUtils";
@@ -61,9 +62,7 @@ export function LiveWatchScreen() {
   const asViewer = paramAsViewer(params.asViewer);
   const currentUserId = useAppSelector((s) => s.auth.user?.userId ?? "");
   const socket = useSocketContext();
-  const { width, height } = useWindowDimensions();
-  const isLandscape = width > height;
-
+  const insets = useSafeAreaInsets();
   const {
     data: session,
     isLoading,
@@ -80,7 +79,12 @@ export function LiveWatchScreen() {
   const [durationTick, setDurationTick] = useState(Date.now());
   const [messages, setMessages] = useState<LiveChatLine[]>([]);
   const [chatVisible, setChatVisible] = useState(true);
-  const [keyboardOffset, setKeyboardOffset] = useState(0);
+  const [tabBarHidden, setTabBarHidden] = useState(false);
+
+  useHideMainTabBar(tabBarHidden);
+
+  const inputBottomInset = tabBarHidden ? Math.max(insets.bottom, 6) : 0;
+  const commentBottom = 52 + inputBottomInset;
 
   const engineRef = useRef<IRtcEngine | null>(null);
   const registeredHandlerRef = useRef<IRtcEngineEventHandler | null>(null);
@@ -278,14 +282,25 @@ export function LiveWatchScreen() {
     };
   }, [currentUserId, session?.channelName, session?.hostUserId, shutdownRtc]);
 
+  const setImmersive = useCallback((immersive: boolean) => {
+    setChatVisible(!immersive);
+  }, []);
+
   const swipeToggle = useMemo(
     () =>
-      Gesture.Pan().onEnd((e) => {
-        if (Math.abs(e.translationX) < 40) return;
-        if (e.translationX > 40) setChatVisible(false);
-        if (e.translationX < -40) setChatVisible(true);
-      }),
-    [],
+      Gesture.Pan()
+        .activeOffsetX([-24, 24])
+        .failOffsetY([-20, 20])
+        .onEnd((e) => {
+          if (Math.abs(e.translationX) < 48) return;
+          // Vuốt phải → ẩn chat (full video); vuốt trái → hiện lại chat
+          if (e.translationX > 48) {
+            runOnJS(setImmersive)(true);
+          } else if (e.translationX < -48) {
+            runOnJS(setImmersive)(false);
+          }
+        }),
+    [setImmersive],
   );
 
   if (!sessionId || isLoading) {
@@ -339,14 +354,15 @@ export function LiveWatchScreen() {
 
             <LiveChatOverlay
               messages={messages}
-              keyboardOffset={keyboardOffset}
               visible={chatVisible}
+              bottomOffset={commentBottom}
             />
 
             <LiveChatInputBar
               sessionId={sessionId}
               visible={chatVisible}
-              onKeyboardOffsetChange={(o) => setKeyboardOffset(o)}
+              overlayOnVideo
+              paddingBottomInset={inputBottomInset}
             />
 
             <SafeAreaView className="absolute left-0 right-0 top-0" edges={["top"]}>
@@ -366,9 +382,20 @@ export function LiveWatchScreen() {
                   </Text>
                   <Text className="text-center text-xs text-white/75">
                     {viewerCount} người xem · {duration}
+                    {!chatVisible ? " · Vuốt trái để mở chat" : ""}
                   </Text>
                 </View>
-                <View className="size-10" />
+                <Pressable
+                  onPress={() => setTabBarHidden((v) => !v)}
+                  accessibilityLabel={tabBarHidden ? "Hiện menu dưới" : "Ẩn menu dưới"}
+                  className="size-10 items-center justify-center rounded-full bg-black/50"
+                >
+                  {tabBarHidden ? (
+                    <PanelBottom size={20} color="#fff" />
+                  ) : (
+                    <PanelBottomClose size={20} color="#fff" />
+                  )}
+                </Pressable>
               </View>
             </SafeAreaView>
           </View>

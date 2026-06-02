@@ -97,6 +97,8 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "./plugins/withNotifeeMavenRepo",
+      "./plugins/withFcmNotificationManifest",
       "@react-native-firebase/app",
       "@react-native-firebase/messaging",
       "expo-router",

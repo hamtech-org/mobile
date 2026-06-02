@@ -6,22 +6,20 @@ buildscript {
     mavenCentral()
   }
   dependencies {
+        classpath 'com.google.gms:google-services:4.4.1'
     classpath('com.android.tools.build:gradle')
     classpath('com.facebook.react:react-native-gradle-plugin')
-    classpath('com.google.gms:google-services:4.4.2')
     classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
-    classpath('org.jetbrains.kotlin:compose-compiler-gradle-plugin')
   }
 }
 
 allprojects {
   repositories {
+    // Notifee core AAR is bundled locally, not on Maven Central
+    maven { url "$rootDir/../node_modules/@notifee/react-native/android/libs" }
     google()
     mavenCentral()
     maven { url 'https://www.jitpack.io' }
-    maven {
-      url "$rootDir/../node_modules/@notifee/react-native/android/libs"
-    }
   }
 }
 
