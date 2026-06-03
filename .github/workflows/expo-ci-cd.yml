@@ -72,7 +72,7 @@ jobs:
 
       - name: Publish OTA Update
         run: |
-          npx eas-cli update --channel ${{ steps.set-channel.outputs.channel }} --platform android --message "CI Update: ${{ github.event.head_commit.message }}"
+          npx eas-cli update --channel ${{ steps.set-channel.outputs.channel }} --platform android --message "CI Update: ${{ github.event.head_commit.message }}" --environment ${{ steps.set-channel.outputs.channel }}
         env:
           EXPO_PUBLIC_API_BASE_URL: ${{ steps.set-channel.outputs.channel == 'production' && secrets.PROD_API_BASE_URL || secrets.PREVIEW_API_BASE_URL }}
           EXPO_PUBLIC_SOCKET_URL: ${{ steps.set-channel.outputs.channel == 'production' && secrets.PROD_SOCKET_URL || secrets.PREVIEW_SOCKET_URL }}
@@ -116,7 +116,7 @@ jobs:
       - name: Run EAS Update
         if: github.event.inputs.type == 'update'
         run: |
-          npx eas-cli update --channel ${{ github.event.inputs.profile }} --message "Manual CI Update: ${{ github.event.head_commit.message }}"
+          npx eas-cli update --channel ${{ github.event.inputs.profile }} --message "Manual CI Update: ${{ github.event.head_commit.message }}" --environment ${{ github.event.inputs.profile }}
         env:
           EXPO_PUBLIC_API_BASE_URL: ${{ github.event.inputs.profile == 'production' && secrets.PROD_API_BASE_URL || secrets.PREVIEW_API_BASE_URL }}
           EXPO_PUBLIC_SOCKET_URL: ${{ github.event.inputs.profile == 'production' && secrets.PROD_SOCKET_URL || secrets.PREVIEW_SOCKET_URL }}
