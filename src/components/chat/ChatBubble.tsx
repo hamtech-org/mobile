@@ -76,6 +76,7 @@ import { ChatFileMessageBubble } from "@/components/chat/ChatFileMessageBubble";
 import { ChatImageMessageWithJoinQr } from "@/components/chat/ChatImageMessageWithJoinQr";
 import type { ChatMediaLightboxState } from "@/components/chat/ChatMediaLightbox";
 import { ChatVideoMessageCard } from "@/components/chat/ChatVideoMessageCard";
+import { ChatAlbumMessageBubble } from "./ChatAlbumMessageBubble";
 import { chatMediaCaptionStyle, getChatMediaLayout } from "@/components/chat/chatMediaShell";
 import { ChatMessageReactionsOverlay } from "./ChatMessageReactions";
 import { useReactMessageMutation } from "@/store/api/endpoints/messageApi";
@@ -1293,6 +1294,8 @@ export const ChatBubble = ({
   /** Video: cần `mediaUrl` (hoặc URI local lúc gửi) — RN `Image` không hiển thị MP4. */
   const hasVideo = message.type === "video" && Boolean((rawMedia ?? "").trim());
   const hasFile = message.type === "file" && Boolean((rawMedia ?? "").trim());
+  const hasAlbum =
+    message.type === "album" && Array.isArray(message.medias) && message.medias.length > 0;
   const hasCaption = (message.content ?? "").trim().length > 0;
   const hasReactions = message.reactions && Object.keys(message.reactions).length > 0;
 
@@ -1312,8 +1315,8 @@ export const ChatBubble = ({
   const fileMimeType = fileBubbleMeta?.mimeType ?? message.mediaType;
   const videoTitle = message.mediaOriginalName?.trim() || "Video";
 
-  const isVisualMedia = Boolean(hasImage || hasVideo || hasSticker);
-  const hasMediaCard = Boolean(hasImage || hasVideo || hasFile);
+  const isVisualMedia = Boolean(hasImage || hasVideo || hasSticker || hasAlbum);
+  const hasMediaCard = Boolean(hasImage || hasVideo || hasFile || hasAlbum);
   const parsedLocation =
     message.type === "location" ? parseLocationPayload(message.content ?? "") : null;
   const hasLocationBlock = message.type === "location" && (parsedLocation !== null || hasCaption);
@@ -1336,7 +1339,7 @@ export const ChatBubble = ({
   const jumpHighlightOnPollInline =
     Boolean(isJumpHighlighted) && message.type === "poll" && mergedThreadPoll != null;
   const jumpHighlightOnMedia =
-    Boolean(isJumpHighlighted) && (hasImage || hasVideo || hasFile || hasSticker);
+    Boolean(isJumpHighlighted) && (hasImage || hasVideo || hasFile || hasSticker || hasAlbum);
   const jumpHighlightOnTextBubble =
     Boolean(isJumpHighlighted) &&
     !jumpHighlightOnPollInline &&
@@ -1360,8 +1363,12 @@ export const ChatBubble = ({
 
   const plainTextFallback = !hasRenderableSpecial && !hasCaption ? fallbackLabel || "Tin nhắn" : "";
 
-  const widenMediaBubble = Boolean(hasImage || hasVideo || hasFile);
-  const mediaBubbleMaxWidth = hasFile ? mediaLayout.fileMaxWidth : mediaLayout.visualMaxWidth;
+  const widenMediaBubble = Boolean(hasImage || hasVideo || hasFile || hasAlbum);
+  const mediaBubbleMaxWidth = hasAlbum
+    ? 280
+    : hasFile
+      ? mediaLayout.fileMaxWidth
+      : mediaLayout.visualMaxWidth;
   const pressableMediaStyle: ViewStyle | undefined =
     widenMediaBubble && !hasFile
       ? {
@@ -1532,6 +1539,19 @@ export const ChatBubble = ({
                       onPress={() => onPressReplyTo?.(message.replyToDetails!.messageId)}
                     />
 
+                    {hasAlbum ? (
+                      <ChatAlbumMessageBubble
+                        msg={message}
+                        isMe={isOwn}
+                        isDark={isDark}
+                        isJumpHighlighted={isJumpHighlighted}
+                        onOpenLightbox={(items, startIndex) => {
+                          onMediaLightbox?.({ items, startIndex });
+                        }}
+                        onLongPress={openActionSheet}
+                      />
+                    ) : null}
+
                     {hasImage && imageUri ? (
                       <ChatImageMessageWithJoinQr
                         messageId={message.messageId}
@@ -1583,9 +1603,13 @@ export const ChatBubble = ({
                       />
                     ) : null}
 
-                    {(hasImage || hasVideo) && hasCaption ? (
+                    {(hasImage || hasVideo || hasAlbum) && hasCaption ? (
                       <View
-                        style={chatMediaCaptionStyle(isOwn, isDark, mediaLayout.visualMaxWidth)}
+                        style={chatMediaCaptionStyle(
+                          isOwn,
+                          isDark,
+                          hasAlbum ? 280 : mediaLayout.visualMaxWidth,
+                        )}
                       >
                         <MentionifiedChatText
                           text={captionPlainText}

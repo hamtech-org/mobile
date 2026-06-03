@@ -4,6 +4,7 @@ import type {
   IMessagePage,
   IReplyToDetails,
   MessageType,
+  IMessageMediaItem,
 } from "@/types/chat.types";
 import type { RootState } from "@/store/store";
 import { chatApi, type ApiEnvelope } from "../baseChatApi";
@@ -23,6 +24,10 @@ export interface SendMessageRequest {
   content: string;
   mediaUrl?: string;
   mediaId?: string;
+  mediaIds?: string[];
+  sourceMessageId?: string;
+  sourceConversationId?: string;
+  clientTempId?: string;
   replyTo?: string;
   duration?: number;
   mentions?: string[];
@@ -36,6 +41,8 @@ export interface SendMessageRequest {
   optimisticMediaSize?: number;
   /** Chỉ client — MIME khi gửi file (hiển thị trên bubble trước khi server trả về) */
   optimisticMimeType?: string;
+  /** Chỉ client — danh sách media items đính kèm tạm thời cho album */
+  optimisticMedias?: IMessageMediaItem[];
 }
 
 export interface EditMessageRequest {
@@ -116,7 +123,8 @@ function buildOptimisticMessage(
   const replyTo = arg.replyTo ?? null;
   const localUri = arg.optimisticLocalUri?.trim();
   const mediaUrl = localUri || (arg.mediaUrl?.trim() ? arg.mediaUrl.trim() : null) || null;
-  const isMedia = arg.type === "image" || arg.type === "video" || arg.type === "file";
+  const isMedia =
+    arg.type === "image" || arg.type === "video" || arg.type === "file" || arg.type === "album";
   const thumb = arg.type === "image" || arg.type === "video" ? localUri || mediaUrl : null;
 
   return {
@@ -142,6 +150,7 @@ function buildOptimisticMessage(
         : null,
     mediaOriginalName: arg.optimisticMediaName?.trim() || null,
     thumbnailUrl: thumb,
+    medias: arg.optimisticMedias ?? null,
     replyTo,
     replyToDetails: arg.clientReplyToDetails ?? null,
     isPinned: false,
@@ -149,9 +158,9 @@ function buildOptimisticMessage(
     isRecalled: false,
     reactions: {},
     duration: arg.duration ?? null,
-    /** Hiển thị như tin đã gửi — không spinner; lỗi thì undo cache. */
-    status: "sent",
+    status: isMedia ? "sending" : "sent",
     createdAt: new Date().toISOString(),
+    clientTempId: arg.clientTempId ?? optimisticId,
   };
 }
 
@@ -303,6 +312,7 @@ export const messageApi = chatApi.injectEndpoints({
           optimisticMediaName: _n,
           optimisticMediaSize: _s,
           optimisticMimeType: _m,
+          optimisticMedias: _oms,
           ...body
         } = arg;
         return {
@@ -317,7 +327,7 @@ export const messageApi = chatApi.injectEndpoints({
         const user = state.auth.user;
         if (!user?.userId) return;
 
-        const optimisticId = newOptimisticId();
+        const optimisticId = arg.clientTempId || newOptimisticId();
         const optimistic = buildOptimisticMessage(arg, optimisticId, user.userId, user.displayName);
 
         const patchMessages = dispatch(
@@ -325,7 +335,12 @@ export const messageApi = chatApi.injectEndpoints({
             "getMessages",
             getMessagesQueryArg(arg.conversationId),
             (draft: IMessage[]) => {
-              draft.unshift(optimistic);
+              const exists = draft.find((m) => m.messageId === optimisticId);
+              if (exists) {
+                Object.assign(exists, optimistic);
+              } else {
+                draft.unshift(optimistic);
+              }
             },
           ),
         );
@@ -336,7 +351,10 @@ export const messageApi = chatApi.injectEndpoints({
             { conversationId: arg.conversationId },
             (draft: IMessagePage) => {
               if (draft && Array.isArray(draft.items)) {
-                if (!draft.items.some((m) => m.messageId === optimistic.messageId)) {
+                const exists = draft.items.find((m) => m.messageId === optimisticId);
+                if (exists) {
+                  Object.assign(exists, optimistic);
+                } else if (!draft.items.some((m) => m.messageId === optimistic.messageId)) {
                   draft.items.push(optimistic);
                 }
               }
@@ -430,9 +448,28 @@ export const messageApi = chatApi.injectEndpoints({
           const serverMsg = (data as ApiEnvelope<IMessage>).data;
           mergeServerMessage(serverMsg);
         } catch {
-          patchMessages.undo();
-          patchMessagesPaginated.undo();
-          patchConvs.undo();
+          dispatch(
+            (chatApi.util as any).updateQueryData(
+              "getMessages",
+              getMessagesQueryArg(arg.conversationId),
+              (draft: IMessage[]) => {
+                const opt = draft.find((m) => m.messageId === optimisticId);
+                if (opt) opt.status = "failed";
+              },
+            ),
+          );
+          dispatch(
+            (chatApi.util as any).updateQueryData(
+              "getMessagesPaginated",
+              { conversationId: arg.conversationId },
+              (draft: IMessagePage) => {
+                if (draft && Array.isArray(draft.items)) {
+                  const opt = draft.items.find((m) => m.messageId === optimisticId);
+                  if (opt) opt.status = "failed";
+                }
+              },
+            ),
+          );
         }
       },
     }),
