@@ -16,6 +16,7 @@
     "postinstall": "patch-package",
     "prepare": "husky",
     "build:android:apk": "eas build --platform android --profile preview",
+    "build:android:apk:local": "cd android && gradlew.bat assembleRelease",
     "eas:build:preview": "eas build --platform android --profile preview",
     "eas:build:production": "eas build --platform all --profile production",
     "eas:update:preview": "eas update --channel preview",

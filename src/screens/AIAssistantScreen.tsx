@@ -452,7 +452,7 @@ export function AIAssistantScreen() {
   }, [socket]);
 
   const sendMessage = useCallback(
-    (messageText: string) => {
+    (messageText: string, displayText?: string) => {
       const text = messageText.trim();
       if (!text || sending) return;
       if (!socket) {
@@ -460,17 +460,18 @@ export function AIAssistantScreen() {
         return;
       }
 
+      const visibleText = displayText?.trim() || text;
       const requestId = createAiRequestId();
       currentRequestId.current = requestId;
       cancelledRequestIds.current.delete(requestId);
-      lastSentUserText.current = text;
+      lastSentUserText.current = visibleText;
       setSending(true);
       setSendingStatus("Đang gửi yêu cầu đến trợ lý HAMTECH...");
       setLastActions([]);
       setDraft("");
       setMessages((prev) => [
         ...prev,
-        { id: `temp-user-${Date.now()}`, role: "user", kind: "text", content: text },
+        { id: `temp-user-${Date.now()}`, role: "user", kind: "text", content: visibleText },
       ]);
 
       socket.emit("ai:message_send", {
@@ -497,7 +498,10 @@ export function AIAssistantScreen() {
     (decision: "approve" | "reject", action: ConfirmToolAction) => {
       const token =
         decision === "approve" ? action.payload.confirmToken : action.payload.cancelToken;
-      sendMessage(token?.trim() || (decision === "approve" ? "đồng ý" : "không"));
+      const fallbackText = decision === "approve" ? "đồng ý" : "không";
+      const visibleText =
+        decision === "approve" ? action.payload.confirmText : action.payload.cancelText;
+      sendMessage(token?.trim() || fallbackText, visibleText?.trim() || fallbackText);
     },
     [sendMessage],
   );
