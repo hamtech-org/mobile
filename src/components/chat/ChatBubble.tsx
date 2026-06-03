@@ -1206,27 +1206,7 @@ export const ChatBubble = ({
   );
 
   /** Luôn qua format preview — không render JSON thô trong bubble chữ. */
-  const captionPlainText = useMemo(
-    () =>
-      formatChatPreviewLine(
-        {
-          type: message.type,
-          content: message.content ?? "",
-          senderId: message.senderId,
-          senderDisplayName: message.senderDisplayName,
-          isRecalled: Boolean(message.isRecalled),
-        },
-        viewerUserId ?? "",
-      ),
-    [
-      message.type,
-      message.content,
-      message.senderId,
-      message.senderDisplayName,
-      message.isRecalled,
-      viewerUserId,
-    ],
-  );
+  const captionPlainText = message.content ?? "";
 
   const isSystemCenter = message.type === "system" || isCenterPositionMessage(message);
   const dayChangedFromPrev = chatSystemPillShowDateLine(prevMessage?.createdAt, message.createdAt);

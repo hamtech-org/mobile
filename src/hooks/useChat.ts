@@ -17,6 +17,7 @@ import { useSocket } from "@/hooks/useSocket";
 import type { IMessage, IReplyToDetails, MessageType } from "@/types/chat.types";
 import { formatChatPreviewLine } from "@/utils/messageDisplay";
 import { toast } from "@/utils/appToast";
+import { splitMessageContent } from "@/utils/chatTextSplitter";
 
 /**
  * Hook cung cấp tất cả actions liên quan đến chat messaging.
@@ -75,12 +76,28 @@ export const useChat = () => {
   // ── Gửi tin nhắn text ──────────────────────────────────────────────
   const sendMessage = useCallback(
     async (conversationId: string, content: string, mentions?: string[]): Promise<void> => {
-      await sendMessageMutation({
-        conversationId,
-        type: "text",
-        content,
-        mentions,
-      }).unwrap();
+      const chunks = splitMessageContent(content, 2000);
+      if (chunks.length > 1) {
+        for (let i = 0; i < chunks.length; i++) {
+          const chunk = chunks[i]!;
+          const chunkMentions = mentions
+            ? mentions.filter((id) => chunk.includes(`mention:${id}`))
+            : undefined;
+          await sendMessageMutation({
+            conversationId,
+            type: "text",
+            content: chunk,
+            mentions: chunkMentions,
+          }).unwrap();
+        }
+      } else {
+        await sendMessageMutation({
+          conversationId,
+          type: "text",
+          content,
+          mentions,
+        }).unwrap();
+      }
     },
     [sendMessageMutation],
   );
@@ -158,14 +175,33 @@ export const useChat = () => {
         content: formatChatPreviewLine(replyToMessage, currentUserId),
         type: replyToMessage.type,
       };
-      await sendMessageMutation({
-        conversationId,
-        type: "text",
-        content,
-        replyTo: replyToMessage.messageId,
-        clientReplyToDetails,
-        mentions,
-      }).unwrap();
+
+      const chunks = splitMessageContent(content, 2000);
+      if (chunks.length > 1) {
+        for (let i = 0; i < chunks.length; i++) {
+          const chunk = chunks[i]!;
+          const chunkMentions = mentions
+            ? mentions.filter((id) => chunk.includes(`mention:${id}`))
+            : undefined;
+          await sendMessageMutation({
+            conversationId,
+            type: "text",
+            content: chunk,
+            replyTo: i === 0 ? replyToMessage.messageId : undefined,
+            clientReplyToDetails: i === 0 ? clientReplyToDetails : undefined,
+            mentions: chunkMentions,
+          }).unwrap();
+        }
+      } else {
+        await sendMessageMutation({
+          conversationId,
+          type: "text",
+          content,
+          replyTo: replyToMessage.messageId,
+          clientReplyToDetails,
+          mentions,
+        }).unwrap();
+      }
     },
     [sendMessageMutation, currentUserId],
   );
