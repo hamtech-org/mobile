@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
@@ -7,8 +7,9 @@ import type { LiveChatLine } from "@/components/live/LiveChatPanel";
 
 type Props = {
   messages: LiveChatLine[];
-  keyboardOffset: number;
   visible?: boolean;
+  /** Khoảng cách từ đáy vùng video (phía trên ô nhập) */
+  bottomOffset?: number;
 };
 
 const COLLAPSED_COUNT = 5;
@@ -27,7 +28,7 @@ function initials(name: string): string {
 const ChatRow = ({ item, faded }: { item: LiveChatLine; faded: boolean }) => {
   const avatarUrl = item.avatar ?? null;
   return (
-    <View style={[s.row, faded ? s.rowFaded : null]}>
+    <View style={[s.rowBubble, faded ? s.rowFaded : null]}>
       {avatarUrl ? (
         <Image source={{ uri: avatarUrl }} style={s.avatarImg} />
       ) : (
@@ -39,22 +40,30 @@ const ChatRow = ({ item, faded }: { item: LiveChatLine; faded: boolean }) => {
         <Text style={s.meta} numberOfLines={1}>
           {item.displayName}
         </Text>
-        <Text style={s.msg} numberOfLines={2}>
-          {item.text}
-        </Text>
+        <Text style={s.msg}>{item.text}</Text>
       </View>
     </View>
   );
 };
 
-export const LiveChatOverlay = ({ messages, keyboardOffset, visible = true }: Props) => {
+export const LiveChatOverlay = ({ messages, visible = true, bottomOffset = 8 }: Props) => {
   const [expanded, setExpanded] = useState(false);
   const height = useSharedValue(COLLAPSED_H);
+  const listRef = useRef<FlatList<LiveChatLine>>(null);
 
   const data = useMemo(() => {
     if (expanded) return messages;
     return messages.slice(-COLLAPSED_COUNT);
   }, [expanded, messages]);
+
+  const scrollToLatest = () => {
+    if (data.length === 0) return;
+    listRef.current?.scrollToEnd({ animated: true });
+  };
+
+  useEffect(() => {
+    scrollToLatest();
+  }, [data.length, data[data.length - 1]?.sentAt, expanded]);
 
   const pan = useMemo(
     () =>
@@ -72,22 +81,20 @@ export const LiveChatOverlay = ({ messages, keyboardOffset, visible = true }: Pr
 
   const animatedStyle = useAnimatedStyle(() => {
     const target = expanded ? EXPANDED_H : COLLAPSED_H;
-    // keep animation in sync with JS state changes
     if (height.value !== target) {
       height.value = withTiming(target, { duration: 220 });
     }
     return {
       height: height.value,
-      transform: [{ translateY: -keyboardOffset }],
       opacity: visible ? 1 : 0,
     };
-  }, [expanded, keyboardOffset, visible]);
+  }, [expanded, visible]);
 
   if (!visible) return null;
 
   return (
     <GestureDetector gesture={pan}>
-      <Animated.View style={[s.container, animatedStyle]}>
+      <Animated.View style={[s.container, { bottom: bottomOffset }, animatedStyle]}>
         {expanded ? (
           <View style={s.header}>
             <Text style={s.headerTitle}>Chat</Text>
@@ -98,10 +105,18 @@ export const LiveChatOverlay = ({ messages, keyboardOffset, visible = true }: Pr
         ) : null}
 
         <FlatList
+          ref={listRef}
           data={data}
+          nestedScrollEnabled
           keyExtractor={(item, i) => `${item.sentAt}-${item.userId}-${i}`}
-          contentContainerStyle={{ paddingVertical: 10, gap: 10 }}
+          contentContainerStyle={{
+            paddingVertical: 10,
+            gap: 10,
+            flexGrow: 1,
+            justifyContent: "flex-end",
+          }}
           showsVerticalScrollIndicator={false}
+          onContentSizeChange={scrollToLatest}
           renderItem={({ item, index }) => {
             const faded = !expanded && index < Math.max(0, data.length - 2);
             return <ChatRow item={item} faded={faded} />;
@@ -115,19 +130,16 @@ export const LiveChatOverlay = ({ messages, keyboardOffset, visible = true }: Pr
 const s = StyleSheet.create({
   container: {
     position: "absolute",
-    left: 12,
-    right: 88,
-    bottom: 74,
-    borderRadius: 18,
-    paddingHorizontal: 12,
-    backgroundColor: "rgba(0,0,0,0.22)",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255,255,255,0.12)",
+    left: 8,
+    right: 72,
+    backgroundColor: "transparent",
+    pointerEvents: "box-none",
     overflow: "hidden",
   },
   header: {
     paddingTop: 10,
     paddingBottom: 2,
+    paddingHorizontal: 4,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -142,11 +154,15 @@ const s = StyleSheet.create({
     fontWeight: "600",
     color: "rgba(255,255,255,0.72)",
   },
-  row: {
+  rowBubble: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: 10,
-    paddingVertical: 2,
+    alignSelf: "flex-start",
+    maxWidth: "88%",
+    borderRadius: 14,
+    backgroundColor: "rgba(0,0,0,0.38)",
+    paddingHorizontal: 8,
+    paddingVertical: 6,
   },
   rowFaded: {
     opacity: 0.55,
@@ -171,8 +187,9 @@ const s = StyleSheet.create({
     color: "rgba(255,255,255,0.86)",
   },
   rowText: {
-    flex: 1,
-    minWidth: 0,
+    flexShrink: 1,
+    maxWidth: 260,
+    marginLeft: 8,
   },
   meta: {
     fontSize: 12,

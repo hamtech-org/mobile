@@ -1,0 +1,122 @@
+name: Hamtech Mobile CI/CD (Expo & EAS)
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    tags:
+      - 'v*'
+  pull_request:
+    paths:
+      - '**'
+
+jobs:
+  validate:
+    name: Lint & Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Linter
+        run: npm run lint
+
+      - name: TypeScript Check
+        run: npx tsc --noEmit
+
+  eas-update:
+    name: EAS Update (OTA)
+    needs: validate
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Setup Expo & EAS
+        uses: expo/expo-github-action@v8
+        with:
+          expo-version: latest
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set environment channel
+        id: set-channel
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "channel=production" >> $GITHUB_OUTPUT
+          else
+            echo "channel=preview" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Publish OTA Update
+        run: |
+          npx eas-cli update --channel ${{ steps.set-channel.outputs.channel }} --platform android --message "CI Update: ${{ github.event.head_commit.message }}"
+        env:
+          EXPO_PUBLIC_API_BASE_URL: ${{ steps.set-channel.outputs.channel == 'production' && secrets.PROD_API_BASE_URL || secrets.PREVIEW_API_BASE_URL }}
+          EXPO_PUBLIC_SOCKET_URL: ${{ steps.set-channel.outputs.channel == 'production' && secrets.PROD_SOCKET_URL || secrets.PREVIEW_SOCKET_URL }}
+
+  manual-trigger:
+    name: EAS Manual Build / Update
+    needs: validate
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Setup Expo & EAS
+        uses: expo/expo-github-action@v8
+        with:
+          expo-version: latest
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Execute EAS Build
+      - name: Run EAS Build
+        if: github.event.inputs.type == 'build'
+        run: |
+          npx eas-cli build --platform ${{ github.event.inputs.platform }} --profile ${{ github.event.inputs.profile }} --non-interactive
+        env:
+          EXPO_PUBLIC_API_BASE_URL: ${{ github.event.inputs.profile == 'production' && secrets.PROD_API_BASE_URL || secrets.PREVIEW_API_BASE_URL }}
+          EXPO_PUBLIC_SOCKET_URL: ${{ github.event.inputs.profile == 'production' && secrets.PROD_SOCKET_URL || secrets.PREVIEW_SOCKET_URL }}
+
+      # Execute EAS Update
+      - name: Run EAS Update
+        if: github.event.inputs.type == 'update'
+        run: |
+          npx eas-cli update --channel ${{ github.event.inputs.profile }} --message "Manual CI Update: ${{ github.event.head_commit.message }}"
+        env:
+          EXPO_PUBLIC_API_BASE_URL: ${{ github.event.inputs.profile == 'production' && secrets.PROD_API_BASE_URL || secrets.PREVIEW_API_BASE_URL }}
+          EXPO_PUBLIC_SOCKET_URL: ${{ github.event.inputs.profile == 'production' && secrets.PROD_SOCKET_URL || secrets.PREVIEW_SOCKET_URL }}
