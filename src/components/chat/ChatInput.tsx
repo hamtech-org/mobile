@@ -180,7 +180,7 @@ export const ChatInput = ({
   const placeholder = conversationName ? `Nhập tin nhắn đến ${conversationName}` : "Nhập tin nhắn";
   const hasText = content.trim().length > 0;
   const hasSendable = hasText || pendingAttachments.length > 0;
-  const inputDisabled = !activeConversationId || isUploading;
+  const inputDisabled = !activeConversationId;
 
   // ─── Logic ghi âm Voice (expo-av) ───
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
@@ -324,8 +324,6 @@ export const ChatInput = ({
   }, []);
 
   const handleSend = useCallback(async () => {
-    if (isUploading) return;
-
     if (pendingAttachments.length > 0) {
       if (!onSendMedia) {
         toast.error("Không thể gửi file trong hội thoại này.");
@@ -349,17 +347,13 @@ export const ChatInput = ({
         processedCaption = processedCaption.replace(regex, replacement);
       }
 
-      setIsUploading(true);
-      try {
-        await onSendMedia(batch, processedCaption);
-        setPendingAttachments([]);
-        setContent("");
-        setMentionsMetadata([]);
-      } catch {
-        /* toast trong handleSendMedia */
-      } finally {
-        setIsUploading(false);
-      }
+      // Giải phóng giao diện người dùng ngay lập tức
+      setPendingAttachments([]);
+      setContent("");
+      setMentionsMetadata([]);
+
+      // Gọi onSendMedia bất đồng bộ dưới nền
+      void onSendMedia(batch, processedCaption);
       return;
     }
 

@@ -56,6 +56,9 @@ import {
   useVotePollMutation,
   useClosePollMutation,
   useAddPollOptionMutation,
+  useSendMessageMutation,
+  chatApi,
+  CHAT_MESSAGES_QUERY_LIMIT,
 } from "@/store/api/chatApi";
 import { useGetFriendsQuery } from "@/store/api/userApi";
 import { useCallContext } from "@/contexts/CallContext";
@@ -66,7 +69,7 @@ import { useMessagePinController } from "@/hooks/useMessagePinController";
 import { useConversationLifecycle } from "@/hooks/useConversationLifecycle";
 import { useTaskReminderScheduler, type GroupTaskLike } from "@/hooks/useTaskReminderScheduler";
 import { setReplyingTo, clearReplyingTo, clearChatFrameBanner } from "@/store/slices/chatSlice";
-import type { IMessage, TypingUserEntry } from "@/types/chat.types";
+import type { IMessage, TypingUserEntry, IMessagePage } from "@/types/chat.types";
 import { prepareLocalFileForUpload } from "@/utils/uploadAttachment";
 import { toast } from "@/utils/appToast";
 import { apiClient } from "@/services/api";
@@ -286,6 +289,7 @@ export default function ChatDetailScreen() {
   }, [conversationId, emitTypingStop]);
 
   const [uploadMediaMulti] = useUploadMediaMultiMutation();
+  const [sendMessageMutation] = useSendMessageMutation();
 
   const { data: convList, isLoading: isConvListLoading } = useGetConversationsQuery();
   const conversation = useMemo(
@@ -814,11 +818,11 @@ export default function ChatDetailScreen() {
     async (attachments: PendingAttachment[], caption: string) => {
       if (!conversationId) {
         toast.error("Không tìm thấy hội thoại.");
-        throw new Error("no_conversation");
+        return;
       }
       if (!canSendInGroup) {
         toast.error("Bạn không có quyền gửi tin trong nhóm này.");
-        throw new Error("no_permission");
+        return;
       }
       emitTypingStop(conversationId);
       if (attachments.length === 0) return;
@@ -843,87 +847,233 @@ export default function ChatDetailScreen() {
           }
         : undefined;
 
-      try {
-        const preparedFiles = await Promise.all(
-          attachments.map((attachment) =>
-            prepareLocalFileForUpload({
-              uri: attachment.uri,
-              name: attachment.name,
-              mimeType: attachment.mimeType,
-            }),
-          ),
-        );
+      // 1. Tạo clientTempId và tạo optimistic message
+      const clientTempId = `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      const captionFirst = caption.trim().length > 0 ? caption.trim() : " ";
 
-        const uploadResults = await uploadMediaMulti({
-          files: preparedFiles.map((f) => ({
-            uri: f.uri,
-            name: f.name,
-            type: f.type,
-          })),
-        }).unwrap();
+      const mediaAttachments = attachments.filter(
+        (att) => att.mimeType?.startsWith("image/") || att.mimeType?.startsWith("video/"),
+      );
+      const otherAttachments = attachments.filter(
+        (att) => !att.mimeType?.startsWith("image/") && !att.mimeType?.startsWith("video/"),
+      );
 
-        if (!uploadResults?.length) {
-          throw new Error("upload_missing_results");
-        }
+      // Trực quan hóa optimistic bubble ngay lập tức dưới nền
+      // Nếu gửi album (>= 2 media)
+      const isAlbum = mediaAttachments.length >= 2;
 
-        const captionFirst = caption.trim().length > 0 ? caption.trim() : " ";
+      const optimisticMsg: IMessage = {
+        messageId: clientTempId,
+        conversationId,
+        senderId: currentUserId ?? "",
+        senderDisplayName: "Đang gửi...", // Sẽ được merge/replace sau
+        type: isAlbum
+          ? "album"
+          : attachments[0].mimeType?.startsWith("video/")
+            ? "video"
+            : attachments[0].mimeType?.startsWith("image/")
+              ? "image"
+              : "file",
+        content: captionFirst,
+        mediaUrl: attachments[0].uri,
+        mediaType: attachments[0].mimeType,
+        mediaSize: attachments[0].size,
+        mediaOriginalName: attachments[0].name,
+        thumbnailUrl: attachments[0].uri,
+        medias: isAlbum
+          ? mediaAttachments.map((att) => ({
+              mediaId: `opt-item-${Math.random().toString(36).slice(2, 9)}`,
+              type: att.mimeType?.startsWith("video/") ? "video" : "image",
+              mimeType: att.mimeType || "image/jpeg",
+              url: att.uri,
+              thumbnailUrl: att.uri,
+              size: att.size,
+              originalName: att.name,
+            }))
+          : null,
+        replyTo: replyToId || null,
+        replyToDetails: clientReplyToDetails || null,
+        isPinned: false,
+        isEdited: false,
+        isRecalled: false,
+        reactions: {},
+        status: "sending",
+        createdAt: new Date().toISOString(),
+        clientTempId,
+      };
 
-        for (let i = 0; i < uploadResults.length; i++) {
-          const result = uploadResults[i]!;
-          const attachment = attachments[i];
-          const prepared = preparedFiles[i];
-          if (!result?.mediaId) {
-            throw new Error("upload_missing_media_id");
+      // Cho optimistic message chui vào cache
+      dispatch(
+        (chatApi.util as any).updateQueryData(
+          "getMessages",
+          { conversationId, limit: CHAT_MESSAGES_QUERY_LIMIT },
+          (draft: IMessage[]) => {
+            draft.unshift(optimisticMsg);
+          },
+        ),
+      );
+      dispatch(
+        (chatApi.util as any).updateQueryData(
+          "getMessagesPaginated",
+          { conversationId },
+          (draft: IMessagePage) => {
+            if (draft && Array.isArray(draft.items)) {
+              draft.items.push(optimisticMsg);
+            }
+          },
+        ),
+      );
+
+      // Chạy luồng gửi ngầm bất đồng bộ dưới nền
+      (async () => {
+        try {
+          const preparedFiles = await Promise.all(
+            attachments.map((attachment) =>
+              prepareLocalFileForUpload({
+                uri: attachment.uri,
+                name: attachment.name,
+                mimeType: attachment.mimeType,
+              }),
+            ),
+          );
+
+          const uploadResults = await uploadMediaMulti({
+            files: preparedFiles.map((f) => ({
+              uri: f.uri,
+              name: f.name,
+              type: f.type,
+            })),
+          }).unwrap();
+
+          if (!uploadResults?.length) {
+            throw new Error("upload_missing_results");
           }
 
-          const displayName = attachment?.name?.trim() || prepared?.name;
-          const displayMime = result.mimeType?.trim() || attachment?.mimeType;
+          const results = uploadResults;
 
-          await sendMediaMessage(
-            conversationId,
-            messageTypeFromUploadResult(result),
-            i === 0 ? captionFirst : " ",
-            result.mediaId,
-            i === 0 ? replyToId : undefined,
-            {
+          if (results.length >= 2) {
+            const mediaResults = results.filter((r) => r.type === "image" || r.type === "video");
+            const otherResults = results.filter((r) => r.type !== "image" && r.type !== "video");
+
+            if (mediaResults.length >= 2) {
+              const mediaIds = mediaResults.map((r) => r.mediaId);
+              // Gửi album với clientTempId để merge
+              await sendMessageMutation({
+                conversationId,
+                type: "album",
+                content: captionFirst,
+                mediaIds,
+                replyTo: replyToId,
+                clientTempId,
+              }).unwrap();
+
+              // Gửi các tệp còn lại đơn lẻ
+              for (const other of otherResults) {
+                await sendMessageMutation({
+                  conversationId,
+                  type: messageTypeFromUploadResult(other),
+                  content: " ",
+                  mediaId: other.mediaId,
+                }).unwrap();
+              }
+            } else {
+              // Gửi rời rạc
+              for (let i = 0; i < results.length; i++) {
+                const result = results[i]!;
+                const attachment = attachments[i];
+                const prepared = preparedFiles[i];
+                const displayName = attachment?.name?.trim() || prepared?.name;
+                const displayMime = result.mimeType?.trim() || attachment?.mimeType;
+
+                await sendMessageMutation({
+                  conversationId,
+                  type: messageTypeFromUploadResult(result),
+                  content: i === 0 ? captionFirst : " ",
+                  mediaId: result.mediaId,
+                  replyTo: i === 0 ? replyToId : undefined,
+                  clientTempId: i === 0 ? clientTempId : undefined,
+                  optimisticLocalUri: prepared?.uri,
+                  optimisticMediaName: displayName,
+                  optimisticMediaSize: result.size ?? attachment?.size,
+                  optimisticMimeType: displayMime,
+                  clientReplyToDetails: i === 0 ? clientReplyToDetails : undefined,
+                }).unwrap();
+              }
+            }
+          } else {
+            // results.length === 1
+            const result = results[0]!;
+            const attachment = attachments[0];
+            const prepared = preparedFiles[0];
+            const displayName = attachment?.name?.trim() || prepared?.name;
+            const displayMime = result.mimeType?.trim() || attachment?.mimeType;
+
+            await sendMessageMutation({
+              conversationId,
+              type: messageTypeFromUploadResult(result),
+              content: captionFirst,
+              mediaId: result.mediaId,
+              replyTo: replyToId,
+              clientTempId,
               optimisticLocalUri: prepared?.uri,
               optimisticMediaName: displayName,
               optimisticMediaSize: result.size ?? attachment?.size,
               optimisticMimeType: displayMime,
-              clientReplyToDetails: i === 0 ? clientReplyToDetails : undefined,
-            },
+              clientReplyToDetails: clientReplyToDetails,
+            }).unwrap();
+          }
+        } catch (err: any) {
+          console.error("Background Upload/Send failed:", err);
+          const blockedText = messageSendErrorText(err);
+          if (blockedText !== "Gửi tin nhắn thất bại. Vui lòng thử lại.") {
+            toast.error(blockedText);
+          } else {
+            const apiMsg =
+              err &&
+              typeof err === "object" &&
+              "data" in err &&
+              (err as { data?: { message?: string; error?: { message?: string } } }).data
+                ? String(
+                    (err as { data?: { message?: string; error?: { message?: string } } }).data
+                      ?.error?.message ??
+                      (err as { data?: { message?: string } }).data?.message ??
+                      "",
+                  ).trim()
+                : "";
+            toast.error(apiMsg || "Gửi tệp thất bại. Vui lòng thử lại.");
+          }
+
+          // Cập nhật trạng thái thành failed cho optimisticMsg
+          dispatch(
+            (chatApi.util as any).updateQueryData(
+              "getMessages",
+              { conversationId, limit: CHAT_MESSAGES_QUERY_LIMIT },
+              (draft: IMessage[]) => {
+                const opt = draft.find((m) => m.messageId === clientTempId);
+                if (opt) opt.status = "failed";
+              },
+            ),
+          );
+          dispatch(
+            (chatApi.util as any).updateQueryData(
+              "getMessagesPaginated",
+              { conversationId },
+              (draft: IMessagePage) => {
+                if (draft && Array.isArray(draft.items)) {
+                  const opt = draft.items.find((m) => m.messageId === clientTempId);
+                  if (opt) opt.status = "failed";
+                }
+              },
+            ),
           );
         }
-
-        listRef.current?.scrollToOffset({ offset: 0, animated: true });
-      } catch (err) {
-        console.error("Upload/Send failed:", err);
-        const blockedText = messageSendErrorText(err);
-        if (blockedText !== "Gửi tin nhắn thất bại. Vui lòng thử lại.") {
-          toast.error(blockedText);
-          throw err;
-        }
-        const apiMsg =
-          err &&
-          typeof err === "object" &&
-          "data" in err &&
-          (err as { data?: { message?: string; error?: { message?: string } } }).data
-            ? String(
-                (err as { data?: { message?: string; error?: { message?: string } } }).data?.error
-                  ?.message ??
-                  (err as { data?: { message?: string } }).data?.message ??
-                  "",
-              ).trim()
-            : "";
-        toast.error(apiMsg || "Gửi tệp thất bại. Vui lòng thử lại.");
-        throw err;
-      }
+      })();
     },
     [
       conversationId,
       canSendInGroup,
       uploadMediaMulti,
-      sendMediaMessage,
+      sendMessageMutation,
       replyingTo,
       dispatch,
       currentUserId,
